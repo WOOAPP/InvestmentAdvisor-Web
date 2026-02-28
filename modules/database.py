@@ -1,0 +1,145 @@
+import sqlite3
+import json
+import os
+from datetime import datetime
+
+DB_PATH = "data/advisor.db"
+
+def init_db():
+    """Tworzy tabele jeśli nie istnieją."""
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            provider TEXT,
+            model TEXT,
+            market_summary TEXT,
+            analysis TEXT,
+            risk_level INTEGER
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS market_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            name TEXT,
+            price REAL,
+            change_pct REAL
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            symbol TEXT,
+            message TEXT,
+            seen INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def save_report(provider, model, market_summary, analysis, risk_level=0):
+    """Zapisuje raport do bazy."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO reports (created_at, provider, model, market_summary, analysis, risk_level)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), provider, model, market_summary, analysis, risk_level))
+    report_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return report_id
+
+def get_reports(limit=50):
+    """Zwraca listę raportów (najnowsze pierwsze)."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, created_at, provider, model, risk_level,
+               substr(analysis, 1, 200) as preview
+        FROM reports ORDER BY created_at DESC LIMIT ?
+    """, (limit,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def get_report_by_id(report_id):
+    """Zwraca pełny raport po ID."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def save_market_snapshot(market_data):
+    """Zapisuje snapshot cen rynkowych."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for symbol, d in market_data.items():
+        if "error" not in d:
+            c.execute("""
+                INSERT INTO market_snapshots (created_at, symbol, name, price, change_pct)
+                VALUES (?, ?, ?, ?, ?)
+            """, (now, symbol, d.get("name", symbol), d.get("price", 0), d.get("change_pct", 0)))
+    conn.commit()
+    conn.close()
+
+def get_price_history(symbol, days=30):
+    """Zwraca historię cen dla wykresu."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT created_at, price FROM market_snapshots
+        WHERE symbol = ?
+        ORDER BY created_at DESC LIMIT ?
+    """, (symbol, days * 10))
+    rows = c.fetchall()
+    conn.close()
+    return list(reversed(rows))
+
+def add_alert(symbol, message):
+    """Dodaje alert."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO alerts (created_at, symbol, message)
+        VALUES (?, ?, ?)
+    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), symbol, message))
+    conn.commit()
+    conn.close()
+
+def get_unseen_alerts():
+    """Zwraca nieprzeczytane alerty."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, created_at, symbol, message FROM alerts WHERE seen = 0 ORDER BY created_at DESC")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def mark_alerts_seen():
+    """Oznacza wszystkie alerty jako przeczytane."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE alerts SET seen = 1 WHERE seen = 0")
+    conn.commit()
+    conn.close()
+
+def delete_report(report_id):
+    """Usuwa raport po ID."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+    conn.commit()
+    conn.close()
+
+# Inicjalizacja przy imporcie
+init_db()
