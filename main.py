@@ -1107,6 +1107,27 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
+        section("💬 Prompt czatu")
+        tk.Label(
+            inner,
+            text="Instrukcja systemowa dla czatu. Raport z analizy jest "
+                 "dołączany automatycznie.",
+            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+        self.chat_prompt_text = scrolledtext.ScrolledText(
+            inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=5,
+            relief="flat", wrap="word", insertbackground=FG)
+        self.chat_prompt_text.pack(fill="x", padx=16, pady=4)
+        self.chat_prompt_text.insert(
+            "end", self.config_data.get("chat_prompt", ""))
+
+        tk.Button(
+            inner, text="🔄 Przywróć domyślny prompt czatu",
+            bg=BTN_BG, fg=YELLOW,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            command=self._reset_chat_prompt
+        ).pack(anchor="w", padx=16, pady=2)
+
         tk.Button(
             inner, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
             font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
@@ -1245,6 +1266,11 @@ class InvestmentAdvisor(tk.Tk):
         self.prompt_text.delete("1.0", "end")
         self.prompt_text.insert("end", DEFAULT_CONFIG["prompt"])
 
+    def _reset_chat_prompt(self):
+        from config import DEFAULT_CONFIG
+        self.chat_prompt_text.delete("1.0", "end")
+        self.chat_prompt_text.insert("end", DEFAULT_CONFIG["chat_prompt"])
+
     def _save_settings(self):
         self.config_data["api_keys"]["newsapi"]     = self.v_newsapi.get().strip()
         self.config_data["api_keys"]["openai"]      = self.v_openai.get().strip()
@@ -1260,6 +1286,7 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data["schedule"]["times"] = [
             t.strip() for t in self.v_times.get().split(",") if t.strip()]
         self.config_data["prompt"] = self.prompt_text.get("1.0", "end").strip()
+        self.config_data["chat_prompt"] = self.chat_prompt_text.get("1.0", "end").strip()
 
         instruments = []
         for _, v_sym, v_name, v_cat, v_src in self.inst_entries:
@@ -1316,10 +1343,10 @@ class InvestmentAdvisor(tk.Tk):
         self.chat_send_btn.configure(state="disabled", text="…")
 
         def _worker():
-            system = (
-                "Jesteś asystentem inwestycyjnym. Odpowiadaj po polsku, "
-                "konkretnie i rzeczowo.\n"
-            )
+            system = self.config_data.get("chat_prompt", "")
+            if not system:
+                system = "Jesteś asystentem inwestycyjnym. Odpowiadaj po polsku."
+            system += "\n"
             if self.current_analysis:
                 system += (
                     "\nPoniżej znajduje się ostatni raport analizy rynkowej, "
