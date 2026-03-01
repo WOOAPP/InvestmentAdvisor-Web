@@ -91,6 +91,60 @@ def _run_openrouter(config, system_prompt, user_message):
     except Exception as e:
         return f"Błąd OpenRouter API: {str(e)}"
 
+def run_chat(config, messages, system_prompt=""):
+    """Send a multi-turn chat conversation to the configured chat model.
+
+    config: full app config dict (uses chat_provider, chat_model, api_keys)
+    messages: list of {"role": "user"|"assistant", "content": "..."}
+    system_prompt: system-level instruction (e.g. analysis context)
+    Returns: assistant reply string
+    """
+    provider = config.get("chat_provider") or config.get("ai_provider", "anthropic")
+    model = config.get("chat_model") or config.get("ai_model", "claude-sonnet-4-6")
+    api_keys = config.get("api_keys", {})
+
+    if provider == "anthropic":
+        api_key = api_keys.get("anthropic", "")
+        if not api_key:
+            return "Brak klucza API Anthropic. Dodaj go w Ustawieniach."
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=messages,
+            )
+            return response.content[0].text
+        except Exception as e:
+            return f"Błąd Anthropic: {e}"
+
+    elif provider in ("openai", "openrouter"):
+        key_name = "openrouter" if provider == "openrouter" else "openai"
+        api_key = api_keys.get(key_name, "")
+        if not api_key:
+            return f"Brak klucza API {provider}. Dodaj go w Ustawieniach."
+        try:
+            kwargs = {"api_key": api_key}
+            if provider == "openrouter":
+                kwargs["base_url"] = "https://openrouter.ai/api/v1"
+            client = openai.OpenAI(**kwargs)
+            oai_messages = []
+            if system_prompt:
+                oai_messages.append({"role": "system", "content": system_prompt})
+            oai_messages.extend(messages)
+            response = client.chat.completions.create(
+                model=model,
+                max_tokens=2048,
+                messages=oai_messages,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Błąd {provider}: {e}"
+
+    return "Nieznany dostawca AI dla czatu."
+
+
 def get_available_models(provider):
     """Zwraca listę dostępnych modeli dla danego dostawcy."""
     models = {
