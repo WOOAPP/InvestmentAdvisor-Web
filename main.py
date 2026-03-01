@@ -17,7 +17,7 @@ from modules.database import (
 )
 from modules.charts import create_price_chart, create_risk_gauge, extract_risk_level
 from modules.scraper import scrape_all
-from modules.calendar_data import fetch_calendar
+from modules.calendar_data import fetch_calendar, get_event_significance
 
 BG     = "#1e1e2e"
 BG2    = "#181825"
@@ -45,9 +45,25 @@ class InvestmentAdvisor(tk.Tk):
         self._tile_widgets = {}
         self._current_chart_fig = None
         self._cal_events = []
+        self._period_buttons = {}
         self._build_ui()
         self._start_scheduler()
         self._check_alerts()
+
+    # ── Mousewheel scrolling helper ───────────────────────────
+    def _bind_mousewheel(self, area_widget, scroll_target):
+        """Bind mousewheel scrolling when cursor enters area_widget."""
+        def _on_mousewheel(event):
+            scroll_target.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _on_enter(event):
+            area_widget.bind_all("<MouseWheel>", _on_mousewheel)
+
+        def _on_leave(event):
+            area_widget.unbind_all("<MouseWheel>")
+
+        area_widget.bind("<Enter>", _on_enter)
+        area_widget.bind("<Leave>", _on_leave)
 
     # ── UI scaffold ─────────────────────────────────────────
     def _build_ui(self):
@@ -181,10 +197,9 @@ class InvestmentAdvisor(tk.Tk):
             "<Configure>",
             lambda e: self._tiles_canvas.itemconfig(
                 self._tiles_win, width=e.width))
-        self._tiles_canvas.bind(
-            "<MouseWheel>",
-            lambda e: self._tiles_canvas.yview_scroll(
-                int(-1 * (e.delta / 120)), "units"))
+
+        # Mousewheel scrolling for tiles area
+        self._bind_mousewheel(self._tiles_canvas, self._tiles_canvas)
 
         self._populate_tile_placeholders(self.config_data.get("instruments", []))
 
@@ -360,6 +375,9 @@ class InvestmentAdvisor(tk.Tk):
         vsb.pack(side="right", fill="y")
         self.port_tree.pack(fill="both", expand=True)
 
+        # Mousewheel scrolling for portfolio tree
+        self._bind_mousewheel(self.port_tree, self.port_tree)
+
         # Pasek podsumowania
         bot = tk.Frame(self.tab_portfolio, bg=BG2,
                        highlightbackground=GRAY, highlightthickness=1)
@@ -531,14 +549,15 @@ class InvestmentAdvisor(tk.Tk):
         tree_cont.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
         cols = ("Data", "Godz.", "Kraj", "Wydarzenie",
-                "Wpływ", "Prognoza", "Poprz.")
+                "Znaczenie", "Wpływ", "Prognoza", "Poprz.")
         self.cal_tree = ttk.Treeview(tree_cont, columns=cols, show="headings")
 
         col_cfg = [
             ("Data",       90,  "center"),
             ("Godz.",      55,  "center"),
             ("Kraj",       55,  "center"),
-            ("Wydarzenie", 340, "w"),
+            ("Wydarzenie", 250, "w"),
+            ("Znaczenie",  280, "w"),
             ("Wpływ",      105, "center"),
             ("Prognoza",   80,  "center"),
             ("Poprz.",     80,  "center"),
@@ -560,6 +579,9 @@ class InvestmentAdvisor(tk.Tk):
         vsb.pack(side="right", fill="y")
         hsb.pack(side="bottom", fill="x")
         self.cal_tree.pack(fill="both", expand=True)
+
+        # Mousewheel scrolling for calendar tree
+        self._bind_mousewheel(self.cal_tree, self.cal_tree)
 
         self._load_calendar()
 
@@ -600,6 +622,7 @@ class InvestmentAdvisor(tk.Tk):
                 e["time"],
                 f"{e['flag']} {e['country']}",
                 e["event"],
+                e.get("significance", get_event_significance(e["event"])),
                 f"{e['impact_icon']} {e['impact_label']}",
                 e["forecast"],
                 e["previous"],
@@ -624,13 +647,19 @@ class InvestmentAdvisor(tk.Tk):
 
         tk.Label(ctrl, text="Okres:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).pack(side="left", padx=(12, 0))
+
         self.chart_period_var = tk.StringVar(value="1M")
+        self._period_buttons = {}
         for p in ["1T", "5T", "1M", "3M", "6M", "1R", "2R"]:
-            tk.Radiobutton(
-                ctrl, text=p, variable=self.chart_period_var, value=p,
-                bg=BG, fg=FG, selectcolor=ACCENT, activebackground=BG,
-                font=("Segoe UI", 9)
-            ).pack(side="left", padx=2)
+            btn = tk.Button(
+                ctrl, text=p, bg=BTN_BG, fg=FG,
+                font=("Segoe UI", 9, "bold"), relief="flat",
+                cursor="hand2", padx=8, pady=2,
+                command=lambda period=p: self._select_period(period))
+            btn.pack(side="left", padx=2)
+            self._period_buttons[p] = btn
+        # Highlight default
+        self._select_period("1M")
 
         tk.Label(ctrl, text="Porównaj:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).pack(side="left", padx=(12, 0))
@@ -657,6 +686,15 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_container.pack(
             fill="both", expand=True, padx=12, pady=(0, 8))
 
+    def _select_period(self, period):
+        """Select a time period and visually highlight the active button."""
+        self.chart_period_var.set(period)
+        for p, btn in self._period_buttons.items():
+            if p == period:
+                btn.configure(bg=ACCENT, fg=BG)
+            else:
+                btn.configure(bg=BTN_BG, fg=FG)
+
     def _draw_chart(self):
         if self._current_chart_fig:
             import matplotlib.pyplot as plt
@@ -669,10 +707,17 @@ class InvestmentAdvisor(tk.Tk):
         symbol  = self.chart_symbol_var.get()
         period  = self.chart_period_var.get()
         compare = [self.compare_var.get()] if self.compare_var.get() else None
+
+        # Build sources map from instruments config
+        sources_map = {}
+        for inst in self.config_data.get("instruments", []):
+            sources_map[inst["symbol"]] = inst.get("source", "yfinance")
+
         try:
             canvas, fig = create_price_chart(
                 self.chart_container, symbol, period, compare,
-                show_ma=self.show_ma_var.get())
+                show_ma=self.show_ma_var.get(),
+                sources_map=sources_map)
             self._current_chart_fig = fig
         except Exception as exc:
             tk.Label(self.chart_container, text=f"Błąd wykresu: {exc}",
@@ -712,8 +757,16 @@ class InvestmentAdvisor(tk.Tk):
             self.history_tree.heading(col, text=col)
             self.history_tree.column(
                 col, width=140 if col == "Data" else 90)
+
+        hist_vsb = ttk.Scrollbar(list_frame, orient="vertical",
+                                  command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=hist_vsb.set)
+        hist_vsb.pack(side="right", fill="y")
         self.history_tree.pack(fill="both", expand=True)
         self.history_tree.bind("<<TreeviewSelect>>", self._on_report_select)
+
+        # Mousewheel scrolling for history tree
+        self._bind_mousewheel(self.history_tree, self.history_tree)
 
         preview_frame = tk.Frame(paned, bg=BG)
         paned.add(preview_frame, minsize=400)
@@ -757,18 +810,22 @@ class InvestmentAdvisor(tk.Tk):
     # SETTINGS TAB
     # ═══════════════════════════════════════
     def _build_settings_tab(self):
-        canvas = tk.Canvas(self.tab_settings, bg=BG, highlightthickness=0)
+        self._settings_canvas = tk.Canvas(
+            self.tab_settings, bg=BG, highlightthickness=0)
         scroll = ttk.Scrollbar(self.tab_settings, orient="vertical",
-                                command=canvas.yview)
-        canvas.configure(yscrollcommand=scroll.set)
+                                command=self._settings_canvas.yview)
+        self._settings_canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+        self._settings_canvas.pack(side="left", fill="both", expand=True)
 
-        inner = tk.Frame(canvas, bg=BG)
-        canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner = tk.Frame(self._settings_canvas, bg=BG)
+        self._settings_canvas.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>",
-                   lambda e: canvas.configure(
-                       scrollregion=canvas.bbox("all")))
+                   lambda e: self._settings_canvas.configure(
+                       scrollregion=self._settings_canvas.bbox("all")))
+
+        # Mousewheel scrolling for settings
+        self._bind_mousewheel(self._settings_canvas, self._settings_canvas)
 
         def section(text):
             tk.Label(inner, text=text, bg=BG, fg=ACCENT,
@@ -795,9 +852,12 @@ class InvestmentAdvisor(tk.Tk):
             value=self.config_data["api_keys"].get("openai", ""))
         self.v_anthropic = tk.StringVar(
             value=self.config_data["api_keys"].get("anthropic", ""))
+        self.v_openrouter = tk.StringVar(
+            value=self.config_data["api_keys"].get("openrouter", ""))
         entry_row(inner, "NewsAPI:", self.v_newsapi, show="*")
         entry_row(inner, "OpenAI API Key:", self.v_openai, show="*")
         entry_row(inner, "Anthropic API Key:", self.v_anthropic, show="*")
+        entry_row(inner, "OpenRouter API Key:", self.v_openrouter, show="*")
 
         section("🤖 Model AI")
         prov_frame = tk.Frame(inner, bg=BG)
@@ -807,9 +867,10 @@ class InvestmentAdvisor(tk.Tk):
                  ).pack(side="left")
         self.v_provider = tk.StringVar(
             value=self.config_data.get("ai_provider", "anthropic"))
-        for p in ["anthropic", "openai"]:
+        for p in ["anthropic", "openai", "openrouter"]:
+            label = p.capitalize() if p != "openrouter" else "OpenRouter"
             tk.Radiobutton(
-                prov_frame, text=p.capitalize(), variable=self.v_provider,
+                prov_frame, text=label, variable=self.v_provider,
                 value=p, bg=BG, fg=FG, selectcolor=ACCENT,
                 activebackground=BG, font=("Segoe UI", 10),
                 command=self._update_model_list
@@ -824,8 +885,14 @@ class InvestmentAdvisor(tk.Tk):
             value=self.config_data.get("ai_model", "claude-opus-4-6"))
         self.model_cb = ttk.Combobox(
             model_frame, textvariable=self.v_model,
-            width=30, state="readonly")
+            width=36)
         self.model_cb.pack(side="left", padx=4)
+
+        # Hint label for editable model field
+        self._model_hint = tk.Label(
+            model_frame, text="", bg=BG, fg=GRAY, font=("Segoe UI", 8))
+        self._model_hint.pack(side="left", padx=8)
+
         self._update_model_list()
 
         section("⏰ Harmonogram")
@@ -972,10 +1039,22 @@ class InvestmentAdvisor(tk.Tk):
         self.source_entries.append((row_frame, var))
 
     def _update_model_list(self):
-        models = get_available_models(self.v_provider.get())
+        provider = self.v_provider.get()
+        models = get_available_models(provider)
         self.model_cb["values"] = models
-        if models:
-            self.v_model.set(models[0])
+        if provider == "anthropic":
+            self.model_cb.configure(state="readonly")
+            self._model_hint.configure(text="")
+            if models and self.v_model.get() not in models:
+                self.v_model.set(models[0])
+        else:
+            self.model_cb.configure(state="normal")
+            self._model_hint.configure(
+                text="Wpisz nazwę lub wybierz z listy")
+            current = self.v_model.get()
+            if not current or current not in models:
+                if models:
+                    self.v_model.set(models[0])
 
     def _reset_prompt(self):
         from config import DEFAULT_CONFIG
@@ -983,9 +1062,10 @@ class InvestmentAdvisor(tk.Tk):
         self.prompt_text.insert("end", DEFAULT_CONFIG["prompt"])
 
     def _save_settings(self):
-        self.config_data["api_keys"]["newsapi"]   = self.v_newsapi.get().strip()
-        self.config_data["api_keys"]["openai"]    = self.v_openai.get().strip()
-        self.config_data["api_keys"]["anthropic"] = self.v_anthropic.get().strip()
+        self.config_data["api_keys"]["newsapi"]     = self.v_newsapi.get().strip()
+        self.config_data["api_keys"]["openai"]      = self.v_openai.get().strip()
+        self.config_data["api_keys"]["anthropic"]    = self.v_anthropic.get().strip()
+        self.config_data["api_keys"]["openrouter"]   = self.v_openrouter.get().strip()
         self.config_data["ai_provider"] = self.v_provider.get()
         self.config_data["ai_model"]    = self.v_model.get()
         self.config_data["schedule"]["enabled"] = self.v_sched_enabled.get()
@@ -1102,17 +1182,57 @@ class InvestmentAdvisor(tk.Tk):
             from fpdf import FPDF
             from datetime import datetime
             pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
             pdf.add_page()
-            pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(0, 10, "Investment Advisor - Raport", ln=True, align="C")
-            pdf.set_font("Helvetica", size=9)
-            pdf.cell(0, 6, datetime.now().strftime("%Y-%m-%d %H:%M"),
+            effective_w = pdf.w - pdf.l_margin - pdf.r_margin
+
+            # Try to register a UTF-8 capable font
+            use_utf8 = False
+            try:
+                windir = os.environ.get("WINDIR", "C:\\Windows")
+                font_path = os.path.join(windir, "Fonts", "arial.ttf")
+                bold_path = os.path.join(windir, "Fonts", "arialbd.ttf")
+                if os.path.exists(font_path):
+                    pdf.add_font("ArialUTF", "", font_path, uni=True)
+                    if os.path.exists(bold_path):
+                        pdf.add_font("ArialUTF", "B", bold_path, uni=True)
+                    use_utf8 = True
+            except Exception:
+                pass
+
+            # Title
+            if use_utf8:
+                pdf.set_font("ArialUTF", "B", 16)
+            else:
+                pdf.set_font("Helvetica", "B", 16)
+            pdf.cell(effective_w, 10, "Investment Advisor - Raport",
+                     ln=True, align="C")
+
+            # Date
+            if use_utf8:
+                pdf.set_font("ArialUTF", "", 9)
+            else:
+                pdf.set_font("Helvetica", size=9)
+            pdf.cell(effective_w, 6,
+                     datetime.now().strftime("%Y-%m-%d %H:%M"),
                      ln=True, align="C")
             pdf.ln(6)
-            pdf.set_font("Helvetica", size=10)
+
+            # Body
+            if use_utf8:
+                pdf.set_font("ArialUTF", "", 10)
+            else:
+                pdf.set_font("Helvetica", size=10)
+
             for line in self.current_analysis.split("\n"):
-                safe = line.encode("latin-1", "replace").decode("latin-1")
-                pdf.multi_cell(0, 5, safe)
+                if not use_utf8:
+                    line = line.encode("latin-1", "replace").decode("latin-1")
+                pdf.set_x(pdf.l_margin)
+                if not line.strip():
+                    pdf.ln(4)
+                else:
+                    pdf.multi_cell(effective_w, 5, line)
+
             os.makedirs("data/reports", exist_ok=True)
             path = (f"data/reports/raport_"
                     f"{datetime.now().strftime('%Y%m%d_%H%M')}.pdf")
