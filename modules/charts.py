@@ -81,7 +81,7 @@ def _fetch_coingecko_chart(coin_id, days):
     return df
 
 
-def _fetch_chart_data(symbol, period, source="yfinance"):
+def fetch_chart_data(symbol, period, source="yfinance"):
     """Fetch chart data from the appropriate source."""
     if source == "coingecko":
         days = COINGECKO_DAYS.get(period, 30)
@@ -126,7 +126,7 @@ def create_price_chart(parent_frame, symbol, period="1M",
 
     # ── Main instrument ──
     try:
-        hist = _fetch_chart_data(symbol, period, source)
+        hist = fetch_chart_data(symbol, period, source)
         if hist is not None and not hist.empty:
             closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
             if not closes.empty:
@@ -171,7 +171,7 @@ def create_price_chart(parent_frame, symbol, period="1M",
                 continue
             try:
                 cmp_source = sources_map.get(sym, "yfinance")
-                h = _fetch_chart_data(sym, period, cmp_source)
+                h = fetch_chart_data(sym, period, cmp_source)
                 if h is not None and not h.empty:
                     c = pd.to_numeric(h["Close"], errors="coerce").dropna()
                     if not c.empty:

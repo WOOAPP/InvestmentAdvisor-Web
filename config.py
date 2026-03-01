@@ -37,6 +37,12 @@ DEFAULT_CONFIG = {
         "konkretnie i rzeczowo. Gdy użytkownik pyta o szczegóły, "
         "odwołuj się do danych z raportu."
     ),
+    "chart_chat_prompt": (
+        "Jesteś asystentem analizy technicznej. Odpowiadaj po polsku, "
+        "konkretnie i rzeczowo. Analizuj wykres instrumentu, który "
+        "aktualnie ogląda użytkownik. Uwzględniaj trend, wsparcia/opory, "
+        "wolumen i średnie kroczące jeśli są dostępne."
+    ),
     "schedule": {
         "enabled": False,
         "times": ["08:00"]

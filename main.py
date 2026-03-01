@@ -18,7 +18,8 @@ from modules.database import (
     save_market_snapshot, get_unseen_alerts, mark_alerts_seen, delete_report,
     add_portfolio_position, get_portfolio_positions, delete_portfolio_position,
 )
-from modules.charts import create_price_chart, create_risk_gauge, extract_risk_level
+from modules.charts import (create_price_chart, create_risk_gauge,
+                            extract_risk_level, fetch_chart_data)
 from modules.scraper import scrape_all
 from modules.calendar_data import fetch_calendar, get_event_significance
 
@@ -48,6 +49,7 @@ class InvestmentAdvisor(tk.Tk):
         self.source_entries = []
         self._tile_widgets = {}
         self._current_chart_fig = None
+        self._chart_chat_history = []
         self._cal_events = []
         self._period_buttons = {}
         self._shutting_down = False
@@ -749,9 +751,54 @@ class InvestmentAdvisor(tk.Tk):
             padx=12, pady=4, command=self._draw_chart
         ).pack(side="left", padx=8)
 
-        self.chart_container = tk.Frame(self.tab_charts, bg=BG)
-        self.chart_container.pack(
-            fill="both", expand=True, padx=12, pady=(0, 8))
+        # ── PanedWindow: chart (top) + chat (bottom) ──
+        paned = tk.PanedWindow(self.tab_charts, orient="vertical", bg=BG,
+                                sashwidth=5, sashrelief="flat")
+        paned.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        self.chart_container = tk.Frame(paned, bg=BG)
+        paned.add(self.chart_container, minsize=200)
+
+        # ── Chart chat panel ──
+        chart_chat_frame = tk.LabelFrame(
+            paned, text=" Czat o wykresie ", bg=BG, fg=ACCENT,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            highlightbackground=GRAY, highlightthickness=1)
+        paned.add(chart_chat_frame, minsize=100)
+
+        self.chart_chat_display = scrolledtext.ScrolledText(
+            chart_chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled",
+            insertbackground=FG, selectbackground=ACCENT, height=6)
+        self.chart_chat_display.pack(fill="both", expand=True, padx=4, pady=(4, 2))
+        self.chart_chat_display.tag_configure("user", foreground=ACCENT)
+        self.chart_chat_display.tag_configure("assistant", foreground=GREEN)
+        self.chart_chat_display.tag_configure("label", foreground=YELLOW,
+                                               font=("Segoe UI", 9, "bold"))
+        self.chart_chat_display.tag_configure("error", foreground=RED)
+
+        chart_input_bar = tk.Frame(chart_chat_frame, bg=BG)
+        chart_input_bar.pack(fill="x", padx=4, pady=(0, 4))
+
+        self.chart_chat_entry = tk.Entry(
+            chart_input_bar, bg=BG2, fg=FG, insertbackground=FG,
+            relief="flat", font=("Segoe UI", 10),
+            highlightbackground=GRAY, highlightthickness=1)
+        self.chart_chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.chart_chat_entry.bind("<Return>",
+                                    lambda e: self._send_chart_chat_message())
+
+        self.chart_chat_send_btn = tk.Button(
+            chart_input_bar, text="Wyślij", bg=ACCENT, fg=BG,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            cursor="hand2", padx=12, command=self._send_chart_chat_message)
+        self.chart_chat_send_btn.pack(side="left")
+
+        tk.Button(
+            chart_input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=8, command=self._clear_chart_chat
+        ).pack(side="left", padx=(4, 0))
 
     def _select_period(self, period):
         """Select a time period and visually highlight the active button."""
@@ -793,6 +840,115 @@ class InvestmentAdvisor(tk.Tk):
         symbols = [i["symbol"] for i in self.config_data.get("instruments", [])]
         self.chart_sym_cb["values"] = symbols
         self.compare_cb["values"] = [""] + symbols
+
+    # ── Chart chat helpers ─────────────────────────────────────
+    def _append_chart_chat(self, label, text, tag):
+        self.chart_chat_display.configure(state="normal")
+        self.chart_chat_display.insert("end", f"{label}\n", "label")
+        self.chart_chat_display.insert("end", f"{text}\n\n", tag)
+        self.chart_chat_display.configure(state="disabled")
+        self.chart_chat_display.see("end")
+
+    def _clear_chart_chat(self):
+        self._chart_chat_history.clear()
+        self.chart_chat_display.configure(state="normal")
+        self.chart_chat_display.delete("1.0", "end")
+        self.chart_chat_display.configure(state="disabled")
+
+    def _get_chart_context(self):
+        """Build a text summary of the currently displayed chart."""
+        symbol = self.chart_symbol_var.get()
+        period = self.chart_period_var.get()
+        compare = self.compare_var.get()
+
+        # Find instrument name from config
+        inst_name = symbol
+        source = "yfinance"
+        for inst in self.config_data.get("instruments", []):
+            if inst["symbol"] == symbol:
+                inst_name = inst.get("name", symbol)
+                source = inst.get("source", "yfinance")
+                break
+
+        period_names = {
+            "1T": "1 dzień", "5T": "5 dni", "1M": "1 miesiąc",
+            "3M": "3 miesiące", "6M": "6 miesięcy",
+            "1R": "1 rok", "2R": "2 lata",
+        }
+        period_label = period_names.get(period, period)
+
+        lines = [
+            f"Instrument: {inst_name} ({symbol})",
+            f"Okres wykresu: {period_label}",
+            f"Średnie kroczące: {'MA20/MA50 włączone' if self.show_ma_var.get() else 'wyłączone'}",
+        ]
+        if compare:
+            lines.append(f"Porównanie z: {compare}")
+
+        # Fetch latest price data for context
+        try:
+            hist = fetch_chart_data(symbol, period, source)
+            if hist is not None and not hist.empty:
+                closes = hist["Close"].dropna()
+                if not closes.empty:
+                    last = closes.iloc[-1]
+                    first = closes.iloc[0]
+                    change_pct = ((last - first) / first) * 100
+                    high = closes.max()
+                    low = closes.min()
+                    lines.append(f"Cena aktualna: {last:.2f}")
+                    lines.append(f"Cena na początku okresu: {first:.2f}")
+                    lines.append(f"Zmiana w okresie: {change_pct:+.2f}%")
+                    lines.append(f"Najwyższa cena: {high:.2f}")
+                    lines.append(f"Najniższa cena: {low:.2f}")
+                    if len(closes) >= 20:
+                        ma20 = closes.rolling(20).mean().iloc[-1]
+                        lines.append(f"MA20: {ma20:.2f}")
+                    if len(closes) >= 50:
+                        ma50 = closes.rolling(50).mean().iloc[-1]
+                        lines.append(f"MA50: {ma50:.2f}")
+                    if "Volume" in hist.columns:
+                        avg_vol = hist["Volume"].mean()
+                        if avg_vol > 0:
+                            lines.append(f"Średni wolumen: {avg_vol:,.0f}")
+        except Exception:
+            lines.append("(Nie udało się pobrać danych cenowych)")
+
+        return "\n".join(lines)
+
+    def _send_chart_chat_message(self):
+        msg = self.chart_chat_entry.get().strip()
+        if not msg:
+            return
+        self.chart_chat_entry.delete(0, "end")
+        self._append_chart_chat("Ty:", msg, "user")
+
+        self._chart_chat_history.append({"role": "user", "content": msg})
+        self.chart_chat_send_btn.configure(state="disabled", text="…")
+
+        def _worker():
+            system = self.config_data.get("chart_chat_prompt", "")
+            if not system:
+                system = "Jesteś asystentem analizy technicznej. Odpowiadaj po polsku."
+            system += "\n"
+
+            chart_ctx = self._get_chart_context()
+            system += (
+                "\nPoniżej znajdują się dane aktualnie wyświetlanego wykresu.\n\n"
+                f"--- WYKRES ---\n{chart_ctx}\n--- KONIEC ---"
+            )
+
+            reply = run_chat(
+                self.config_data, list(self._chart_chat_history), system)
+            self._chart_chat_history.append(
+                {"role": "assistant", "content": reply})
+
+            self.after(0, lambda: self._append_chart_chat(
+                "AI:", reply, "assistant"))
+            self.after(0, lambda: self.chart_chat_send_btn.configure(
+                state="normal", text="Wyślij"))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ═══════════════════════════════════════
     # HISTORY TAB
@@ -1128,6 +1284,27 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_chat_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
+        section("📊 Prompt czatu wykresów")
+        tk.Label(
+            inner,
+            text="Instrukcja systemowa dla czatu na zakładce Wykresy. "
+                 "Dane wykresu (symbol, okres, ceny) są dołączane automatycznie.",
+            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+        self.chart_chat_prompt_text = scrolledtext.ScrolledText(
+            inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=5,
+            relief="flat", wrap="word", insertbackground=FG)
+        self.chart_chat_prompt_text.pack(fill="x", padx=16, pady=4)
+        self.chart_chat_prompt_text.insert(
+            "end", self.config_data.get("chart_chat_prompt", ""))
+
+        tk.Button(
+            inner, text="🔄 Przywróć domyślny prompt czatu wykresów",
+            bg=BTN_BG, fg=YELLOW,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            command=self._reset_chart_chat_prompt
+        ).pack(anchor="w", padx=16, pady=2)
+
         tk.Button(
             inner, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
             font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
@@ -1271,6 +1448,11 @@ class InvestmentAdvisor(tk.Tk):
         self.chat_prompt_text.delete("1.0", "end")
         self.chat_prompt_text.insert("end", DEFAULT_CONFIG["chat_prompt"])
 
+    def _reset_chart_chat_prompt(self):
+        from config import DEFAULT_CONFIG
+        self.chart_chat_prompt_text.delete("1.0", "end")
+        self.chart_chat_prompt_text.insert("end", DEFAULT_CONFIG["chart_chat_prompt"])
+
     def _save_settings(self):
         self.config_data["api_keys"]["newsapi"]     = self.v_newsapi.get().strip()
         self.config_data["api_keys"]["openai"]      = self.v_openai.get().strip()
@@ -1287,6 +1469,7 @@ class InvestmentAdvisor(tk.Tk):
             t.strip() for t in self.v_times.get().split(",") if t.strip()]
         self.config_data["prompt"] = self.prompt_text.get("1.0", "end").strip()
         self.config_data["chat_prompt"] = self.chat_prompt_text.get("1.0", "end").strip()
+        self.config_data["chart_chat_prompt"] = self.chart_chat_prompt_text.get("1.0", "end").strip()
 
         instruments = []
         for _, v_sym, v_name, v_cat, v_src in self.inst_entries:
