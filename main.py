@@ -12,11 +12,13 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(__file__))
 from config import load_config, save_config, mask_key, get_api_key
 from modules.market_data import get_all_instruments, get_news, format_market_summary
-from modules.ai_engine import run_analysis, run_chat, get_available_models
+from modules.ai_engine import (run_analysis, run_chat, get_available_models,
+                               generate_instrument_profile)
 from modules.database import (
     save_report, get_reports, get_report_by_id,
     save_market_snapshot, get_unseen_alerts, mark_alerts_seen, delete_report,
     add_portfolio_position, get_portfolio_positions, delete_portfolio_position,
+    get_instrument_profile, save_instrument_profile,
 )
 from modules.charts import (create_price_chart, create_risk_gauge,
                             extract_risk_level, fetch_chart_data)
@@ -57,6 +59,8 @@ class InvestmentAdvisor(tk.Tk):
         self._chart_chat_history = []
         self._cal_events = []
         self._period_buttons = {}
+        self._click_pending = None   # after-id for single/double click
+        self._click_symbol = None
         self._shutting_down = False
         self._busy_buttons = []   # buttons to lock during analysis/fetch
         self._spinner = None      # BusySpinner instance (created after UI build)
@@ -332,6 +336,7 @@ class InvestmentAdvisor(tk.Tk):
                 "change_lbl": change_lbl,
                 "spark":      spark,
             }
+            self._bind_tile_events(tile, symbol)
 
     def _update_price_tiles(self, market_data):
         for symbol, w in self._tile_widgets.items():
@@ -387,6 +392,233 @@ class InvestmentAdvisor(tk.Tk):
             y = (h - margin) - int((v - mn) / rng * (h - 2 * margin))
             pts.extend([x, y])
         canvas_w.create_line(pts, fill=color, width=1.5, smooth=True)
+
+    # ── Tile click handling (single → profile, double → charts) ──
+
+    def _bind_tile_events(self, widget, symbol):
+        """Bind click + cursor on tile and all its children."""
+        handler = lambda e, s=symbol: self._on_tile_click(s)
+        widget.bind("<Button-1>", handler)
+        try:
+            widget.configure(cursor="hand2")
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            self._bind_tile_events(child, symbol)
+
+    def _on_tile_click(self, symbol):
+        """Differentiate single-click (profile) from double-click (chart)."""
+        if self._click_pending and self._click_symbol == symbol:
+            # Second click on same tile → double-click
+            self.after_cancel(self._click_pending)
+            self._click_pending = None
+            self._click_symbol = None
+            self._navigate_to_chart(symbol)
+        else:
+            if self._click_pending:
+                self.after_cancel(self._click_pending)
+            self._click_symbol = symbol
+            self._click_pending = self.after(
+                300, lambda: self._on_tile_single_click(symbol))
+
+    def _on_tile_single_click(self, symbol):
+        self._click_pending = None
+        self._click_symbol = None
+        self._open_instrument_profile(symbol)
+
+    def _navigate_to_chart(self, symbol):
+        """CEL 3: Switch to Charts tab, set instrument and draw 6M chart."""
+        self.notebook.select(self.tab_charts)
+        self.chart_symbol_var.set(symbol)
+        self._select_period("6M")
+        self._draw_chart()
+
+    # ── Instrument profile window (CEL 2) ────────────────────
+
+    def _open_instrument_profile(self, symbol):
+        """Open a Toplevel with static AI profile + dynamic trend analysis."""
+        inst = None
+        for i in self.config_data.get("instruments", []):
+            if i["symbol"] == symbol:
+                inst = i
+                break
+        if not inst:
+            return
+
+        name = inst.get("name", symbol)
+        category = inst.get("category", "Inne")
+        source = inst.get("source", "yfinance")
+
+        win = tk.Toplevel(self)
+        win.title(f"Profil: {name} ({symbol})")
+        win.geometry("620x580")
+        win.configure(bg=BG)
+        win.transient(self)
+
+        # Header
+        tk.Label(win, text=name, bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 14, "bold")
+                 ).pack(padx=16, pady=(12, 0), anchor="w")
+        tk.Label(win, text=f"{symbol}  •  {category}  •  {source}",
+                 bg=BG, fg=GRAY, font=("Segoe UI", 9)
+                 ).pack(padx=16, pady=(0, 8), anchor="w")
+
+        # ── Section A: AI Profile (persistent cache) ──
+        tk.Label(win, text="Profil instrumentu (AI)", bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 11, "bold")
+                 ).pack(padx=16, pady=(8, 2), anchor="w")
+        tk.Frame(win, bg=GRAY, height=1).pack(fill="x", padx=16, pady=(0, 4))
+
+        profile_display = scrolledtext.ScrolledText(
+            win, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled", height=10)
+        profile_display.pack(fill="x", padx=16, pady=(0, 4))
+        setup_markdown_tags(profile_display)
+
+        btn_frame = tk.Frame(win, bg=BG)
+        btn_frame.pack(fill="x", padx=16, pady=(0, 8))
+
+        profile_status = tk.Label(btn_frame, text="", bg=BG, fg=GRAY,
+                                  font=("Segoe UI", 8))
+        profile_status.pack(side="right")
+
+        refresh_btn = tk.Button(
+            btn_frame, text="🔄 Odśwież opis (AI)", bg=BTN_BG, fg=YELLOW,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=8, pady=2)
+        refresh_btn.pack(side="left")
+
+        # ── Section B: Dynamic trend (no AI) ──
+        tk.Label(win, text="Aktualna sytuacja", bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 11, "bold")
+                 ).pack(padx=16, pady=(8, 2), anchor="w")
+        tk.Frame(win, bg=GRAY, height=1).pack(fill="x", padx=16, pady=(0, 4))
+
+        trend_display = scrolledtext.ScrolledText(
+            win, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled", height=8)
+        trend_display.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+
+        # ── Helpers ──
+        def _set_text(widget, text, use_markdown=False):
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            if use_markdown:
+                insert_markdown(widget, text)
+            else:
+                widget.insert("end", text)
+            widget.configure(state="disabled")
+
+        # ── Background loader ──
+        def _load():
+            # A) cached AI profile
+            cached = get_instrument_profile(symbol)
+            if cached:
+                self.after(0, lambda: _set_text(
+                    profile_display, cached[0], use_markdown=True))
+                self.after(0, lambda: profile_status.configure(
+                    text=f"Wygenerowano: {cached[1]}"))
+            else:
+                self.after(0, lambda: _set_text(
+                    profile_display,
+                    "Brak profilu. Kliknij \"Odśwież opis (AI)\" "
+                    "aby wygenerować."))
+
+            # B) dynamic trend (no AI tokens)
+            trend = self._compute_trend_summary(symbol, source)
+            self.after(0, lambda: _set_text(trend_display, trend))
+
+        # ── AI refresh ──
+        def _refresh_ai():
+            refresh_btn.configure(state="disabled", text="⏳ Generuję…")
+
+            def _gen():
+                try:
+                    text = generate_instrument_profile(
+                        self.config_data, symbol, name, category)
+                    save_instrument_profile(symbol, text)
+                    self.after(0, lambda: _set_text(
+                        profile_display, text, use_markdown=True))
+                    self.after(0, lambda: profile_status.configure(
+                        text="Właśnie wygenerowano"))
+                except Exception as exc:
+                    self.after(0, lambda: _set_text(
+                        profile_display, f"Błąd generowania: {exc}"))
+                finally:
+                    self.after(0, lambda: refresh_btn.configure(
+                        state="normal", text="🔄 Odśwież opis (AI)"))
+
+            threading.Thread(target=_gen, daemon=True).start()
+
+        refresh_btn.configure(command=_refresh_ai)
+        threading.Thread(target=_load, daemon=True).start()
+
+    def _compute_trend_summary(self, symbol, source):
+        """Compute trend summary using heuristics — no AI tokens."""
+        import pandas as pd
+        lines = ["Zmiana ceny:\n"]
+
+        for period, label in [("1T", "1 dzień"), ("5T", "5 dni"),
+                               ("1M", "1 miesiąc")]:
+            try:
+                hist = fetch_chart_data(symbol, period, source)
+                if hist is None or hist.empty:
+                    lines.append(f"  {label}: brak danych")
+                    continue
+                closes = pd.to_numeric(
+                    hist["Close"], errors="coerce").dropna()
+                if len(closes) < 2:
+                    lines.append(f"  {label}: za mało danych")
+                    continue
+
+                first = float(closes.iloc[0])
+                last = float(closes.iloc[-1])
+                change_pct = ((last - first) / first * 100) if first else 0
+
+                if change_pct > 0.1:
+                    direction = "↑"
+                elif change_pct < -0.1:
+                    direction = "↓"
+                else:
+                    direction = "→"
+
+                mean = float(closes.mean())
+                vol = float(closes.std() / mean * 100) if mean else 0
+                vol_label = ("niska" if vol < 1
+                             else "średnia" if vol < 3
+                             else "wysoka")
+
+                high = float(closes.max())
+                low = float(closes.min())
+
+                lines.append(
+                    f"  {label}:  {direction} {change_pct:+.2f}%  |  "
+                    f"zmienność: {vol_label} ({vol:.1f}%)  |  "
+                    f"zakres: {low:.2f} – {high:.2f}")
+            except Exception:
+                lines.append(f"  {label}: błąd pobierania danych")
+
+        # Momentum from 1M data
+        try:
+            hist = fetch_chart_data(symbol, "1M", source)
+            if hist is not None and not hist.empty:
+                import pandas as pd
+                closes = pd.to_numeric(
+                    hist["Close"], errors="coerce").dropna()
+                if len(closes) >= 10:
+                    recent = float(closes.iloc[-5:].mean())
+                    earlier = float(closes.iloc[-10:-5].mean())
+                    if recent > earlier * 1.005:
+                        mom = "rosnące"
+                    elif recent < earlier * 0.995:
+                        mom = "malejące"
+                    else:
+                        mom = "neutralne"
+                    lines.append(f"\n  Momentum (1M): {mom}")
+        except Exception:
+            pass
+
+        return "\n".join(lines) if lines else "Brak danych do analizy trendu."
 
     # ═══════════════════════════════════════
     # PORTFOLIO TAB
@@ -1412,6 +1644,17 @@ class InvestmentAdvisor(tk.Tk):
             values=["yfinance", "coingecko", "stooq"]
         ).pack(side="left", padx=(0, 4))
 
+        tk.Button(row_frame, text="↑", bg=BTN_BG, fg=FG,
+                  font=("Segoe UI", 9), relief="flat", cursor="hand2",
+                  padx=4,
+                  command=lambda rf=row_frame: self._move_instrument(rf, -1)
+                  ).pack(side="left", padx=(4, 0))
+        tk.Button(row_frame, text="↓", bg=BTN_BG, fg=FG,
+                  font=("Segoe UI", 9), relief="flat", cursor="hand2",
+                  padx=4,
+                  command=lambda rf=row_frame: self._move_instrument(rf, 1)
+                  ).pack(side="left", padx=(0, 2))
+
         def remove():
             self.inst_entries.remove((row_frame, v_sym, v_name, v_cat, v_src))
             row_frame.destroy()
@@ -1420,6 +1663,29 @@ class InvestmentAdvisor(tk.Tk):
                   font=("Segoe UI", 9), relief="flat", cursor="hand2",
                   padx=6, command=remove).pack(side="left")
         self.inst_entries.append((row_frame, v_sym, v_name, v_cat, v_src))
+
+    def _move_instrument(self, row_frame, direction):
+        """Move instrument row up (-1) or down (+1) in the list."""
+        idx = None
+        for i, entry in enumerate(self.inst_entries):
+            if entry[0] is row_frame:
+                idx = i
+                break
+        if idx is None:
+            return
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(self.inst_entries):
+            return
+        self.inst_entries[idx], self.inst_entries[new_idx] = \
+            self.inst_entries[new_idx], self.inst_entries[idx]
+        self._repack_instruments()
+
+    def _repack_instruments(self):
+        """Repack instrument rows in current list order."""
+        for entry in self.inst_entries:
+            entry[0].pack_forget()
+        for entry in self.inst_entries:
+            entry[0].pack(fill="x", pady=2)
 
     def _add_source_row(self, url=""):
         row_frame = tk.Frame(self.sources_frame, bg=BG)

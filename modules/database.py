@@ -50,6 +50,13 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS instrument_profiles (
+            symbol TEXT PRIMARY KEY,
+            profile_text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -181,6 +188,31 @@ def delete_portfolio_position(position_id):
     c.execute("DELETE FROM portfolio WHERE id = ?", (position_id,))
     conn.commit()
     conn.close()
+
+# ── INSTRUMENT PROFILES ──
+
+def get_instrument_profile(symbol):
+    """Zwraca (profile_text, created_at) lub None."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT profile_text, created_at FROM instrument_profiles WHERE symbol = ?",
+        (symbol,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+
+def save_instrument_profile(symbol, profile_text):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT OR REPLACE INTO instrument_profiles (symbol, profile_text, created_at)
+        VALUES (?, ?, ?)
+    """, (symbol, profile_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
 
 # Inicjalizacja przy imporcie
 init_db()
