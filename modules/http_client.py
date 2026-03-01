@@ -5,6 +5,7 @@ Używany przez market_data, calendar_data, charts — wszędzie poza scraperem
 """
 
 import logging
+import re
 import time
 import requests
 from requests.adapters import HTTPAdapter
@@ -23,6 +24,23 @@ HEADERS = {
         "Chrome/120.0.0.0 Safari/537.36"
     )
 }
+
+# Patterns to mask in URLs before logging
+_SENSITIVE_PARAMS = re.compile(
+    r"((?:apiKey|api_key|key|token|secret|password|access_token)"
+    r"=)([^&\s]+)",
+    re.IGNORECASE,
+)
+
+
+def _mask_url(url: str) -> str:
+    """Replace sensitive query params in URL with masked version for logs."""
+    def _replacer(m):
+        val = m.group(2)
+        if len(val) <= 6:
+            return m.group(1) + "***"
+        return m.group(1) + val[:4] + "***"
+    return _SENSITIVE_PARAMS.sub(_replacer, url)
 
 
 def _build_session() -> requests.Session:
@@ -64,5 +82,10 @@ def safe_get(url: str, timeout=DEFAULT_TIMEOUT, **kwargs) -> requests.Response:
         resp.raise_for_status()
         return resp
     except requests.RequestException as exc:
-        logger.error("HTTP GET %s nie powiodło się: %s", url, exc)
+        safe_url = _mask_url(url)
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status in (401, 403):
+            logger.warning("HTTP %d dla %s", status, safe_url)
+        else:
+            logger.error("HTTP GET %s nie powiodło się: %s", safe_url, exc)
         raise

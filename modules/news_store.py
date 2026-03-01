@@ -8,6 +8,7 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 
+import requests
 from modules.http_client import safe_get
 
 logger = logging.getLogger(__name__)
@@ -93,11 +94,19 @@ def _normalize_article(article: dict, window: str) -> dict:
 
 
 # ── Fetch from NewsAPI with time windows ────────────────────────────
+
+class NewsAuthError(Exception):
+    """Raised when NewsAPI returns 401/403 — bad key or plan limit."""
+
+
 def fetch_news_window(api_key: str, window: str, days: int,
                       query: str = "geopolitics economy markets finance",
                       language: str = "en",
                       page_size: int = 30) -> list[dict]:
-    """Fetch news for a single time window. Returns normalized articles."""
+    """Fetch news for a single time window. Returns normalized articles.
+
+    Raises NewsAuthError on 401/403 so callers can fail fast.
+    """
     if not api_key:
         return []
     now = datetime.utcnow()
@@ -118,18 +127,34 @@ def fetch_news_window(api_key: str, window: str, days: int,
                 continue
             articles.append(_normalize_article(a, window))
         return articles
+    except requests.HTTPError as e:
+        status = getattr(e.response, "status_code", None)
+        if status in (401, 403):
+            logger.warning("NewsAPI %d (window=%s) — sprawdź klucz API",
+                           status, window)
+            raise NewsAuthError(f"NewsAPI HTTP {status}") from e
+        logger.warning("NewsAPI błąd (window=%s): %s", window, e)
+        return []
     except Exception as e:
-        logger.error("Błąd pobierania newsów (window=%s): %s", window, e)
+        logger.warning("Błąd pobierania newsów (window=%s): %s", window, e)
         return []
 
 
 def fetch_all_windows(api_key: str, **kwargs) -> list[dict]:
-    """Fetch news for all time windows, deduplicate by hash."""
-    seen_hashes = set()
-    all_articles = []
+    """Fetch news for all time windows, deduplicate by hash.
+
+    Fail-fast: if the first window returns 401/403 (bad key), skip the rest.
+    """
+    seen_hashes: set[str] = set()
+    all_articles: list[dict] = []
     # Fetch shortest window first (most recent) → they get priority
     for window, days in sorted(WINDOWS.items(), key=lambda x: x[1]):
-        articles = fetch_news_window(api_key, window, days, **kwargs)
+        try:
+            articles = fetch_news_window(api_key, window, days, **kwargs)
+        except NewsAuthError:
+            logger.warning("Klucz NewsAPI nieprawidłowy lub plan nie obsługuje "
+                           "okna %s — pomijam pozostałe okna", window)
+            break
         for art in articles:
             if art["hash"] not in seen_hashes:
                 seen_hashes.add(art["hash"])
