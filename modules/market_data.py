@@ -30,6 +30,7 @@ def get_yfinance_data(symbol, name=""):
             "volume": int(hist["Volume"].iloc[-1]) if "Volume" in hist else 0,
             "high_5d": round(hist["Close"].max(), 4),
             "low_5d": round(hist["Close"].min(), 4),
+            "sparkline": [round(v, 4) for v in hist["Close"].tolist()],
             "source": "yfinance",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
@@ -46,6 +47,14 @@ def get_coingecko_data(coin_id, name=""):
         data = r.json().get(coin_id, {})
         if not data:
             return {"name": name or coin_id, "error": "brak danych CoinGecko"}
+        sparkline = []
+        try:
+            chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+                         f"/market_chart?vs_currency=usd&days=5&interval=daily")
+            cr = requests.get(chart_url, headers=HEADERS, timeout=8)
+            sparkline = [round(p[1], 4) for p in cr.json().get("prices", [])]
+        except Exception:
+            pass
         return {
             "name": name or coin_id,
             "price": data.get("usd", 0),
@@ -54,6 +63,7 @@ def get_coingecko_data(coin_id, name=""):
             "change": 0,
             "high_5d": 0,
             "low_5d": 0,
+            "sparkline": sparkline,
             "source": "coingecko",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
         }

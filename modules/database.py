@@ -40,6 +40,16 @@ def init_db():
             seen INTEGER DEFAULT 0
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT NOT NULL,
+            name TEXT,
+            quantity REAL NOT NULL,
+            buy_price REAL NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -138,6 +148,37 @@ def delete_report(report_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("DELETE FROM reports WHERE id = ?", (report_id,))
+    conn.commit()
+    conn.close()
+
+# ── PORTFOLIO ──
+
+def add_portfolio_position(symbol, name, quantity, buy_price):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO portfolio (symbol, name, quantity, buy_price, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (symbol, name or symbol, float(quantity), float(buy_price),
+          datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
+def get_portfolio_positions():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, symbol, name, quantity, buy_price, created_at
+        FROM portfolio ORDER BY created_at
+    """)
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def delete_portfolio_position(position_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM portfolio WHERE id = ?", (position_id,))
     conn.commit()
     conn.close()
 

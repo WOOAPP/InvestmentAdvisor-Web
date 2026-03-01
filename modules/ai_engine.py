@@ -20,7 +20,7 @@ def run_analysis(config, market_summary, news_list, scraped_text=""):
         f"Data analizy: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
         f"{market_summary}\n"
         f"{news_text}\n"
-        f"{('=== TREŚĆ ZE ŹRÓDEŁ WWW ===\n' + scraped_text) if scraped_text else ''}\n\n"
+        f"{'=== TREŚĆ ZE ŹRÓDEŁ WWW ===' + chr(10) + scraped_text if scraped_text else ''}\n\n"
         f"Na podstawie powyższych danych przeprowadź szczegółową analizę."
     )
 
