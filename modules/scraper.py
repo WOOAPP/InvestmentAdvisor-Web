@@ -91,6 +91,15 @@ def scrape_url(url, max_chars=3000):
         msg = f"[Zbyt wiele przekierowań dla {url}]"
         logger.warning(msg)
         return msg
+    except requests.exceptions.HTTPError as e:
+        status = getattr(e.response, "status_code", None)
+        if status in (401, 403):
+            msg = f"[{url}: dostęp zablokowany ({status}) — paywall/bot protection]"
+            logger.info(msg)
+        else:
+            msg = f"[Błąd HTTP {status} dla {url}]"
+            logger.warning(msg)
+        return msg
     except Exception as e:
         msg = f"[Błąd pobierania {url}: {e}]"
         logger.warning(msg)
