@@ -3,12 +3,15 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 import tkinter as tk
 import yfinance as yf
 import pandas as pd
+import logging
 from datetime import datetime, timedelta
 from modules.http_client import safe_get
+
+logger = logging.getLogger(__name__)
 
 COLORS = {
     "bg":     "#1e1e2e",
@@ -41,6 +44,7 @@ COINGECKO_DAYS = {
     "1R": 365,
     "2R": 730,
 }
+
 
 def _fetch_coingecko_chart(coin_id, days):
     """Fetch historical chart data from CoinGecko API."""
@@ -86,6 +90,61 @@ def fetch_chart_data(symbol, period, source="yfinance"):
         return hist
 
 
+# ── Adaptive helpers ────────────────────────────────────────────────
+
+def _bar_width(hist):
+    """Compute a bar width in days appropriate for the data density."""
+    if len(hist) < 2:
+        return 0.8
+    diffs = pd.Series(hist.index).diff().dropna().dt.total_seconds()
+    if diffs.empty:
+        return 0.8
+    median_gap_days = diffs.median() / 86400
+    return max(median_gap_days * 0.7, 0.0005)
+
+
+def _compute_vol_colors(hist):
+    """Vectorised volume bar coloring — avoids slow row-by-row loop."""
+    if "Open" in hist.columns:
+        up = pd.to_numeric(hist["Close"], errors="coerce").fillna(0) >= \
+             pd.to_numeric(hist["Open"], errors="coerce").fillna(0)
+    else:
+        close = pd.to_numeric(hist["Close"], errors="coerce").fillna(0)
+        up = close >= close.shift(1).fillna(close)
+    return [COLORS["green"] if v else COLORS["red"] for v in up]
+
+
+def _setup_xaxis(ax, period, n_points):
+    """Configure x-axis date formatting and tick density for readability."""
+    if period == "1T":
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, n_points // 8)))
+    elif period == "5T":
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m\n%a"))
+        ax.xaxis.set_major_locator(mdates.DayLocator())
+    elif period in ("1M", "3M"):
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        if period == "1M":
+            ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0))
+        else:
+            ax.xaxis.set_major_locator(mdates.MonthLocator())
+    elif period == "6M":
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator())
+    else:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3 if period == "2R" else 2))
+
+
+def _add_markers_sparse(ax, closes, color):
+    """For very sparse data (≤10 points) add dot markers for visibility."""
+    if len(closes) <= 10:
+        ax.plot(closes.index, closes, "o", color=color, markersize=5,
+                zorder=4)
+
+
+# ── Main chart function ─────────────────────────────────────────────
+
 def create_price_chart(parent_frame, symbol, period="1M",
                        compare_symbols=None, show_ma=True,
                        sources_map=None):
@@ -113,19 +172,23 @@ def create_price_chart(parent_frame, symbol, period="1M",
 
     hist = None
     source = sources_map.get(symbol, "yfinance")
+    n_points = 0
 
     # ── Main instrument ──
     try:
         hist = fetch_chart_data(symbol, period, source)
         if hist is not None and not hist.empty:
             closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+            n_points = len(closes)
             if not closes.empty:
+                plot_data = closes
                 if compare_symbols:
-                    closes = (closes / closes.iloc[0] - 1) * 100
-                ax.plot(closes.index, closes, color=COLORS["blue"],
+                    plot_data = (closes / closes.iloc[0] - 1) * 100
+                ax.plot(plot_data.index, plot_data, color=COLORS["blue"],
                         linewidth=2, label=symbol, zorder=3)
-                ax.fill_between(closes.index, closes, alpha=0.08,
+                ax.fill_between(plot_data.index, plot_data, alpha=0.08,
                                 color=COLORS["blue"])
+                _add_markers_sparse(ax, plot_data, COLORS["blue"])
 
                 # MA20
                 if show_ma and not compare_symbols and len(closes) >= 20:
@@ -176,20 +239,18 @@ def create_price_chart(parent_frame, symbol, period="1M",
         ax.set_ylabel("Cena (USD)", color=COLORS["fg"], fontsize=10)
 
     # ── Volume subplot ──
+    has_volume = False
     if ax_vol is not None and hist is not None and not hist.empty:
         ax_vol.set_facecolor(COLORS["bg"])
-        if "Volume" in hist.columns and hist["Volume"].max() > 0:
-            vol_colors = []
-            for j in range(len(hist)):
-                if "Open" in hist.columns:
-                    up = hist["Close"].iloc[j] >= hist["Open"].iloc[j]
-                else:
-                    up = (j == 0 or
-                          hist["Close"].iloc[j] >= hist["Close"].iloc[j - 1])
-                vol_colors.append(COLORS["green"] if up else COLORS["red"])
-
+        vol_ok = ("Volume" in hist.columns
+                  and pd.to_numeric(hist["Volume"], errors="coerce")
+                  .fillna(0).max() > 0)
+        if vol_ok:
+            has_volume = True
+            vol_colors = _compute_vol_colors(hist)
+            bw = _bar_width(hist)
             ax_vol.bar(hist.index, hist["Volume"],
-                       color=vol_colors, alpha=0.55, width=0.8)
+                       color=vol_colors, alpha=0.55, width=bw)
 
             def _vol_fmt(x, _):
                 if x >= 1e9: return f"{x/1e9:.1f}B"
@@ -205,13 +266,25 @@ def create_price_chart(parent_frame, symbol, period="1M",
             for sp in ["bottom", "left"]:
                 ax_vol.spines[sp].set_color(COLORS["grid"])
             ax_vol.grid(True, color=COLORS["grid"], linewidth=0.3, alpha=0.5)
-            if period in ("1T", "5T"):
-                ax_vol.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
-            else:
-                ax_vol.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
-            ax_vol.tick_params(axis="x", colors=COLORS["fg"], labelsize=8)
-            fig.autofmt_xdate(rotation=35, ha="right")
-            plt.setp(ax.get_xticklabels(), visible=False)
+
+    # ── X-axis formatting (applied consistently to the bottom-most visible axis) ──
+    bottom_ax = ax_vol if (has_volume and ax_vol is not None) else ax
+    _setup_xaxis(bottom_ax, period, n_points)
+    bottom_ax.tick_params(axis="x", colors=COLORS["fg"], labelsize=8)
+
+    # Rotate labels only for longer date strings; short periods stay horizontal
+    if period in ("1T", "5T"):
+        for label in bottom_ax.get_xticklabels():
+            label.set_rotation(0)
+            label.set_ha("center")
+    else:
+        for label in bottom_ax.get_xticklabels():
+            label.set_rotation(30)
+            label.set_ha("right")
+
+    # Hide price-axis x-labels when volume subplot is the bottom axis
+    if has_volume and ax_vol is not None:
+        plt.setp(ax.get_xticklabels(), visible=False)
 
     # ── Main axis styling ──
     ax.tick_params(colors=COLORS["fg"], labelsize=9)
@@ -220,14 +293,6 @@ def create_price_chart(parent_frame, symbol, period="1M",
     for sp in ["bottom", "left"]:
         ax.spines[sp].set_color(COLORS["grid"])
     ax.grid(True, color=COLORS["grid"], linewidth=0.5, alpha=0.7)
-
-    # Date formatting on X axis - DD.MM.YYYY for longer periods, DD.MM for short
-    if compare_symbols or ax_vol is None:
-        if period in ("1T", "5T"):
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
-        else:
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
-        fig.autofmt_xdate(rotation=35, ha="right")
 
     # Y-axis number formatting (e.g. 80,000 instead of 80000)
     if not compare_symbols:

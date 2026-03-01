@@ -811,12 +811,21 @@ class InvestmentAdvisor(tk.Tk):
                 btn.configure(bg=BTN_BG, fg=FG)
 
     def _draw_chart(self):
-        if self._current_chart_fig:
-            plt.close(self._current_chart_fig)
-            self._current_chart_fig = None
+        # 1. Close the matplotlib figure FIRST (before destroying Tk widgets)
+        fig = self._current_chart_fig
+        self._current_chart_fig = None
+        if fig is not None:
+            try:
+                plt.close(fig)
+            except Exception:
+                pass
 
+        # 2. Now safe to destroy Tk children (canvas, toolbar)
         for w in self.chart_container.winfo_children():
-            w.destroy()
+            try:
+                w.destroy()
+            except Exception:
+                pass
 
         symbol  = self.chart_symbol_var.get()
         period  = self.chart_period_var.get()
@@ -834,6 +843,10 @@ class InvestmentAdvisor(tk.Tk):
                 sources_map=sources_map)
             self._current_chart_fig = fig
         except Exception as exc:
+            # Close any partially created figure
+            plt.close("all")
+            import traceback
+            traceback.print_exc()
             tk.Label(self.chart_container, text=f"Błąd wykresu: {exc}",
                      bg=BG, fg=RED, font=("Segoe UI", 11)).pack(pady=20)
 
