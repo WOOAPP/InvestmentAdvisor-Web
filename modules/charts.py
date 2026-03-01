@@ -6,6 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.ticker import FuncFormatter
 import tkinter as tk
 import yfinance as yf
+import requests
 import pandas as pd
 from datetime import datetime, timedelta
 
@@ -31,16 +32,81 @@ PERIOD_MAP = {
     "2R": "2y",
 }
 
+COINGECKO_DAYS = {
+    "1T": 1,
+    "5T": 5,
+    "1M": 30,
+    "3M": 90,
+    "6M": 180,
+    "1R": 365,
+    "2R": 730,
+}
+
+_CG_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
+
+
+def _fetch_coingecko_chart(coin_id, days):
+    """Fetch historical chart data from CoinGecko API."""
+    url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+           f"/market_chart?vs_currency=usd&days={days}")
+    r = requests.get(url, headers=_CG_HEADERS, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+
+    prices = data.get("prices", [])
+    volumes = data.get("total_volumes", [])
+
+    if not prices:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(prices, columns=["timestamp", "Close"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df.set_index("timestamp", inplace=True)
+
+    if volumes:
+        vol_df = pd.DataFrame(volumes, columns=["timestamp", "Volume"])
+        vol_df["timestamp"] = pd.to_datetime(vol_df["timestamp"], unit="ms")
+        vol_df.set_index("timestamp", inplace=True)
+        df = df.join(vol_df, how="left")
+
+    df["Open"] = df["Close"].shift(1)
+    df["Open"].iloc[0] = df["Close"].iloc[0]
+
+    return df
+
+
+def _fetch_chart_data(symbol, period, source="yfinance"):
+    """Fetch chart data from the appropriate source."""
+    if source == "coingecko":
+        days = COINGECKO_DAYS.get(period, 30)
+        return _fetch_coingecko_chart(symbol, days)
+    else:
+        yf_period = PERIOD_MAP.get(period, "1mo")
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period=yf_period)
+        # Strip timezone info for consistent handling
+        if hist.index.tz is not None:
+            hist.index = hist.index.tz_localize(None)
+        return hist
+
 
 def create_price_chart(parent_frame, symbol, period="1M",
-                       compare_symbols=None, show_ma=True):
+                       compare_symbols=None, show_ma=True,
+                       sources_map=None):
     """Creates an enhanced price chart embedded in parent_frame.
 
-    Includes MA20/MA50 overlays, volume subplot (when no comparison),
-    and a dark-themed NavigationToolbar for zooming/panning.
-    Packs the canvas and toolbar into parent_frame internally.
-    Returns (canvas, fig).
+    sources_map: dict mapping symbol -> source ("yfinance" or "coingecko").
+    If None, defaults to yfinance for all symbols.
     """
+    if sources_map is None:
+        sources_map = {}
+
     show_volume = (compare_symbols is None)
 
     if show_volume:
@@ -55,35 +121,43 @@ def create_price_chart(parent_frame, symbol, period="1M",
     fig.patch.set_facecolor(COLORS["bg"])
     ax.set_facecolor(COLORS["bg"])
 
-    yf_period = PERIOD_MAP.get(period, "1mo")
     hist = None
+    source = sources_map.get(symbol, "yfinance")
 
     # ── Main instrument ──
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=yf_period)
-        if not hist.empty:
-            closes = hist["Close"]
-            if compare_symbols:
-                closes = (closes / closes.iloc[0] - 1) * 100
-            ax.plot(hist.index, closes, color=COLORS["blue"],
-                    linewidth=2, label=symbol, zorder=3)
-            ax.fill_between(hist.index, closes, alpha=0.08,
-                            color=COLORS["blue"])
+        hist = _fetch_chart_data(symbol, period, source)
+        if hist is not None and not hist.empty:
+            closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+            if not closes.empty:
+                if compare_symbols:
+                    closes = (closes / closes.iloc[0] - 1) * 100
+                ax.plot(closes.index, closes, color=COLORS["blue"],
+                        linewidth=2, label=symbol, zorder=3)
+                ax.fill_between(closes.index, closes, alpha=0.08,
+                                color=COLORS["blue"])
 
-            # MA20
-            if show_ma and not compare_symbols and len(closes) >= 20:
-                ma20 = closes.rolling(20).mean()
-                ax.plot(hist.index, ma20, color=COLORS["yellow"],
-                        linewidth=1.3, label="MA20", alpha=0.9,
-                        linestyle="--", zorder=2)
+                # MA20
+                if show_ma and not compare_symbols and len(closes) >= 20:
+                    ma20 = closes.rolling(20).mean()
+                    ax.plot(closes.index, ma20, color=COLORS["yellow"],
+                            linewidth=1.3, label="MA20", alpha=0.9,
+                            linestyle="--", zorder=2)
 
-            # MA50
-            if show_ma and not compare_symbols and len(closes) >= 50:
-                ma50 = closes.rolling(50).mean()
-                ax.plot(hist.index, ma50, color=COLORS["purple"],
-                        linewidth=1.3, label="MA50", alpha=0.9,
-                        linestyle=":", zorder=2)
+                # MA50
+                if show_ma and not compare_symbols and len(closes) >= 50:
+                    ma50 = closes.rolling(50).mean()
+                    ax.plot(closes.index, ma50, color=COLORS["purple"],
+                            linewidth=1.3, label="MA50", alpha=0.9,
+                            linestyle=":", zorder=2)
+            else:
+                ax.text(0.5, 0.5, f"Brak danych cenowych dla {symbol}",
+                        transform=ax.transAxes, ha="center", va="center",
+                        color=COLORS["red"], fontsize=9)
+        else:
+            ax.text(0.5, 0.5, f"Brak danych dla {symbol}",
+                    transform=ax.transAxes, ha="center", va="center",
+                    color=COLORS["red"], fontsize=9)
     except Exception as exc:
         ax.text(0.5, 0.5, f"Błąd danych:\n{exc}",
                 transform=ax.transAxes, ha="center", va="center",
@@ -96,12 +170,14 @@ def create_price_chart(parent_frame, symbol, period="1M",
             if not sym:
                 continue
             try:
-                h = yf.Ticker(sym).history(period=yf_period)
-                if not h.empty:
-                    c = h["Close"]
-                    c = (c / c.iloc[0] - 1) * 100
-                    ax.plot(h.index, c, color=cmp_colors[i % 3],
-                            linewidth=1.5, label=sym, linestyle="--")
+                cmp_source = sources_map.get(sym, "yfinance")
+                h = _fetch_chart_data(sym, period, cmp_source)
+                if h is not None and not h.empty:
+                    c = pd.to_numeric(h["Close"], errors="coerce").dropna()
+                    if not c.empty:
+                        c = (c / c.iloc[0] - 1) * 100
+                        ax.plot(c.index, c, color=cmp_colors[i % 3],
+                                linewidth=1.5, label=sym, linestyle="--")
             except Exception:
                 pass
         ax.set_ylabel("Zmiana %", color=COLORS["fg"])
@@ -114,12 +190,12 @@ def create_price_chart(parent_frame, symbol, period="1M",
         ax_vol.set_facecolor(COLORS["bg"])
         if "Volume" in hist.columns and hist["Volume"].max() > 0:
             vol_colors = []
-            for i in range(len(hist)):
+            for j in range(len(hist)):
                 if "Open" in hist.columns:
-                    up = hist["Close"].iloc[i] >= hist["Open"].iloc[i]
+                    up = hist["Close"].iloc[j] >= hist["Open"].iloc[j]
                 else:
-                    up = (i == 0 or
-                          hist["Close"].iloc[i] >= hist["Close"].iloc[i - 1])
+                    up = (j == 0 or
+                          hist["Close"].iloc[j] >= hist["Close"].iloc[j - 1])
                 vol_colors.append(COLORS["green"] if up else COLORS["red"])
 
             ax_vol.bar(hist.index, hist["Volume"],

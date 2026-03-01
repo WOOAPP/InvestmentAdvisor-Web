@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
         "newsapi": "",
         "openai": "",
         "anthropic": "",
+        "openrouter": "",
     },
     "ai_provider": "anthropic",
     "ai_model": "claude-opus-4-6",

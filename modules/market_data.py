@@ -18,19 +18,43 @@ def get_yfinance_data(symbol, name=""):
         hist = ticker.history(period="5d")
         if hist.empty:
             return {"name": name or symbol, "error": "brak danych"}
-        current = hist["Close"].iloc[-1]
-        prev = hist["Close"].iloc[-2] if len(hist) >= 2 else current
+
+        # Robust conversion - handle NaN, strings, and non-numeric values
+        closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+        if closes.empty:
+            return {"name": name or symbol, "error": "brak danych cenowych"}
+
+        current = float(closes.iloc[-1])
+        prev = float(closes.iloc[-2]) if len(closes) >= 2 else current
         change = current - prev
         change_pct = (change / prev) * 100 if prev != 0 else 0
+
+        # Handle volume safely (indices often have NaN volume)
+        vol = 0
+        if "Volume" in hist.columns:
+            last_vol = hist["Volume"].iloc[-1]
+            if pd.notna(last_vol):
+                try:
+                    vol = int(float(last_vol))
+                except (ValueError, TypeError):
+                    vol = 0
+
+        sparkline = []
+        for v in closes.tolist():
+            try:
+                sparkline.append(round(float(v), 4))
+            except (ValueError, TypeError):
+                pass
+
         return {
             "name": name or symbol,
             "price": round(current, 4),
             "change": round(change, 4),
             "change_pct": round(change_pct, 2),
-            "volume": int(hist["Volume"].iloc[-1]) if "Volume" in hist else 0,
-            "high_5d": round(hist["Close"].max(), 4),
-            "low_5d": round(hist["Close"].min(), 4),
-            "sparkline": [round(v, 4) for v in hist["Close"].tolist()],
+            "volume": vol,
+            "high_5d": round(float(closes.max()), 4),
+            "low_5d": round(float(closes.min()), 4),
+            "sparkline": sparkline,
             "source": "yfinance",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
