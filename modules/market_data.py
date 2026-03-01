@@ -1,18 +1,13 @@
 import yfinance as yf
-import requests
 from datetime import datetime
+import logging
 import pandas as pd
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import get_api_key
+from modules.http_client import safe_get
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
+logger = logging.getLogger(__name__)
 
 # ── YAHOO FINANCE ──
 def get_yfinance_data(symbol, name=""):
@@ -70,7 +65,7 @@ def get_coingecko_data(coin_id, name=""):
         url = (f"https://api.coingecko.com/api/v3/simple/price"
                f"?ids={coin_id}&vs_currencies=usd"
                f"&include_24hr_change=true&include_24hr_vol=true")
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = safe_get(url)
         data = r.json().get(coin_id, {})
         if not data:
             return {"name": name or coin_id, "error": "brak danych CoinGecko"}
@@ -78,7 +73,7 @@ def get_coingecko_data(coin_id, name=""):
         try:
             chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
                          f"/market_chart?vs_currency=usd&days=5&interval=daily")
-            cr = requests.get(chart_url, headers=HEADERS, timeout=8)
+            cr = safe_get(chart_url)
             sparkline = [round(p[1], 4) for p in cr.json().get("prices", [])]
         except Exception:
             pass
@@ -115,7 +110,7 @@ def get_coingecko_data(coin_id, name=""):
 def get_stooq_data(symbol, name=""):
     try:
         url = f"https://stooq.pl/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = safe_get(url)
         lines = r.text.strip().split("\n")
         if len(lines) < 2:
             return {"name": name or symbol, "error": "brak danych Stooq"}
@@ -184,7 +179,7 @@ def get_news(api_key, query="economy geopolitics markets", language="pl", page_s
         url = (f"https://newsapi.org/v2/everything?"
                f"q={query}&language={language}&sortBy=publishedAt"
                f"&pageSize={page_size}&apiKey={api_key}")
-        r = requests.get(url, timeout=10)
+        r = safe_get(url)
         data = r.json()
         return [
             {
@@ -197,6 +192,7 @@ def get_news(api_key, query="economy geopolitics markets", language="pl", page_s
             for a in data.get("articles", []) if a.get("title")
         ]
     except Exception as e:
+        logger.error("Błąd pobierania newsów: %s", e)
         return [{"error": str(e)}]
 
 def format_market_summary(market_data, crypto_data=None):
