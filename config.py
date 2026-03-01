@@ -32,6 +32,11 @@ DEFAULT_CONFIG = {
     "ai_model": "claude-opus-4-6",
     "chat_provider": "anthropic",
     "chat_model": "claude-sonnet-4-6",
+    "chat_prompt": (
+        "Jesteś asystentem inwestycyjnym. Odpowiadaj po polsku, "
+        "konkretnie i rzeczowo. Gdy użytkownik pyta o szczegóły, "
+        "odwołuj się do danych z raportu."
+    ),
     "schedule": {
         "enabled": False,
         "times": ["08:00"]
