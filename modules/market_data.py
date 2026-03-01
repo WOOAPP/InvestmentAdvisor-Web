@@ -79,14 +79,28 @@ def get_coingecko_data(coin_id, name=""):
             sparkline = [round(p[1], 4) for p in cr.json().get("prices", [])]
         except Exception:
             pass
+
+        price = data.get("usd", 0)
+        change_pct = round(data.get("usd_24h_change", 0), 2)
+
+        # Calculate change, high_5d, low_5d from sparkline data
+        change = 0
+        high_5d = 0
+        low_5d = 0
+        if sparkline:
+            high_5d = max(sparkline)
+            low_5d = min(sparkline)
+            if len(sparkline) >= 2:
+                change = round(sparkline[-1] - sparkline[-2], 4)
+
         return {
             "name": name or coin_id,
-            "price": data.get("usd", 0),
-            "change_pct": round(data.get("usd_24h_change", 0), 2),
+            "price": price,
+            "change_pct": change_pct,
             "volume": data.get("usd_24h_vol", 0),
-            "change": 0,
-            "high_5d": 0,
-            "low_5d": 0,
+            "change": change,
+            "high_5d": high_5d,
+            "low_5d": low_5d,
             "sparkline": sparkline,
             "source": "coingecko",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -116,6 +130,7 @@ def get_stooq_data(symbol, name=""):
             "volume": int(float(parts[7])) if len(parts) > 7 else 0,
             "high_5d": round(float(parts[5]), 4),
             "low_5d": round(float(parts[4]), 4),
+            "sparkline": [round(open_, 4), round(close, 4)],
             "source": "stooq",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
         }
@@ -150,7 +165,9 @@ def get_market_data(symbols):
         results[s] = get_yfinance_data(s)
     return results
 
-def get_crypto_data(coins=["bitcoin", "ethereum"]):
+def get_crypto_data(coins=None):
+    if coins is None:
+        coins = ["bitcoin", "ethereum"]
     results = {}
     sym_map = {"bitcoin": "BTC-USD", "ethereum": "ETH-USD"}
     for coin in coins:
