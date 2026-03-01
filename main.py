@@ -1601,7 +1601,10 @@ class InvestmentAdvisor(tk.Tk):
             if sources:
                 self._set_status(
                     f"Pobieranie treści z {len(sources)} źródeł www…")
-                scraped_text = scrape_all(sources, max_chars_per_site=2000)
+                scraped_text = scrape_all(
+                    sources,
+                    max_chars_per_site=2000,
+                    trusted_domains=cfg.get("trusted_domains"))
 
             self._set_status("Generowanie analizy AI…")
             summary  = format_market_summary(market_data)

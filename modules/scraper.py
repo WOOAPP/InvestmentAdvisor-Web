@@ -1,5 +1,12 @@
+import logging
 import requests
 from bs4 import BeautifulSoup
+from modules.url_validator import (
+    validate_urls, MAX_REDIRECTS, CONNECT_TIMEOUT, READ_TIMEOUT,
+    MAX_RESPONSE_BYTES,
+)
+
+logger = logging.getLogger(__name__)
 
 HEADERS = {
     "User-Agent": (
@@ -9,12 +16,33 @@ HEADERS = {
     )
 }
 
+
 def scrape_url(url, max_chars=3000):
-    """Pobiera pełną treść tekstową ze strony."""
+    """Pobiera pełną treść tekstową ze strony (z limitami bezpieczeństwa)."""
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
+        r = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+            allow_redirects=True,
+            max_redirects=MAX_REDIRECTS,
+            stream=True,
+        )
         r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Limit rozmiaru odpowiedzi
+        content_parts = []
+        downloaded = 0
+        for chunk in r.iter_content(chunk_size=8192, decode_unicode=False):
+            downloaded += len(chunk)
+            if downloaded > MAX_RESPONSE_BYTES:
+                logger.warning("Przekroczono limit %d bajtów dla %s",
+                               MAX_RESPONSE_BYTES, url)
+                break
+            content_parts.append(chunk)
+        raw_html = b"".join(content_parts)
+
+        soup = BeautifulSoup(raw_html, "html.parser")
 
         # Usuń zbędne elementy
         for tag in soup(["script", "style", "nav", "footer", "header",
@@ -38,15 +66,28 @@ def scrape_url(url, max_chars=3000):
         text = "\n".join(lines)
         return text[:max_chars]
 
+    except requests.exceptions.TooManyRedirects:
+        msg = f"[Zbyt wiele przekierowań dla {url}]"
+        logger.warning(msg)
+        return msg
     except Exception as e:
-        return f"[Błąd pobierania {url}: {e}]"
+        msg = f"[Błąd pobierania {url}: {e}]"
+        logger.warning(msg)
+        return msg
 
-def scrape_all(urls, max_chars_per_site=2000):
-    """Pobiera treść ze wszystkich podanych URL-i."""
+
+def scrape_all(urls, max_chars_per_site=2000, trusted_domains=None):
+    """Pobiera treść ze wszystkich podanych URL-i (z walidacją)."""
     if not urls:
         return ""
+
+    valid_urls, errors = validate_urls(urls, trusted_domains)
+
     results = []
-    for url in urls:
+    for err in errors:
+        results.append(f"⚠ {err}")
+
+    for url in valid_urls:
         url = url.strip()
         if not url:
             continue
