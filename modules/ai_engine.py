@@ -191,6 +191,7 @@ def get_available_models(provider):
             "claude-haiku-4-5-20251001"
         ],
         "openai": [
+            "gpt-5.2",
             "gpt-4o",
             "gpt-4o-mini",
             "gpt-4-turbo",
@@ -203,6 +204,7 @@ def get_available_models(provider):
         "openrouter": [
             "anthropic/claude-sonnet-4",
             "anthropic/claude-haiku-4",
+            "openai/gpt-5.2",
             "openai/gpt-4o",
             "openai/gpt-4o-mini",
             "google/gemini-2.0-flash-001",
@@ -213,3 +215,34 @@ def get_available_models(provider):
         ]
     }
     return models.get(provider, [])
+
+
+def generate_instrument_profile(config, symbol, name, category):
+    """Generate a one-time AI profile for an instrument (cached by caller)."""
+    provider = config.get("ai_provider", "anthropic")
+    system = (
+        "Jesteś ekspertem rynków finansowych. Przygotuj zwięzły profil "
+        "instrumentu finansowego. Odpowiadaj po polsku, konkretnie i rzeczowo."
+    )
+    user_msg = (
+        f"Instrument: {name} ({symbol})\n"
+        f"Kategoria: {category}\n\n"
+        "Opisz ten instrument w trzech sekcjach:\n\n"
+        "## 1. Czym jest\n"
+        f"Krótki opis instrumentu w kontekście jego kategorii ({category}).\n\n"
+        "## 2. Co wpływa na kurs\n"
+        "Najważniejsze czynniki wpływające na wahania ceny "
+        "(makro, geopolityka, sezonowość, korelacje).\n\n"
+        "## 3. Na co wpływa\n"
+        "Gdzie jest \"transmisja\" na inne rynki, branże, instrumenty.\n\n"
+        "Bądź zwięzły (max 300 słów łącznie). Używaj konkretnych przykładów."
+    )
+
+    if provider == "anthropic":
+        return _run_anthropic(config, system, user_msg)
+    elif provider == "openai":
+        return _run_openai(config, system, user_msg)
+    elif provider == "openrouter":
+        return _run_openrouter(config, system, user_msg)
+    else:
+        return "Błąd: nieznany dostawca AI."
