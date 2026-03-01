@@ -23,6 +23,10 @@ from modules.charts import (create_price_chart, create_risk_gauge,
 from modules.scraper import scrape_all
 from modules.calendar_data import fetch_calendar, get_event_significance
 from modules.macro_trend import build_macro_payload, format_macro_payload_for_llm
+from modules.ui_helpers import (
+    setup_markdown_tags, insert_markdown,
+    bind_chat_focus, BusySpinner,
+)
 
 BG     = "#1e1e2e"
 BG2    = "#181825"
@@ -54,6 +58,8 @@ class InvestmentAdvisor(tk.Tk):
         self._cal_events = []
         self._period_buttons = {}
         self._shutting_down = False
+        self._busy_buttons = []   # buttons to lock during analysis/fetch
+        self._spinner = None      # BusySpinner instance (created after UI build)
         self._build_ui()
         self._start_scheduler()
         self._check_alerts()
@@ -170,21 +176,25 @@ class InvestmentAdvisor(tk.Tk):
             command=self._run_analysis_thread)
         self.analyze_btn.pack(side="left")
 
-        tk.Button(
+        self.fetch_btn = tk.Button(
             btn_bar, text="🔄 Pobierz ceny", bg=BTN_BG, fg=FG,
             font=("Segoe UI", 10), relief="flat", cursor="hand2",
-            padx=12, pady=6, command=self._quick_fetch_prices
-        ).pack(side="left", padx=8)
+            padx=12, pady=6, command=self._quick_fetch_prices)
+        self.fetch_btn.pack(side="left", padx=8)
 
-        tk.Button(
+        self.export_btn = tk.Button(
             btn_bar, text="📄 Eksport PDF", bg=BTN_BG, fg=FG,
             font=("Segoe UI", 10), relief="flat", cursor="hand2",
-            padx=12, pady=6, command=self._export_pdf
-        ).pack(side="left", padx=8)
+            padx=12, pady=6, command=self._export_pdf)
+        self.export_btn.pack(side="left", padx=8)
 
         self.status_label = tk.Label(
             btn_bar, text="Gotowy", bg=BG, fg=GRAY, font=("Segoe UI", 9))
         self.status_label.pack(side="right", padx=8)
+
+        # Task 2: register buttons for busy-lock
+        self._busy_buttons = [self.analyze_btn, self.fetch_btn, self.export_btn]
+        self._spinner = BusySpinner(self, self.status_label)
 
         # ── PanedWindow: analysis (top) + chat (bottom) ──
         paned = tk.PanedWindow(right, orient="vertical", bg=BG,
@@ -202,16 +212,17 @@ class InvestmentAdvisor(tk.Tk):
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT)
         self.analysis_text.pack(fill="both", expand=True, padx=4, pady=4)
+        setup_markdown_tags(self.analysis_text)
 
         # — Chat panel —
-        chat_frame = tk.LabelFrame(
+        self.chat_frame = tk.LabelFrame(
             paned, text=" Czat z AI ", bg=BG, fg=ACCENT,
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
-        paned.add(chat_frame, minsize=120)
+        paned.add(self.chat_frame, minsize=120)
 
         self.chat_display = scrolledtext.ScrolledText(
-            chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            self.chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT, height=8)
         self.chat_display.pack(fill="both", expand=True, padx=4, pady=(4, 2))
@@ -221,7 +232,7 @@ class InvestmentAdvisor(tk.Tk):
                                          font=("Segoe UI", 9, "bold"))
         self.chat_display.tag_configure("error", foreground=RED)
 
-        input_bar = tk.Frame(chat_frame, bg=BG)
+        input_bar = tk.Frame(self.chat_frame, bg=BG)
         input_bar.pack(fill="x", padx=4, pady=(0, 4))
 
         self.chat_entry = tk.Entry(
@@ -242,6 +253,10 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             padx=8, command=self._clear_chat
         ).pack(side="left", padx=(4, 0))
+
+        # Task 1 + 3: markdown tags + click-to-focus for dashboard chat
+        setup_markdown_tags(self.chat_display)
+        bind_chat_focus(self.chat_frame, self.chat_entry)
 
     # ── Kafelki Bloomberg ────────────────────────────────────
     def _build_price_tiles(self, parent):
@@ -563,6 +578,7 @@ class InvestmentAdvisor(tk.Tk):
 
     def _quick_fetch_prices(self):
         self._portfolio_status.configure(text="Pobieranie cen…")
+        self.set_busy(True, "Pobieranie cen…")
 
         def _fetch():
             try:
@@ -575,6 +591,8 @@ class InvestmentAdvisor(tk.Tk):
             except Exception as exc:
                 self.after(0, lambda: self._portfolio_status.configure(
                     text=f"Błąd: {exc}"))
+            finally:
+                self.set_busy(False, "Gotowy")
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -761,14 +779,14 @@ class InvestmentAdvisor(tk.Tk):
         paned.add(self.chart_container, minsize=200)
 
         # ── Chart chat panel ──
-        chart_chat_frame = tk.LabelFrame(
+        self.chart_chat_frame = tk.LabelFrame(
             paned, text=" Czat o wykresie ", bg=BG, fg=ACCENT,
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
-        paned.add(chart_chat_frame, minsize=100)
+        paned.add(self.chart_chat_frame, minsize=100)
 
         self.chart_chat_display = scrolledtext.ScrolledText(
-            chart_chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            self.chart_chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT, height=6)
         self.chart_chat_display.pack(fill="both", expand=True, padx=4, pady=(4, 2))
@@ -778,7 +796,7 @@ class InvestmentAdvisor(tk.Tk):
                                                font=("Segoe UI", 9, "bold"))
         self.chart_chat_display.tag_configure("error", foreground=RED)
 
-        chart_input_bar = tk.Frame(chart_chat_frame, bg=BG)
+        chart_input_bar = tk.Frame(self.chart_chat_frame, bg=BG)
         chart_input_bar.pack(fill="x", padx=4, pady=(0, 4))
 
         self.chart_chat_entry = tk.Entry(
@@ -800,6 +818,10 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             padx=8, command=self._clear_chart_chat
         ).pack(side="left", padx=(4, 0))
+
+        # Task 1 + 3: markdown tags + click-to-focus for chart chat
+        setup_markdown_tags(self.chart_chat_display)
+        bind_chat_focus(self.chart_chat_frame, self.chart_chat_entry)
 
     def _select_period(self, period):
         """Select a time period and visually highlight the active button."""
@@ -859,7 +881,11 @@ class InvestmentAdvisor(tk.Tk):
     def _append_chart_chat(self, label, text, tag):
         self.chart_chat_display.configure(state="normal")
         self.chart_chat_display.insert("end", f"{label}\n", "label")
-        self.chart_chat_display.insert("end", f"{text}\n\n", tag)
+        if tag == "assistant":
+            insert_markdown(self.chart_chat_display, text, base_tag=tag)
+        else:
+            self.chart_chat_display.insert("end", text, tag)
+        self.chart_chat_display.insert("end", "\n\n", tag)
         self.chart_chat_display.configure(state="disabled")
         self.chart_chat_display.see("end")
 
@@ -983,6 +1009,7 @@ class InvestmentAdvisor(tk.Tk):
                 "AI:", reply, "assistant"))
             self.after(0, lambda: self.chart_chat_send_btn.configure(
                 state="normal", text="Wyślij"))
+            self.after(0, lambda: self.chart_chat_entry.focus_set())
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1549,10 +1576,14 @@ class InvestmentAdvisor(tk.Tk):
     # CHAT
     # ═══════════════════════════════════════
     def _append_chat(self, label, text, tag):
-        """Append a message to the chat display widget."""
+        """Append a message to the chat display widget (markdown for assistant)."""
         self.chat_display.configure(state="normal")
         self.chat_display.insert("end", f"{label}\n", "label")
-        self.chat_display.insert("end", f"{text}\n\n", tag)
+        if tag == "assistant":
+            insert_markdown(self.chat_display, text, base_tag=tag)
+        else:
+            self.chat_display.insert("end", text, tag)
+        self.chat_display.insert("end", "\n\n", tag)
         self.chat_display.configure(state="disabled")
         self.chat_display.see("end")
 
@@ -1593,6 +1624,7 @@ class InvestmentAdvisor(tk.Tk):
             self.after(0, lambda: self._append_chat("AI:", reply, "assistant"))
             self.after(0, lambda: self.chat_send_btn.configure(
                 state="normal", text="Wyślij"))
+            self.after(0, lambda: self.chat_entry.focus_set())
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1600,17 +1632,17 @@ class InvestmentAdvisor(tk.Tk):
     # ANALYSIS
     # ═══════════════════════════════════════
     def _run_analysis_thread(self):
-        self.analyze_btn.configure(state="disabled", text="⏳ Analizuję…")
-        self._set_status("Pobieranie danych…")
+        self.analyze_btn.configure(text="⏳ Analizuję…")
+        self.set_busy(True, "Pobieranie danych…")
         threading.Thread(target=self._run_analysis, daemon=True).start()
 
     def _run_analysis(self):
         try:
             cfg = self.config_data
-            self._set_status("Pobieranie danych instrumentów…")
+            self.set_busy(True, "Pobieranie danych instrumentów…")
             market_data = get_all_instruments(cfg.get("instruments", []))
 
-            self._set_status("Pobieranie newsów (macro-trend engine)…")
+            self.set_busy(True, "Pobieranie newsów (macro-trend engine)…")
             newsapi_key = get_api_key(cfg, "newsapi")
             macro_text = ""
             news = []
@@ -1632,14 +1664,14 @@ class InvestmentAdvisor(tk.Tk):
             scraped_text = ""
             sources = cfg.get("sources", [])
             if sources:
-                self._set_status(
+                self.set_busy(True,
                     f"Pobieranie treści z {len(sources)} źródeł www…")
                 scraped_text = scrape_all(
                     sources,
                     max_chars_per_site=2000,
                     trusted_domains=cfg.get("trusted_domains"))
 
-            self._set_status("Generowanie analizy AI…")
+            self.set_busy(True, "Generowanie analizy AI…")
             summary  = format_market_summary(market_data)
             analysis = run_analysis(cfg, summary, news, scraped_text,
                                     macro_text=macro_text)
@@ -1657,15 +1689,16 @@ class InvestmentAdvisor(tk.Tk):
         except Exception as exc:
             import traceback
             traceback.print_exc()
-            self.after(0, lambda: self._set_status(f"Błąd: {exc}"))
+            self.set_busy(False, f"Błąd: {exc}")
         finally:
+            self.set_busy(False, "Gotowy")
             self.after(0, lambda: self.analyze_btn.configure(
-                state="normal", text="▶  Uruchom Analizę"))
+                text="▶  Uruchom Analizę"))
 
     def _update_dashboard(self, analysis, risk, market_data):
         self.analysis_text.configure(state="normal")
         self.analysis_text.delete("1.0", "end")
-        self.analysis_text.insert("end", analysis)
+        insert_markdown(self.analysis_text, analysis)
         self.analysis_text.configure(state="disabled")
 
         self._update_price_tiles(market_data)
@@ -1808,6 +1841,35 @@ class InvestmentAdvisor(tk.Tk):
             return
         try:
             self.after(0, lambda: self.status_label.configure(text=msg))
+        except RuntimeError:
+            pass
+
+    def set_busy(self, is_busy, message="Pracuję…"):
+        """Lock/unlock buttons and start/stop spinner animation.
+
+        Thread-safe: schedules all UI changes on the main thread.
+        """
+        def _apply():
+            if is_busy:
+                for btn in self._busy_buttons:
+                    try:
+                        btn.configure(state="disabled")
+                    except Exception:
+                        pass
+                if self._spinner:
+                    self._spinner.start(message)
+            else:
+                for btn in self._busy_buttons:
+                    try:
+                        btn.configure(state="normal")
+                    except Exception:
+                        pass
+                if self._spinner:
+                    self._spinner.stop(message)
+        if self._shutting_down:
+            return
+        try:
+            self.after(0, _apply)
         except RuntimeError:
             pass
 
