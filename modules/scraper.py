@@ -1,5 +1,6 @@
 import logging
 import requests
+from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
 from modules.url_validator import (
     validate_urls, MAX_REDIRECTS, CONNECT_TIMEOUT, READ_TIMEOUT,
@@ -17,15 +18,35 @@ HEADERS = {
 }
 
 
+def _build_scraper_session():
+    """Sesja z limitem przekierowań."""
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    s.max_redirects = MAX_REDIRECTS
+    adapter = HTTPAdapter(max_retries=0)  # scraper bez retry
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    return s
+
+
+_session = None
+
+
+def _get_session():
+    global _session
+    if _session is None:
+        _session = _build_scraper_session()
+    return _session
+
+
 def scrape_url(url, max_chars=3000):
     """Pobiera pełną treść tekstową ze strony (z limitami bezpieczeństwa)."""
     try:
-        r = requests.get(
+        session = _get_session()
+        r = session.get(
             url,
-            headers=HEADERS,
             timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
             allow_redirects=True,
-            max_redirects=MAX_REDIRECTS,
             stream=True,
         )
         r.raise_for_status()
