@@ -10,7 +10,7 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
-from config import load_config, save_config
+from config import load_config, save_config, mask_key, get_api_key
 from modules.market_data import get_all_instruments, get_news, format_market_summary
 from modules.ai_engine import run_analysis, run_chat, get_available_models
 from modules.database import (
@@ -1087,14 +1087,24 @@ class InvestmentAdvisor(tk.Tk):
                      ).pack(side="left", fill="x", expand=True, padx=4)
 
         section("🔑 Klucze API")
-        self.v_newsapi   = tk.StringVar(
-            value=self.config_data["api_keys"].get("newsapi", ""))
-        self.v_openai    = tk.StringVar(
-            value=self.config_data["api_keys"].get("openai", ""))
-        self.v_anthropic = tk.StringVar(
-            value=self.config_data["api_keys"].get("anthropic", ""))
-        self.v_openrouter = tk.StringVar(
-            value=self.config_data["api_keys"].get("openrouter", ""))
+        # Klucze z env mają priorytet — w UI pokazujemy zamaskowane
+        self._key_from_env = {}
+        for kn in ("newsapi", "openai", "anthropic", "openrouter"):
+            from config import ENV_KEY_MAP
+            env_name = ENV_KEY_MAP.get(kn, "")
+            self._key_from_env[kn] = bool(
+                env_name and os.environ.get(env_name, "").strip())
+
+        def _key_display(name):
+            val = self.config_data["api_keys"].get(name, "")
+            if self._key_from_env[name]:
+                return mask_key(val) + " (ENV)"
+            return val
+
+        self.v_newsapi   = tk.StringVar(value=_key_display("newsapi"))
+        self.v_openai    = tk.StringVar(value=_key_display("openai"))
+        self.v_anthropic = tk.StringVar(value=_key_display("anthropic"))
+        self.v_openrouter = tk.StringVar(value=_key_display("openrouter"))
         entry_row(inner, "NewsAPI:", self.v_newsapi, show="*")
         entry_row(inner, "OpenAI API Key:", self.v_openai, show="*")
         entry_row(inner, "Anthropic API Key:", self.v_anthropic, show="*")
@@ -1473,10 +1483,11 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_chat_prompt_text.insert("end", DEFAULT_CONFIG["chart_chat_prompt"])
 
     def _save_settings(self):
-        self.config_data["api_keys"]["newsapi"]     = self.v_newsapi.get().strip()
-        self.config_data["api_keys"]["openai"]      = self.v_openai.get().strip()
-        self.config_data["api_keys"]["anthropic"]    = self.v_anthropic.get().strip()
-        self.config_data["api_keys"]["openrouter"]   = self.v_openrouter.get().strip()
+        # Nie nadpisuj kluczy zarządzanych przez env
+        for kn, var in (("newsapi", self.v_newsapi), ("openai", self.v_openai),
+                        ("anthropic", self.v_anthropic), ("openrouter", self.v_openrouter)):
+            if not self._key_from_env.get(kn):
+                self.config_data["api_keys"][kn] = var.get().strip()
         self.config_data["ai_provider"] = self.v_provider.get()
         custom = self.v_custom_model.get().strip()
         self.config_data["ai_model"] = custom if custom else self.v_model.get()
@@ -1581,7 +1592,7 @@ class InvestmentAdvisor(tk.Tk):
 
             self._set_status("Pobieranie newsów…")
             news = get_news(
-                cfg["api_keys"].get("newsapi", ""),
+                get_api_key(cfg, "newsapi"),
                 query="geopolitics economy markets finance",
                 language="en")
 

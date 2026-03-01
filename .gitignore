@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Sekrety
+.env
+
 # Database (dane użytkownika, nie wersjonowane)
 data/advisor.db
 
