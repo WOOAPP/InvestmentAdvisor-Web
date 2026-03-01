@@ -938,6 +938,25 @@ class InvestmentAdvisor(tk.Tk):
                 f"--- WYKRES ---\n{chart_ctx}\n--- KONIEC ---"
             )
 
+            # Dołącz raport analizy (bieżący lub ostatni z bazy)
+            report_text = self.current_analysis
+            if not report_text:
+                try:
+                    rows = get_reports(limit=1)
+                    if rows:
+                        full = get_report_by_id(rows[0][0])
+                        if full:
+                            # kolumna 5 = analysis
+                            report_text = full[5] or ""
+                except Exception:
+                    pass
+            if report_text:
+                system += (
+                    "\n\nPoniżej znajduje się ostatni raport analizy rynkowej. "
+                    "Wykorzystaj go jako dodatkowy kontekst.\n\n"
+                    f"--- RAPORT ---\n{report_text}\n--- KONIEC RAPORTU ---"
+                )
+
             reply = run_chat(
                 self.config_data, list(self._chart_chat_history), system)
             self._chart_chat_history.append(
