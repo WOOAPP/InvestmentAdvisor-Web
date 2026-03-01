@@ -2,6 +2,9 @@ import yfinance as yf
 import requests
 from datetime import datetime
 import pandas as pd
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from config import get_api_key
 
 HEADERS = {
     "User-Agent": (

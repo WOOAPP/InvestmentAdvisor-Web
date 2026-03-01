@@ -1,6 +1,9 @@
 import anthropic
 import openai
 from datetime import datetime
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from config import get_api_key
 
 def run_analysis(config, market_summary, news_list, scraped_text=""):
     """Wysyła dane do wybranego modelu AI i zwraca analizę."""
@@ -34,9 +37,9 @@ def run_analysis(config, market_summary, news_list, scraped_text=""):
         return "Błąd: nieznany dostawca AI. Sprawdź ustawienia."
 
 def _run_anthropic(config, system_prompt, user_message):
-    api_key = config["api_keys"].get("anthropic", "")
+    api_key = get_api_key(config, "anthropic")
     if not api_key:
-        return "Błąd: brak klucza API Anthropic. Dodaj go w Ustawieniach."
+        return "Brak klucza API Anthropic. Ustaw ANTHROPIC_API_KEY lub dodaj klucz w Ustawieniach."
     try:
         client = anthropic.Anthropic(api_key=api_key)
         model = config.get("ai_model", "claude-opus-4-6")
@@ -51,9 +54,9 @@ def _run_anthropic(config, system_prompt, user_message):
         return f"Błąd Anthropic API: {str(e)}"
 
 def _run_openai(config, system_prompt, user_message):
-    api_key = config["api_keys"].get("openai", "")
+    api_key = get_api_key(config, "openai")
     if not api_key:
-        return "Błąd: brak klucza API OpenAI. Dodaj go w Ustawieniach."
+        return "Brak klucza API OpenAI. Ustaw OPENAI_API_KEY lub dodaj klucz w Ustawieniach."
     try:
         client = openai.OpenAI(api_key=api_key)
         model = config.get("ai_model", "gpt-4o")
@@ -70,9 +73,9 @@ def _run_openai(config, system_prompt, user_message):
         return f"Błąd OpenAI API: {str(e)}"
 
 def _run_openrouter(config, system_prompt, user_message):
-    api_key = config["api_keys"].get("openrouter", "")
+    api_key = get_api_key(config, "openrouter")
     if not api_key:
-        return "Błąd: brak klucza API OpenRouter. Dodaj go w Ustawieniach."
+        return "Brak klucza API OpenRouter. Ustaw OPENROUTER_API_KEY lub dodaj klucz w Ustawieniach."
     try:
         client = openai.OpenAI(
             api_key=api_key,
@@ -92,21 +95,14 @@ def _run_openrouter(config, system_prompt, user_message):
         return f"Błąd OpenRouter API: {str(e)}"
 
 def run_chat(config, messages, system_prompt=""):
-    """Send a multi-turn chat conversation to the configured chat model.
-
-    config: full app config dict (uses chat_provider, chat_model, api_keys)
-    messages: list of {"role": "user"|"assistant", "content": "..."}
-    system_prompt: system-level instruction (e.g. analysis context)
-    Returns: assistant reply string
-    """
+    """Send a multi-turn chat conversation to the configured chat model."""
     provider = config.get("chat_provider") or config.get("ai_provider", "anthropic")
     model = config.get("chat_model") or config.get("ai_model", "claude-sonnet-4-6")
-    api_keys = config.get("api_keys", {})
 
     if provider == "anthropic":
-        api_key = api_keys.get("anthropic", "")
+        api_key = get_api_key(config, "anthropic")
         if not api_key:
-            return "Brak klucza API Anthropic. Dodaj go w Ustawieniach."
+            return "Brak klucza API Anthropic. Ustaw ANTHROPIC_API_KEY lub dodaj klucz w Ustawieniach."
         try:
             client = anthropic.Anthropic(api_key=api_key)
             response = client.messages.create(
@@ -121,9 +117,10 @@ def run_chat(config, messages, system_prompt=""):
 
     elif provider in ("openai", "openrouter"):
         key_name = "openrouter" if provider == "openrouter" else "openai"
-        api_key = api_keys.get(key_name, "")
+        api_key = get_api_key(config, key_name)
         if not api_key:
-            return f"Brak klucza API {provider}. Dodaj go w Ustawieniach."
+            env_hint = "OPENROUTER_API_KEY" if provider == "openrouter" else "OPENAI_API_KEY"
+            return f"Brak klucza API {provider}. Ustaw {env_hint} lub dodaj klucz w Ustawieniach."
         try:
             kwargs = {"api_key": api_key}
             if provider == "openrouter":
