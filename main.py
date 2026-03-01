@@ -59,13 +59,22 @@ class InvestmentAdvisor(tk.Tk):
     def _bind_mousewheel(self, area_widget, scroll_target):
         """Bind mousewheel scrolling when cursor enters area_widget."""
         def _on_mousewheel(event):
-            scroll_target.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            if event.delta:
+                scroll_target.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            elif event.num == 4:
+                scroll_target.yview_scroll(-3, "units")
+            elif event.num == 5:
+                scroll_target.yview_scroll(3, "units")
 
         def _on_enter(event):
             area_widget.bind_all("<MouseWheel>", _on_mousewheel)
+            area_widget.bind_all("<Button-4>", _on_mousewheel)
+            area_widget.bind_all("<Button-5>", _on_mousewheel)
 
         def _on_leave(event):
             area_widget.unbind_all("<MouseWheel>")
+            area_widget.unbind_all("<Button-4>")
+            area_widget.unbind_all("<Button-5>")
 
         area_widget.bind("<Enter>", _on_enter)
         area_widget.bind("<Leave>", _on_leave)
@@ -156,6 +165,12 @@ class InvestmentAdvisor(tk.Tk):
             cursor="hand2", padx=16, pady=6,
             command=self._run_analysis_thread)
         self.analyze_btn.pack(side="left")
+
+        tk.Button(
+            btn_bar, text="🔄 Pobierz ceny", bg=BTN_BG, fg=FG,
+            font=("Segoe UI", 10), relief="flat", cursor="hand2",
+            padx=12, pady=6, command=self._quick_fetch_prices
+        ).pack(side="left", padx=8)
 
         tk.Button(
             btn_bar, text="📄 Eksport PDF", bg=BTN_BG, fg=FG,
@@ -999,7 +1014,9 @@ class InvestmentAdvisor(tk.Tk):
             padx=20, pady=8, command=self._save_settings
         ).pack(pady=16)
 
-    def _add_instrument_row(self, inst={}):
+    def _add_instrument_row(self, inst=None):
+        if inst is None:
+            inst = {}
         row_frame = tk.Frame(self.inst_frame, bg=BG)
         row_frame.pack(fill="x", pady=2)
 
