@@ -76,7 +76,7 @@ def _fetch_coingecko_chart(coin_id, days):
         df = df.join(vol_df, how="left")
 
     df["Open"] = df["Close"].shift(1)
-    df["Open"].iloc[0] = df["Close"].iloc[0]
+    df.loc[df.index[0], "Open"] = df["Close"].iloc[0]
 
     return df
 
@@ -180,10 +180,10 @@ def create_price_chart(parent_frame, symbol, period="1M",
                                 linewidth=1.5, label=sym, linestyle="--")
             except Exception:
                 pass
-        ax.set_ylabel("Zmiana %", color=COLORS["fg"])
+        ax.set_ylabel("Zmiana %", color=COLORS["fg"], fontsize=10)
         ax.axhline(y=0, color=COLORS["fg"], linewidth=0.5, linestyle=":")
     else:
-        ax.set_ylabel("Cena (USD)", color=COLORS["fg"])
+        ax.set_ylabel("Cena (USD)", color=COLORS["fg"], fontsize=10)
 
     # ── Volume subplot ──
     if ax_vol is not None and hist is not None and not hist.empty:
@@ -215,27 +215,60 @@ def create_price_chart(parent_frame, symbol, period="1M",
             for sp in ["bottom", "left"]:
                 ax_vol.spines[sp].set_color(COLORS["grid"])
             ax_vol.grid(True, color=COLORS["grid"], linewidth=0.3, alpha=0.5)
-            ax_vol.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
-            ax_vol.tick_params(axis="x", colors=COLORS["fg"], labelsize=7)
+            if period in ("1T", "5T"):
+                ax_vol.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+            else:
+                ax_vol.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
+            ax_vol.tick_params(axis="x", colors=COLORS["fg"], labelsize=8)
+            fig.autofmt_xdate(rotation=35, ha="right")
             plt.setp(ax.get_xticklabels(), visible=False)
 
     # ── Main axis styling ──
-    ax.tick_params(colors=COLORS["fg"], labelsize=8)
+    ax.tick_params(colors=COLORS["fg"], labelsize=9)
     for sp in ["top", "right"]:
         ax.spines[sp].set_visible(False)
     for sp in ["bottom", "left"]:
         ax.spines[sp].set_color(COLORS["grid"])
     ax.grid(True, color=COLORS["grid"], linewidth=0.5, alpha=0.7)
 
+    # Date formatting on X axis - DD.MM.YYYY for longer periods, DD.MM for short
     if compare_symbols or ax_vol is None:
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        if period in ("1T", "5T"):
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        else:
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
+        fig.autofmt_xdate(rotation=35, ha="right")
+
+    # Y-axis number formatting (e.g. 80,000 instead of 80000)
+    if not compare_symbols:
+        def _price_fmt(x, _):
+            if abs(x) >= 1e6:
+                return f"{x:,.0f}"
+            elif abs(x) >= 100:
+                return f"{x:,.2f}"
+            elif abs(x) >= 1:
+                return f"{x:.4f}"
+            else:
+                return f"{x:.6f}"
+        ax.yaxis.set_major_formatter(FuncFormatter(_price_fmt))
 
     ax.legend(facecolor=COLORS["bg"], edgecolor=COLORS["grid"],
-              labelcolor=COLORS["fg"], fontsize=8, loc="upper left")
-    ax.set_title(f"{symbol}  ·  {period}", color=COLORS["fg"],
-                 fontsize=10, pad=8)
+              labelcolor=COLORS["fg"], fontsize=9, loc="upper left")
 
-    fig.tight_layout(pad=1.5)
+    # Title with instrument name and current price
+    title_text = f"{symbol}  ·  {period}"
+    if hist is not None and not hist.empty and not compare_symbols:
+        last_close = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+        if not last_close.empty:
+            price_val = last_close.iloc[-1]
+            if price_val >= 100:
+                title_text = f"{symbol}  ·  {price_val:,.2f}  ·  {period}"
+            else:
+                title_text = f"{symbol}  ·  {price_val:.4f}  ·  {period}"
+    ax.set_title(title_text, color=COLORS["fg"],
+                 fontsize=12, fontweight="bold", pad=12)
+
+    fig.tight_layout(pad=2.0)
 
     # ── Embed in Tkinter ──
     canvas = FigureCanvasTkAgg(fig, master=parent_frame)
