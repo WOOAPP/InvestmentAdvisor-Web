@@ -22,6 +22,7 @@ from modules.charts import (create_price_chart, create_risk_gauge,
                             extract_risk_level, fetch_chart_data)
 from modules.scraper import scrape_all
 from modules.calendar_data import fetch_calendar, get_event_significance
+from modules.macro_trend import build_macro_payload, format_macro_payload_for_llm
 
 BG     = "#1e1e2e"
 BG2    = "#181825"
@@ -1596,11 +1597,24 @@ class InvestmentAdvisor(tk.Tk):
             self._set_status("Pobieranie danych instrumentów…")
             market_data = get_all_instruments(cfg.get("instruments", []))
 
-            self._set_status("Pobieranie newsów…")
-            news = get_news(
-                get_api_key(cfg, "newsapi"),
-                query="geopolitics economy markets finance",
-                language="en")
+            self._set_status("Pobieranie newsów (macro-trend engine)…")
+            newsapi_key = get_api_key(cfg, "newsapi")
+            macro_text = ""
+            news = []
+            if newsapi_key:
+                try:
+                    macro_payload = build_macro_payload(newsapi_key)
+                    macro_text = format_macro_payload_for_llm(macro_payload)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Macro-trend fallback: %s", e)
+            # Fallback: legacy news if macro engine fails
+            if not macro_text:
+                news = get_news(
+                    newsapi_key,
+                    query="geopolitics economy markets finance",
+                    language="en")
 
             scraped_text = ""
             sources = cfg.get("sources", [])
@@ -1614,7 +1628,8 @@ class InvestmentAdvisor(tk.Tk):
 
             self._set_status("Generowanie analizy AI…")
             summary  = format_market_summary(market_data)
-            analysis = run_analysis(cfg, summary, news, scraped_text)
+            analysis = run_analysis(cfg, summary, news, scraped_text,
+                                    macro_text=macro_text)
             risk     = extract_risk_level(analysis)
 
             save_report(cfg["ai_provider"], cfg["ai_model"],

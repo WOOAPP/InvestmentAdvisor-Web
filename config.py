@@ -120,15 +120,15 @@ DEFAULT_CONFIG = {
     ],
     "sources": [],
     "prompt": (
-        "Jesteś osobistym doradcą inwestycyjnym. Na podstawie aktualnych danych rynkowych "
-        "i wiadomości geopolitycznych oraz gospodarczych przeprowadź kompleksową analizę. "
-        "Uwzględnij:\n"
-        "1. Aktualną sytuację geopolityczną i jej wpływ na rynki\n"
-        "2. Sytuację makroekonomiczną (inflacja, stopy procentowe, PKB)\n"
-        "3. Analizę każdej klasy aktywów (akcje, krypto, forex, surowce)\n"
-        "4. Poziom ryzyka rynkowego (skala 1-10)\n"
-        "5. Konkretne rekomendacje (KUP/SPRZEDAJ/CZEKAJ) dla każdego instrumentu z uzasadnieniem\n"
-        "6. Krótko- średnio- i długoterminowe perspektywy\n"
+        "Jesteś analitykiem makroekonomicznym. Na podstawie danych rynkowych, "
+        "newsów z wielu okien czasowych oraz analizy trendów, przeprowadź analizę "
+        "w następującej strukturze:\n"
+        "0) NEWS DNIA — omów najważniejszy news i jego implikacje rynkowe\n"
+        "1) GEO 24H — sytuacja per region (Świat/Europa/Polska/Am.Płn./Azja/Australia)\n"
+        "2) PORÓWNANIE TRENDU: 24h vs 7d vs 30d vs 90d — kontynuacje, anomalie, punkty zwrotne\n"
+        "3) IMPLIKACJE DLA INSTRUMENTÓW — jak powyższe wpływa na aktywa ze snapshotu\n"
+        "4) SCENARIUSZE + RYZYKO (skala 1–10) — scenariusz bazowy, optymistyczny, pesymistyczny\n"
+        "5) PERSPEKTYWA RUCHU — kierunki i prawdopodobieństwo, ale NIE porada inwestycyjna\n"
         "Odpowiadaj wyłącznie po polsku. Bądź konkretny i rzeczowy."
     ),
     "language": "pl"

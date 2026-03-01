@@ -5,27 +5,20 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import get_api_key
 
-def run_analysis(config, market_summary, news_list, scraped_text=""):
+def run_analysis(config, market_summary, news_list, scraped_text="",
+                  macro_text=""):
     """Wysyła dane do wybranego modelu AI i zwraca analizę."""
     provider = config.get("ai_provider", "anthropic")
     prompt = config.get("prompt", "Przeanalizuj sytuację rynkową.")
 
-    # Przygotuj wiadomości z newsami
-    news_text = ""
-    if news_list and not any("error" in n for n in news_list):
-        news_text = "\n=== AKTUALNE WIADOMOŚCI ===\n"
-        for i, n in enumerate(news_list[:8], 1):
-            news_text += f"{i}. [{n.get('source','')}] {n.get('title','')}\n"
-            if n.get("description"):
-                news_text += f"   {n.get('description','')[:150]}...\n"
-
-    full_message = (
-        f"Data analizy: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-        f"{market_summary}\n"
-        f"{news_text}\n"
-        f"{'=== TREŚĆ ZE ŹRÓDEŁ WWW ===' + chr(10) + scraped_text if scraped_text else ''}\n\n"
-        f"Na podstawie powyższych danych przeprowadź szczegółową analizę."
-    )
+    # ── Macro-trend payload (new structured data) ────────────
+    if macro_text:
+        full_message = _build_macro_prompt(
+            market_summary, macro_text, scraped_text)
+    else:
+        # Legacy path (backward compat)
+        full_message = _build_legacy_prompt(
+            market_summary, news_list, scraped_text)
 
     if provider == "anthropic":
         return _run_anthropic(config, prompt, full_message)
@@ -35,6 +28,53 @@ def run_analysis(config, market_summary, news_list, scraped_text=""):
         return _run_openrouter(config, prompt, full_message)
     else:
         return "Błąd: nieznany dostawca AI. Sprawdź ustawienia."
+
+
+def _build_macro_prompt(market_summary, macro_text, scraped_text=""):
+    """Build the new structured prompt with macro-trend data."""
+    parts = [
+        f"Data analizy: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        market_summary,
+        "",
+        macro_text,
+    ]
+    if scraped_text:
+        parts.append("")
+        parts.append("=== TREŚĆ ZE ŹRÓDEŁ WWW ===")
+        parts.append(scraped_text)
+    parts.append("")
+    parts.append(
+        "Na podstawie powyższych danych przeprowadź analizę w następującej strukturze:\n"
+        "0) NEWS DNIA — omów najważniejszy news i jego implikacje\n"
+        "1) GEO 24H — sytuacja per region (Świat/Europa/Polska/Am.Płn./Azja/Australia)\n"
+        "2) PORÓWNANIE TRENDU: 24h vs 7d vs 30d vs 90d — kontynuacje, anomalie, punkty zwrotne\n"
+        "3) IMPLIKACJE DLA INSTRUMENTÓW — jak powyższe wpływa na poszczególne aktywa ze snapshotu\n"
+        "4) SCENARIUSZE + RYZYKO (skala 1–10) — scenariusz bazowy, optymistyczny, pesymistyczny\n"
+        "5) PERSPEKTYWA RUCHU — kierunki, ale NIE porada inwestycyjna\n"
+        "\nOdpowiadaj po polsku. Bądź konkretny i rzeczowy."
+    )
+    return "\n".join(parts)
+
+
+def _build_legacy_prompt(market_summary, news_list, scraped_text=""):
+    """Legacy prompt builder for backward compatibility."""
+    news_text = ""
+    if news_list and not any("error" in n for n in news_list):
+        news_text = "\n=== AKTUALNE WIADOMOŚCI ===\n"
+        for i, n in enumerate(news_list[:8], 1):
+            news_text += f"{i}. [{n.get('source','')}] {n.get('title','')}\n"
+            if n.get("description"):
+                news_text += f"   {n.get('description','')[:150]}...\n"
+
+    return (
+        f"Data analizy: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+        f"{market_summary}\n"
+        f"{news_text}\n"
+        f"{'=== TREŚĆ ZE ŹRÓDEŁ WWW ===' + chr(10) + scraped_text if scraped_text else ''}\n\n"
+        f"Na podstawie powyższych danych przeprowadź szczegółową analizę."
+    )
+
 
 def _run_anthropic(config, system_prompt, user_message):
     api_key = get_api_key(config, "anthropic")
