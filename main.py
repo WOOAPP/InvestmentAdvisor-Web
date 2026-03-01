@@ -1323,9 +1323,13 @@ class InvestmentAdvisor(tk.Tk):
         threading.Thread(target=runner, daemon=True).start()
 
     def _set_status(self, msg):
-        if not self._shutting_down:
-            self.status_label.configure(text=msg)
-            self.update_idletasks()
+        """Thread-safe status update - schedules UI change on main thread."""
+        if self._shutting_down:
+            return
+        try:
+            self.after(0, lambda: self.status_label.configure(text=msg))
+        except RuntimeError:
+            pass
 
     def _on_close(self):
         """Clean shutdown: close all matplotlib figures before destroying Tk."""
