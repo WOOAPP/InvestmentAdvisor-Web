@@ -1,13 +1,8 @@
-import requests
 from datetime import datetime
+import logging
+from modules.http_client import safe_get
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
+logger = logging.getLogger(__name__)
 
 FLAG_MAP = {
     "USD": "🇺🇸", "EUR": "🇪🇺", "GBP": "🇬🇧", "JPY": "🇯🇵",
@@ -162,8 +157,7 @@ def fetch_calendar(week="this"):
     slug = "thisweek" if week == "this" else "nextweek"
     url = f"https://nfs.faireconomy.media/ff_calendar_{slug}.json"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=14)
-        r.raise_for_status()
+        r = safe_get(url)
         data = r.json()
         events = []
         for e in data:

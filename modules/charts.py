@@ -6,9 +6,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.ticker import FuncFormatter
 import tkinter as tk
 import yfinance as yf
-import requests
 import pandas as pd
 from datetime import datetime, timedelta
+from modules.http_client import safe_get
 
 COLORS = {
     "bg":     "#1e1e2e",
@@ -42,21 +42,11 @@ COINGECKO_DAYS = {
     "2R": 730,
 }
 
-_CG_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-
 def _fetch_coingecko_chart(coin_id, days):
     """Fetch historical chart data from CoinGecko API."""
     url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
            f"/market_chart?vs_currency=usd&days={days}")
-    r = requests.get(url, headers=_CG_HEADERS, timeout=15)
-    r.raise_for_status()
+    r = safe_get(url)
     data = r.json()
 
     prices = data.get("prices", [])
