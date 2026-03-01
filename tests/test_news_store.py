@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from modules.news_store import (
     _news_hash, _normalize_article, init_news_table,
     store_news, get_news_by_window, get_news_since,
+    fetch_all_windows, NewsAuthError,
     DB_PATH,
 )
 
@@ -131,6 +132,35 @@ class TestSQLiteStorage(unittest.TestCase):
         self.assertIn("idx_news_published", indexes)
         self.assertIn("idx_news_source", indexes)
         self.assertIn("idx_news_window", indexes)
+
+
+class TestFetchAllWindowsFailFast(unittest.TestCase):
+
+    @patch("modules.news_store.fetch_news_window")
+    def test_stops_after_auth_error(self, mock_fetch):
+        """If first window returns 401, skip remaining windows."""
+        mock_fetch.side_effect = NewsAuthError("401")
+        result = fetch_all_windows("bad_key")
+        self.assertEqual(result, [])
+        # Should only attempt 1 call (24h), not all 5
+        self.assertEqual(mock_fetch.call_count, 1)
+
+    @patch("modules.news_store.fetch_news_window")
+    def test_continues_on_non_auth_error(self, mock_fetch):
+        """Non-auth errors should not abort remaining windows."""
+        mock_fetch.return_value = []
+        fetch_all_windows("good_key")
+        # All 5 windows attempted
+        self.assertEqual(mock_fetch.call_count, 5)
+
+    @patch("modules.news_store.fetch_news_window")
+    def test_dedup_across_windows(self, mock_fetch):
+        art = {"hash": "same", "title": "T", "source": "S",
+               "published_at": "2025-01-01T00:00:00Z"}
+        mock_fetch.return_value = [art]
+        result = fetch_all_windows("key")
+        # Same hash from all 5 windows → only 1 article kept
+        self.assertEqual(len(result), 1)
 
 
 if __name__ == "__main__":
