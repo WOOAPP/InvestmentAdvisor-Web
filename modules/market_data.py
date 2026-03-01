@@ -173,23 +173,30 @@ def get_crypto_data(coins=None):
     return results
 
 def get_news(api_key, query="economy geopolitics markets", language="pl", page_size=10):
+    """Fetch latest news from Newsdata.io (legacy/fallback function)."""
     if not api_key:
         return []
     try:
-        url = (f"https://newsapi.org/v2/everything?"
-               f"q={query}&language={language}&sortBy=publishedAt"
-               f"&pageSize={page_size}&apiKey={api_key}")
+        url = (f"https://newsdata.io/api/1/latest?"
+               f"apikey={api_key}&q={query}&language={language}"
+               f"&size={min(page_size, 50)}")
         r = safe_get(url)
         data = r.json()
+        if data.get("status") == "error":
+            err = data.get("results", {})
+            msg = err.get("message", "") if isinstance(err, dict) else str(err)
+            logger.error("Newsdata.io error: %s", msg)
+            return [{"error": msg}]
         return [
             {
                 "title": a.get("title", ""),
                 "description": a.get("description", ""),
-                "source": a.get("source", {}).get("name", ""),
-                "url": a.get("url", ""),
-                "published": a.get("publishedAt", "")
+                "source": a.get("source_id") or "",
+                "url": a.get("link") or "",
+                "published": a.get("pubDate", "")
             }
-            for a in data.get("articles", []) if a.get("title")
+            for a in data.get("results", [])
+            if isinstance(a, dict) and a.get("title")
         ]
     except Exception as e:
         logger.error("Błąd pobierania newsów: %s", e)

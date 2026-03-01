@@ -1,4 +1,4 @@
-"""Tests for C1 + C2: news store — dedup, normalize, SQLite."""
+"""Tests for C1 + C2: news store — dedup, normalize, SQLite (Newsdata.io)."""
 
 import unittest
 import sys, os
@@ -44,13 +44,14 @@ class TestNormalizeArticle(unittest.TestCase):
         raw = {
             "title": "Test Title",
             "description": "Some description",
-            "source": {"name": "Reuters"},
-            "publishedAt": "2025-01-01T12:00:00Z",
-            "url": "https://example.com/article",
+            "source_id": "reuters",
+            "pubDate": "2025-01-01 12:00:00",
+            "link": "https://example.com/article",
         }
         result = _normalize_article(raw, "24h")
         self.assertEqual(result["title"], "Test Title")
-        self.assertEqual(result["source"], "Reuters")
+        self.assertEqual(result["source"], "reuters")
+        self.assertEqual(result["url"], "https://example.com/article")
         self.assertEqual(result["window"], "24h")
         self.assertIn("hash", result)
 
@@ -59,6 +60,7 @@ class TestNormalizeArticle(unittest.TestCase):
         result = _normalize_article(raw, "7d")
         self.assertEqual(result["title"], "Minimal")
         self.assertEqual(result["source"], "")
+        self.assertEqual(result["url"], "")
         self.assertEqual(result["window"], "7d")
 
     def test_description_truncated(self):

@@ -1,5 +1,6 @@
 """
 C1 + C2: News windows fetching, deduplication, normalization, and SQLite storage.
+Uses Newsdata.io API (https://newsdata.io).
 """
 
 import hashlib
@@ -78,65 +79,113 @@ def _news_hash(title: str, source: str, published_at: str) -> str:
 
 
 def _normalize_article(article: dict, window: str) -> dict:
-    """Normalize a single NewsAPI article into our internal format."""
+    """Normalize a single Newsdata.io article into our internal format."""
     title = article.get("title") or ""
-    source = article.get("source", {}).get("name", "") if isinstance(article.get("source"), dict) else str(article.get("source", ""))
-    published_at = article.get("publishedAt", "")
+    source = article.get("source_id") or article.get("source_name") or ""
+    published_at = article.get("pubDate") or ""
     return {
         "hash": _news_hash(title, source, published_at),
         "title": title,
         "description": (article.get("description") or "")[:500],
         "source": source,
         "published_at": published_at,
-        "url": article.get("url", ""),
+        "url": article.get("link") or "",
         "window": window,
     }
 
 
-# ── Fetch from NewsAPI with time windows ────────────────────────────
+# ── Fetch from Newsdata.io with time windows ─────────────────────────
 
 class NewsAuthError(Exception):
-    """Raised when NewsAPI returns 401/403 — bad key or plan limit."""
+    """Raised when Newsdata.io returns 401/403 — bad key or plan limit."""
 
 
 def fetch_news_window(api_key: str, window: str, days: int,
                       query: str = "geopolitics economy markets finance",
                       language: str = "en",
-                      page_size: int = 30) -> list[dict]:
-    """Fetch news for a single time window. Returns normalized articles.
+                      page_size: int = 50) -> list[dict]:
+    """Fetch news for a single time window from Newsdata.io.
+
+    Uses /api/1/latest for recent windows (≤3 days) and /api/1/archive
+    for longer ranges (7d+).  Falls back to /latest if archive returns
+    error (free plans may not have archive access).
 
     Raises NewsAuthError on 401/403 so callers can fail fast.
     """
     if not api_key:
         return []
+
     now = datetime.utcnow()
-    from_date = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    to_date = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    from_date = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+    to_date = now.strftime("%Y-%m-%d")
+
+    # Choose endpoint: latest (≤3d) vs archive (7d+)
+    endpoint = "latest" if days <= 3 else "archive"
+
     try:
-        url = (
-            f"https://newsapi.org/v2/everything?"
-            f"q={query}&language={language}&sortBy=publishedAt"
-            f"&from={from_date}&to={to_date}"
-            f"&pageSize={page_size}&apiKey={api_key}"
-        )
+        articles = _newsdata_request(
+            api_key, endpoint, query, language, from_date, to_date,
+            page_size, window)
+
+        # Fallback: if archive failed (empty + free plan), try latest
+        if not articles and endpoint == "archive":
+            articles = _newsdata_request(
+                api_key, "latest", query, language, from_date, to_date,
+                page_size, window)
+
+        return articles
+    except NewsAuthError:
+        raise
+    except Exception as e:
+        logger.warning("Błąd pobierania newsów (window=%s): %s", window, e)
+        return []
+
+
+def _newsdata_request(api_key: str, endpoint: str, query: str,
+                      language: str, from_date: str, to_date: str,
+                      page_size: int, window: str) -> list[dict]:
+    """Low-level Newsdata.io request. Returns list of normalized articles."""
+    base = f"https://newsdata.io/api/1/{endpoint}"
+    url = (
+        f"{base}?apikey={api_key}"
+        f"&q={query}&language={language}"
+        f"&from_date={from_date}&to_date={to_date}"
+        f"&size={min(page_size, 50)}"
+    )
+    try:
         r = safe_get(url)
         data = r.json()
+
+        # Newsdata.io returns {"status": "error", "results": {"code": ...}}
+        if data.get("status") == "error":
+            err = data.get("results", {})
+            code = err.get("code") if isinstance(err, dict) else ""
+            msg = err.get("message", "") if isinstance(err, dict) else str(err)
+            if code in ("Unauthorized", "ForbiddenAccess"):
+                raise NewsAuthError(f"Newsdata.io {code}: {msg}")
+            logger.warning("Newsdata.io error (window=%s): %s — %s",
+                           window, code, msg)
+            return []
+
         articles = []
-        for a in data.get("articles", []):
+        for a in data.get("results", []):
+            if not isinstance(a, dict):
+                continue
             if not a.get("title"):
+                continue
+            # Skip duplicates flagged by Newsdata.io
+            if a.get("duplicate") is True:
                 continue
             articles.append(_normalize_article(a, window))
         return articles
+
     except requests.HTTPError as e:
         status = getattr(e.response, "status_code", None)
         if status in (401, 403):
-            logger.warning("NewsAPI %d (window=%s) — sprawdź klucz API",
+            logger.warning("Newsdata.io %d (window=%s) — sprawdź klucz API",
                            status, window)
-            raise NewsAuthError(f"NewsAPI HTTP {status}") from e
-        logger.warning("NewsAPI błąd (window=%s): %s", window, e)
-        return []
-    except Exception as e:
-        logger.warning("Błąd pobierania newsów (window=%s): %s", window, e)
+            raise NewsAuthError(f"Newsdata.io HTTP {status}") from e
+        logger.warning("Newsdata.io błąd HTTP (window=%s): %s", window, e)
         return []
 
 
@@ -152,8 +201,9 @@ def fetch_all_windows(api_key: str, **kwargs) -> list[dict]:
         try:
             articles = fetch_news_window(api_key, window, days, **kwargs)
         except NewsAuthError:
-            logger.warning("Klucz NewsAPI nieprawidłowy lub plan nie obsługuje "
-                           "okna %s — pomijam pozostałe okna", window)
+            logger.warning("Klucz Newsdata.io nieprawidłowy lub plan nie "
+                           "obsługuje okna %s — pomijam pozostałe okna",
+                           window)
             break
         for art in articles:
             if art["hash"] not in seen_hashes:
