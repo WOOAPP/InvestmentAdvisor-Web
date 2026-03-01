@@ -30,6 +30,8 @@ DEFAULT_CONFIG = {
     },
     "ai_provider": "anthropic",
     "ai_model": "claude-opus-4-6",
+    "chat_provider": "anthropic",
+    "chat_model": "claude-sonnet-4-6",
     "schedule": {
         "enabled": False,
         "times": ["08:00"]

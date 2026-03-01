@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(__file__))
 from config import load_config, save_config
 from modules.market_data import get_all_instruments, get_news, format_market_summary
-from modules.ai_engine import run_analysis, get_available_models
+from modules.ai_engine import run_analysis, run_chat, get_available_models
 from modules.database import (
     save_report, get_reports, get_report_by_id,
     save_market_snapshot, get_unseen_alerts, mark_alerts_seen, delete_report,
@@ -43,6 +43,7 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data = load_config()
         self.current_analysis = ""
         self.current_market_data = {}
+        self._chat_history = []     # list of {"role": ..., "content": ...}
         self.inst_entries = []
         self.source_entries = []
         self._tile_widgets = {}
@@ -182,16 +183,62 @@ class InvestmentAdvisor(tk.Tk):
             btn_bar, text="Gotowy", bg=BG, fg=GRAY, font=("Segoe UI", 9))
         self.status_label.pack(side="right", padx=8)
 
+        # ── PanedWindow: analysis (top) + chat (bottom) ──
+        paned = tk.PanedWindow(right, orient="vertical", bg=BG,
+                                sashwidth=5, sashrelief="flat")
+        paned.pack(fill="both", expand=True)
+
+        # — Analysis panel —
         analysis_frame = tk.LabelFrame(
-            right, text=" Analiza AI ", bg=BG, fg=ACCENT,
+            paned, text=" Analiza AI ", bg=BG, fg=ACCENT,
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
-        analysis_frame.pack(fill="both", expand=True)
+        paned.add(analysis_frame, minsize=120)
         self.analysis_text = scrolledtext.ScrolledText(
             analysis_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT)
         self.analysis_text.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # — Chat panel —
+        chat_frame = tk.LabelFrame(
+            paned, text=" Czat z AI ", bg=BG, fg=ACCENT,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            highlightbackground=GRAY, highlightthickness=1)
+        paned.add(chat_frame, minsize=120)
+
+        self.chat_display = scrolledtext.ScrolledText(
+            chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled",
+            insertbackground=FG, selectbackground=ACCENT, height=8)
+        self.chat_display.pack(fill="both", expand=True, padx=4, pady=(4, 2))
+        self.chat_display.tag_configure("user", foreground=ACCENT)
+        self.chat_display.tag_configure("assistant", foreground=GREEN)
+        self.chat_display.tag_configure("label", foreground=YELLOW,
+                                         font=("Segoe UI", 9, "bold"))
+        self.chat_display.tag_configure("error", foreground=RED)
+
+        input_bar = tk.Frame(chat_frame, bg=BG)
+        input_bar.pack(fill="x", padx=4, pady=(0, 4))
+
+        self.chat_entry = tk.Entry(
+            input_bar, bg=BG2, fg=FG, insertbackground=FG,
+            relief="flat", font=("Segoe UI", 10),
+            highlightbackground=GRAY, highlightthickness=1)
+        self.chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self.chat_entry.bind("<Return>", lambda e: self._send_chat_message())
+
+        self.chat_send_btn = tk.Button(
+            input_bar, text="Wyślij", bg=ACCENT, fg=BG,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            cursor="hand2", padx=12, command=self._send_chat_message)
+        self.chat_send_btn.pack(side="left")
+
+        tk.Button(
+            input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=8, command=self._clear_chat
+        ).pack(side="left", padx=(4, 0))
 
     # ── Kafelki Bloomberg ────────────────────────────────────
     def _build_price_tiles(self, parent):
@@ -924,6 +971,58 @@ class InvestmentAdvisor(tk.Tk):
 
         self._update_model_list()
 
+        section("💬 Model Czatu")
+        tk.Label(
+            inner,
+            text="Model używany do dyskusji o raporcie (używa tych samych kluczy API).",
+            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+
+        chat_prov_frame = tk.Frame(inner, bg=BG)
+        chat_prov_frame.pack(fill="x", padx=16, pady=3)
+        tk.Label(chat_prov_frame, text="Dostawca czatu:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10), width=22, anchor="w"
+                 ).pack(side="left")
+        self.v_chat_provider = tk.StringVar(
+            value=self.config_data.get("chat_provider", "anthropic"))
+        self._chat_provider_buttons = {}
+        for p in ["anthropic", "openai", "openrouter"]:
+            label = p.capitalize() if p != "openrouter" else "OpenRouter"
+            btn = tk.Button(
+                chat_prov_frame, text=label,
+                font=("Segoe UI", 10, "bold"), relief="flat",
+                cursor="hand2", padx=12, pady=4,
+                command=lambda pv=p: self._select_chat_provider(pv))
+            btn.pack(side="left", padx=4)
+            self._chat_provider_buttons[p] = btn
+        self._highlight_chat_provider_buttons()
+
+        chat_model_frame = tk.Frame(inner, bg=BG)
+        chat_model_frame.pack(fill="x", padx=16, pady=3)
+        tk.Label(chat_model_frame, text="Model czatu:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10), width=22, anchor="w"
+                 ).pack(side="left")
+        self.v_chat_model = tk.StringVar(
+            value=self.config_data.get("chat_model", "claude-sonnet-4-6"))
+        self.chat_model_cb = ttk.Combobox(
+            chat_model_frame, textvariable=self.v_chat_model,
+            width=30)
+        self.chat_model_cb.pack(side="left", padx=4)
+
+        tk.Label(chat_model_frame, text="lub wpisz:", bg=BG, fg=GRAY,
+                 font=("Segoe UI", 9)).pack(side="left", padx=(8, 4))
+        self.v_chat_custom_model = tk.StringVar()
+        self._chat_custom_model_entry = tk.Entry(
+            chat_model_frame, textvariable=self.v_chat_custom_model,
+            bg=BG2, fg=FG, insertbackground=FG, relief="flat",
+            font=("Segoe UI", 10), width=24,
+            highlightbackground=GRAY, highlightthickness=1)
+        self._chat_custom_model_entry.pack(side="left", padx=4)
+        self._chat_custom_model_entry.bind(
+            "<KeyRelease>", lambda e: self._on_chat_custom_model_change())
+
+        self._update_chat_model_list()
+
         section("⏰ Harmonogram")
         sched_frame = tk.Frame(inner, bg=BG)
         sched_frame.pack(fill="x", padx=16, pady=3)
@@ -1105,6 +1204,42 @@ class InvestmentAdvisor(tk.Tk):
                 if models:
                     self.v_model.set(models[0])
 
+    def _select_chat_provider(self, provider):
+        self.v_chat_provider.set(provider)
+        self._highlight_chat_provider_buttons()
+        self._update_chat_model_list()
+
+    def _highlight_chat_provider_buttons(self):
+        active = self.v_chat_provider.get()
+        for p, btn in self._chat_provider_buttons.items():
+            if p == active:
+                btn.configure(bg=ACCENT, fg=BG)
+            else:
+                btn.configure(bg=BTN_BG, fg=FG)
+
+    def _on_chat_custom_model_change(self):
+        custom = self.v_chat_custom_model.get().strip()
+        if custom:
+            self.v_chat_model.set(custom)
+
+    def _update_chat_model_list(self):
+        provider = self.v_chat_provider.get()
+        models = get_available_models(provider)
+        self.chat_model_cb["values"] = models
+        self.v_chat_custom_model.set("")
+        if provider == "anthropic":
+            self.chat_model_cb.configure(state="readonly")
+            self._chat_custom_model_entry.configure(state="disabled")
+            if models and self.v_chat_model.get() not in models:
+                self.v_chat_model.set(models[0])
+        else:
+            self.chat_model_cb.configure(state="readonly")
+            self._chat_custom_model_entry.configure(state="normal")
+            current = self.v_chat_model.get()
+            if not current or current not in models:
+                if models:
+                    self.v_chat_model.set(models[0])
+
     def _reset_prompt(self):
         from config import DEFAULT_CONFIG
         self.prompt_text.delete("1.0", "end")
@@ -1118,6 +1253,9 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data["ai_provider"] = self.v_provider.get()
         custom = self.v_custom_model.get().strip()
         self.config_data["ai_model"] = custom if custom else self.v_model.get()
+        self.config_data["chat_provider"] = self.v_chat_provider.get()
+        chat_custom = self.v_chat_custom_model.get().strip()
+        self.config_data["chat_model"] = chat_custom if chat_custom else self.v_chat_model.get()
         self.config_data["schedule"]["enabled"] = self.v_sched_enabled.get()
         self.config_data["schedule"]["times"] = [
             t.strip() for t in self.v_times.get().split(",") if t.strip()]
@@ -1149,6 +1287,54 @@ class InvestmentAdvisor(tk.Tk):
             self.v_port_inst.set(inst_names[0])
 
         messagebox.showinfo("Zapisano", "Ustawienia zostały zapisane!")
+
+    # ═══════════════════════════════════════
+    # CHAT
+    # ═══════════════════════════════════════
+    def _append_chat(self, label, text, tag):
+        """Append a message to the chat display widget."""
+        self.chat_display.configure(state="normal")
+        self.chat_display.insert("end", f"{label}\n", "label")
+        self.chat_display.insert("end", f"{text}\n\n", tag)
+        self.chat_display.configure(state="disabled")
+        self.chat_display.see("end")
+
+    def _clear_chat(self):
+        self._chat_history.clear()
+        self.chat_display.configure(state="normal")
+        self.chat_display.delete("1.0", "end")
+        self.chat_display.configure(state="disabled")
+
+    def _send_chat_message(self):
+        msg = self.chat_entry.get().strip()
+        if not msg:
+            return
+        self.chat_entry.delete(0, "end")
+        self._append_chat("Ty:", msg, "user")
+
+        self._chat_history.append({"role": "user", "content": msg})
+        self.chat_send_btn.configure(state="disabled", text="…")
+
+        def _worker():
+            system = (
+                "Jesteś asystentem inwestycyjnym. Odpowiadaj po polsku, "
+                "konkretnie i rzeczowo.\n"
+            )
+            if self.current_analysis:
+                system += (
+                    "\nPoniżej znajduje się ostatni raport analizy rynkowej, "
+                    "który przygotowałeś. Użytkownik chce o nim porozmawiać.\n\n"
+                    f"--- RAPORT ---\n{self.current_analysis}\n--- KONIEC RAPORTU ---"
+                )
+
+            reply = run_chat(self.config_data, list(self._chat_history), system)
+            self._chat_history.append({"role": "assistant", "content": reply})
+
+            self.after(0, lambda: self._append_chat("AI:", reply, "assistant"))
+            self.after(0, lambda: self.chat_send_btn.configure(
+                state="normal", text="Wyślij"))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ═══════════════════════════════════════
     # ANALYSIS
