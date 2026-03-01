@@ -122,12 +122,12 @@ def _setup_xaxis(ax, period, n_points):
     elif period == "5T":
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m\n%a"))
         ax.xaxis.set_major_locator(mdates.DayLocator())
-    elif period in ("1M", "3M"):
+    elif period == "1M":
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
-        if period == "1M":
-            ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0))
-        else:
-            ax.xaxis.set_major_locator(mdates.MonthLocator())
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0, interval=2))
+    elif period == "3M":
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0, interval=2))
     elif period == "6M":
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
         ax.xaxis.set_major_locator(mdates.MonthLocator())
@@ -272,11 +272,19 @@ def create_price_chart(parent_frame, symbol, period="1M",
     _setup_xaxis(bottom_ax, period, n_points)
     bottom_ax.tick_params(axis="x", colors=COLORS["fg"], labelsize=8)
 
-    # Rotate labels only for longer date strings; short periods stay horizontal
-    if period in ("1T", "5T"):
+    # Rotate labels adaptively per period for readability
+    if period == "1T":
         for label in bottom_ax.get_xticklabels():
             label.set_rotation(0)
             label.set_ha("center")
+    elif period == "5T":
+        for label in bottom_ax.get_xticklabels():
+            label.set_rotation(0)
+            label.set_ha("center")
+    elif period in ("1M", "3M"):
+        for label in bottom_ax.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha("right")
     else:
         for label in bottom_ax.get_xticklabels():
             label.set_rotation(30)
@@ -323,7 +331,12 @@ def create_price_chart(parent_frame, symbol, period="1M",
     ax.set_title(title_text, color=COLORS["fg"],
                  fontsize=12, fontweight="bold", pad=12)
 
-    fig.tight_layout(pad=2.0)
+    # Use subplots_adjust instead of tight_layout (incompatible with gridspec)
+    if show_volume:
+        fig.subplots_adjust(left=0.10, right=0.96, top=0.92, bottom=0.18,
+                            hspace=0.06)
+    else:
+        fig.subplots_adjust(left=0.10, right=0.96, top=0.92, bottom=0.18)
 
     # ── Embed in Tkinter ──
     canvas = FigureCanvasTkAgg(fig, master=parent_frame)
