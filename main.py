@@ -5,6 +5,9 @@ import schedule
 import time
 import sys
 import os
+import matplotlib
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from config import load_config, save_config
@@ -46,9 +49,11 @@ class InvestmentAdvisor(tk.Tk):
         self._current_chart_fig = None
         self._cal_events = []
         self._period_buttons = {}
+        self._shutting_down = False
         self._build_ui()
         self._start_scheduler()
         self._check_alerts()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── Mousewheel scrolling helper ───────────────────────────
     def _bind_mousewheel(self, area_widget, scroll_target):
@@ -697,7 +702,6 @@ class InvestmentAdvisor(tk.Tk):
 
     def _draw_chart(self):
         if self._current_chart_fig:
-            import matplotlib.pyplot as plt
             plt.close(self._current_chart_fig)
             self._current_chart_fig = None
 
@@ -867,14 +871,17 @@ class InvestmentAdvisor(tk.Tk):
                  ).pack(side="left")
         self.v_provider = tk.StringVar(
             value=self.config_data.get("ai_provider", "anthropic"))
+        self._provider_buttons = {}
         for p in ["anthropic", "openai", "openrouter"]:
             label = p.capitalize() if p != "openrouter" else "OpenRouter"
-            tk.Radiobutton(
-                prov_frame, text=label, variable=self.v_provider,
-                value=p, bg=BG, fg=FG, selectcolor=ACCENT,
-                activebackground=BG, font=("Segoe UI", 10),
-                command=self._update_model_list
-            ).pack(side="left", padx=8)
+            btn = tk.Button(
+                prov_frame, text=label,
+                font=("Segoe UI", 10, "bold"), relief="flat",
+                cursor="hand2", padx=12, pady=4,
+                command=lambda pv=p: self._select_provider(pv))
+            btn.pack(side="left", padx=4)
+            self._provider_buttons[p] = btn
+        self._highlight_provider_buttons()
 
         model_frame = tk.Frame(inner, bg=BG)
         model_frame.pack(fill="x", padx=16, pady=3)
@@ -885,13 +892,20 @@ class InvestmentAdvisor(tk.Tk):
             value=self.config_data.get("ai_model", "claude-opus-4-6"))
         self.model_cb = ttk.Combobox(
             model_frame, textvariable=self.v_model,
-            width=36)
+            width=30)
         self.model_cb.pack(side="left", padx=4)
 
-        # Hint label for editable model field
-        self._model_hint = tk.Label(
-            model_frame, text="", bg=BG, fg=GRAY, font=("Segoe UI", 8))
-        self._model_hint.pack(side="left", padx=8)
+        tk.Label(model_frame, text="lub wpisz:", bg=BG, fg=GRAY,
+                 font=("Segoe UI", 9)).pack(side="left", padx=(8, 4))
+        self.v_custom_model = tk.StringVar()
+        self._custom_model_entry = tk.Entry(
+            model_frame, textvariable=self.v_custom_model,
+            bg=BG2, fg=FG, insertbackground=FG, relief="flat",
+            font=("Segoe UI", 10), width=24,
+            highlightbackground=GRAY, highlightthickness=1)
+        self._custom_model_entry.pack(side="left", padx=4)
+        self._custom_model_entry.bind(
+            "<KeyRelease>", lambda e: self._on_custom_model_change())
 
         self._update_model_list()
 
@@ -1038,19 +1052,37 @@ class InvestmentAdvisor(tk.Tk):
                   padx=6, command=remove).pack(side="left")
         self.source_entries.append((row_frame, var))
 
+    def _select_provider(self, provider):
+        self.v_provider.set(provider)
+        self._highlight_provider_buttons()
+        self._update_model_list()
+
+    def _highlight_provider_buttons(self):
+        active = self.v_provider.get()
+        for p, btn in self._provider_buttons.items():
+            if p == active:
+                btn.configure(bg=ACCENT, fg=BG)
+            else:
+                btn.configure(bg=BTN_BG, fg=FG)
+
+    def _on_custom_model_change(self):
+        custom = self.v_custom_model.get().strip()
+        if custom:
+            self.v_model.set(custom)
+
     def _update_model_list(self):
         provider = self.v_provider.get()
         models = get_available_models(provider)
         self.model_cb["values"] = models
+        self.v_custom_model.set("")
         if provider == "anthropic":
             self.model_cb.configure(state="readonly")
-            self._model_hint.configure(text="")
+            self._custom_model_entry.configure(state="disabled")
             if models and self.v_model.get() not in models:
                 self.v_model.set(models[0])
         else:
-            self.model_cb.configure(state="normal")
-            self._model_hint.configure(
-                text="Wpisz nazwę lub wybierz z listy")
+            self.model_cb.configure(state="readonly")
+            self._custom_model_entry.configure(state="normal")
             current = self.v_model.get()
             if not current or current not in models:
                 if models:
@@ -1067,7 +1099,8 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data["api_keys"]["anthropic"]    = self.v_anthropic.get().strip()
         self.config_data["api_keys"]["openrouter"]   = self.v_openrouter.get().strip()
         self.config_data["ai_provider"] = self.v_provider.get()
-        self.config_data["ai_model"]    = self.v_model.get()
+        custom = self.v_custom_model.get().strip()
+        self.config_data["ai_model"] = custom if custom else self.v_model.get()
         self.config_data["schedule"]["enabled"] = self.v_sched_enabled.get()
         self.config_data["schedule"]["times"] = [
             t.strip() for t in self.v_times.get().split(",") if t.strip()]
@@ -1246,6 +1279,8 @@ class InvestmentAdvisor(tk.Tk):
     # ALERTS
     # ═══════════════════════════════════════
     def _check_alerts(self):
+        if self._shutting_down:
+            return
         alerts = get_unseen_alerts()
         if alerts:
             self.alert_btn.configure(
@@ -1281,15 +1316,29 @@ class InvestmentAdvisor(tk.Tk):
                 schedule.every().day.at(t).do(self._run_analysis_thread)
 
         def runner():
-            while True:
+            while not self._shutting_down:
                 schedule.run_pending()
                 time.sleep(30)
 
         threading.Thread(target=runner, daemon=True).start()
 
     def _set_status(self, msg):
-        self.status_label.configure(text=msg)
-        self.update_idletasks()
+        if not self._shutting_down:
+            self.status_label.configure(text=msg)
+            self.update_idletasks()
+
+    def _on_close(self):
+        """Clean shutdown: close all matplotlib figures before destroying Tk."""
+        self._shutting_down = True
+        try:
+            if self._current_chart_fig:
+                plt.close(self._current_chart_fig)
+                self._current_chart_fig = None
+            plt.close("all")
+        except Exception:
+            pass
+        schedule.clear()
+        self.destroy()
 
 
 if __name__ == "__main__":
