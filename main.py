@@ -957,8 +957,11 @@ class InvestmentAdvisor(tk.Tk):
                     f"--- RAPORT ---\n{report_text}\n--- KONIEC RAPORTU ---"
                 )
 
-            reply = run_chat(
-                self.config_data, list(self._chart_chat_history), system)
+            try:
+                reply = run_chat(
+                    self.config_data, list(self._chart_chat_history), system)
+            except Exception as exc:
+                reply = f"Błąd połączenia: {exc}"
             self._chart_chat_history.append(
                 {"role": "assistant", "content": reply})
 
@@ -1567,7 +1570,10 @@ class InvestmentAdvisor(tk.Tk):
                     f"--- RAPORT ---\n{self.current_analysis}\n--- KONIEC RAPORTU ---"
                 )
 
-            reply = run_chat(self.config_data, list(self._chat_history), system)
+            try:
+                reply = run_chat(self.config_data, list(self._chat_history), system)
+            except Exception as exc:
+                reply = f"Błąd połączenia: {exc}"
             self._chat_history.append({"role": "assistant", "content": reply})
 
             self.after(0, lambda: self._append_chat("AI:", reply, "assistant"))
