@@ -5,7 +5,7 @@ CONFIG_FILE = "data/config.json"
 
 # Mapowanie: klucz w config["api_keys"] -> nazwa zmiennej środowiskowej
 ENV_KEY_MAP = {
-    "newsapi":    "NEWSAPI_KEY",
+    "newsdata":   "NEWSDATA_KEY",
     "openai":     "OPENAI_API_KEY",
     "anthropic":  "ANTHROPIC_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
@@ -31,7 +31,7 @@ DEFAULT_INSTRUMENTS = [
 
 DEFAULT_CONFIG = {
     "api_keys": {
-        "newsapi": "",
+        "newsdata": "",
         "openai": "",
         "anthropic": "",
         "openrouter": "",
@@ -117,6 +117,8 @@ DEFAULT_CONFIG = {
         "kitco.com",
         "oilprice.com",
         "ino.com",
+        # API news
+        "newsdata.io",
     ],
     "sources": [],
     "prompt": (

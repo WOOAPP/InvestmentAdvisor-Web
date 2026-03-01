@@ -1133,7 +1133,7 @@ class InvestmentAdvisor(tk.Tk):
         section("🔑 Klucze API")
         # Klucze z env mają priorytet — w UI pokazujemy zamaskowane
         self._key_from_env = {}
-        for kn in ("newsapi", "openai", "anthropic", "openrouter"):
+        for kn in ("newsdata", "openai", "anthropic", "openrouter"):
             from config import ENV_KEY_MAP
             env_name = ENV_KEY_MAP.get(kn, "")
             self._key_from_env[kn] = bool(
@@ -1145,11 +1145,11 @@ class InvestmentAdvisor(tk.Tk):
                 return mask_key(val) + " (ENV)"
             return val
 
-        self.v_newsapi   = tk.StringVar(value=_key_display("newsapi"))
+        self.v_newsdata  = tk.StringVar(value=_key_display("newsdata"))
         self.v_openai    = tk.StringVar(value=_key_display("openai"))
         self.v_anthropic = tk.StringVar(value=_key_display("anthropic"))
         self.v_openrouter = tk.StringVar(value=_key_display("openrouter"))
-        entry_row(inner, "NewsAPI:", self.v_newsapi, show="*")
+        entry_row(inner, "Newsdata.io:", self.v_newsdata, show="*")
         entry_row(inner, "OpenAI API Key:", self.v_openai, show="*")
         entry_row(inner, "Anthropic API Key:", self.v_anthropic, show="*")
         entry_row(inner, "OpenRouter API Key:", self.v_openrouter, show="*")
@@ -1528,7 +1528,7 @@ class InvestmentAdvisor(tk.Tk):
 
     def _save_settings(self):
         # Nie nadpisuj kluczy zarządzanych przez env
-        for kn, var in (("newsapi", self.v_newsapi), ("openai", self.v_openai),
+        for kn, var in (("newsdata", self.v_newsdata), ("openai", self.v_openai),
                         ("anthropic", self.v_anthropic), ("openrouter", self.v_openrouter)):
             if not self._key_from_env.get(kn):
                 self.config_data["api_keys"][kn] = var.get().strip()
@@ -1643,12 +1643,12 @@ class InvestmentAdvisor(tk.Tk):
             market_data = get_all_instruments(cfg.get("instruments", []))
 
             self.set_busy(True, "Pobieranie newsów (macro-trend engine)…")
-            newsapi_key = get_api_key(cfg, "newsapi")
+            newsdata_key = get_api_key(cfg, "newsdata")
             macro_text = ""
             news = []
-            if newsapi_key:
+            if newsdata_key:
                 try:
-                    macro_payload = build_macro_payload(newsapi_key)
+                    macro_payload = build_macro_payload(newsdata_key)
                     macro_text = format_macro_payload_for_llm(macro_payload)
                 except Exception as e:
                     import logging
@@ -1657,7 +1657,7 @@ class InvestmentAdvisor(tk.Tk):
             # Fallback: legacy news if macro engine fails
             if not macro_text:
                 news = get_news(
-                    newsapi_key,
+                    newsdata_key,
                     query="geopolitics economy markets finance",
                     language="en")
 
