@@ -200,9 +200,9 @@ def create_risk_gauge(parent_frame, risk_level=5):
     ax.axis("off")
 
     for start_deg, end_deg, color in [
-        (0,   60,  COLORS["red"]),
+        (0,   60,  COLORS["green"]),
         (60,  120, COLORS["yellow"]),
-        (120, 180, COLORS["green"]),
+        (120, 180, COLORS["red"]),
     ]:
         theta = np.linspace(np.radians(start_deg), np.radians(end_deg), 50)
         x_out = np.cos(theta)
