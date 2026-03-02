@@ -18,6 +18,23 @@ def _migrate_reports_usage(conn):
     conn.commit()
 
 
+def _migrate_portfolio_currency(conn):
+    """Add currency columns to portfolio table if missing (backward-compat)."""
+    c = conn.cursor()
+    existing = {row[1] for row in c.execute("PRAGMA table_info(portfolio)").fetchall()}
+    for col, coltype, default in [
+        ("buy_currency", "TEXT", "'USD'"),
+        ("buy_fx_to_usd", "REAL", "1.0"),
+        ("buy_price_usd", "REAL", "0"),
+    ]:
+        if col not in existing:
+            c.execute(f"ALTER TABLE portfolio ADD COLUMN {col} {coltype} DEFAULT {default}")
+    # Back-fill buy_price_usd for existing rows (legacy = USD, so price_usd == buy_price)
+    if "buy_price_usd" not in existing:
+        c.execute("UPDATE portfolio SET buy_price_usd = buy_price WHERE buy_price_usd = 0 OR buy_price_usd IS NULL")
+    conn.commit()
+
+
 def init_db():
     """Tworzy tabele jeśli nie istnieją."""
     os.makedirs("data", exist_ok=True)
@@ -62,7 +79,10 @@ def init_db():
             name TEXT,
             quantity REAL NOT NULL,
             buy_price REAL NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            buy_currency TEXT DEFAULT 'USD',
+            buy_fx_to_usd REAL DEFAULT 1.0,
+            buy_price_usd REAL DEFAULT 0
         )
     """)
     c.execute("""
@@ -74,6 +94,7 @@ def init_db():
     """)
     conn.commit()
     _migrate_reports_usage(conn)
+    _migrate_portfolio_currency(conn)
     conn.close()
 
 def save_report(provider, model, market_summary, analysis, risk_level=0,
@@ -190,22 +211,30 @@ def delete_report(report_id):
 
 # ── PORTFOLIO ──
 
-def add_portfolio_position(symbol, name, quantity, buy_price):
+def add_portfolio_position(symbol, name, quantity, buy_price,
+                           buy_currency="USD", buy_fx_to_usd=1.0):
+    buy_price_usd = float(buy_price) * float(buy_fx_to_usd)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
-        INSERT INTO portfolio (symbol, name, quantity, buy_price, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO portfolio
+            (symbol, name, quantity, buy_price, created_at,
+             buy_currency, buy_fx_to_usd, buy_price_usd)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (symbol, name or symbol, float(quantity), float(buy_price),
-          datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+          buy_currency, float(buy_fx_to_usd), buy_price_usd))
     conn.commit()
     conn.close()
 
 def get_portfolio_positions():
+    """Returns tuples: (id, symbol, name, qty, buy_price, created_at,
+                        buy_currency, buy_fx_to_usd, buy_price_usd)"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
-        SELECT id, symbol, name, quantity, buy_price, created_at
+        SELECT id, symbol, name, quantity, buy_price, created_at,
+               buy_currency, buy_fx_to_usd, buy_price_usd
         FROM portfolio ORDER BY created_at
     """)
     rows = c.fetchall()

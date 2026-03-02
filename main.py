@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from config import load_config, save_config, mask_key, get_api_key
-from modules.market_data import get_all_instruments, get_news, format_market_summary
+from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd
 from modules.ai_engine import (run_analysis, run_chat, get_available_models,
                                generate_instrument_profile)
 from modules.database import (
@@ -244,7 +244,20 @@ class InvestmentAdvisor(tk.Tk):
         self.chat_display.tag_configure("error", foreground=RED)
 
         input_bar = tk.Frame(self.chat_frame, bg=BG)
-        input_bar.pack(fill="x", padx=4, pady=(0, 4))
+        input_bar.pack(fill="x", padx=4, pady=(0, 6))
+
+        # Pack buttons right-to-left first so they always stay visible
+        tk.Button(
+            input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=8, command=self._clear_chat
+        ).pack(side="right", padx=(4, 0))
+
+        self.chat_send_btn = tk.Button(
+            input_bar, text="Wyślij", bg=ACCENT, fg=BG,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            cursor="hand2", padx=12, command=self._send_chat_message)
+        self.chat_send_btn.pack(side="right", padx=(4, 0))
 
         self.chat_entry = tk.Entry(
             input_bar, bg=BG2, fg=FG, insertbackground=FG,
@@ -252,18 +265,6 @@ class InvestmentAdvisor(tk.Tk):
             highlightbackground=GRAY, highlightthickness=1)
         self.chat_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
         self.chat_entry.bind("<Return>", lambda e: self._send_chat_message())
-
-        self.chat_send_btn = tk.Button(
-            input_bar, text="Wyślij", bg=ACCENT, fg=BG,
-            font=("Segoe UI", 10, "bold"), relief="flat",
-            cursor="hand2", padx=12, command=self._send_chat_message)
-        self.chat_send_btn.pack(side="left")
-
-        tk.Button(
-            input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
-            font=("Segoe UI", 9), relief="flat", cursor="hand2",
-            padx=8, command=self._clear_chat
-        ).pack(side="left", padx=(4, 0))
 
         # Task 1 + 3: markdown tags + click-to-focus for dashboard chat
         setup_markdown_tags(self.chat_display)
@@ -662,13 +663,19 @@ class InvestmentAdvisor(tk.Tk):
                  highlightbackground=GRAY, highlightthickness=1
                  ).pack(side="left", padx=(0, 8))
 
-        lbl("Cena zakupu ($):")
+        lbl("Cena zakupu:")
         self.v_port_price = tk.StringVar()
         tk.Entry(inner, textvariable=self.v_port_price, bg=BG2, fg=FG,
                  insertbackground=FG, relief="flat", width=12,
                  font=("Segoe UI", 10),
                  highlightbackground=GRAY, highlightthickness=1
-                 ).pack(side="left", padx=(0, 8))
+                 ).pack(side="left", padx=(0, 4))
+
+        self.v_port_currency = tk.StringVar(value="USD")
+        ttk.Combobox(
+            inner, textvariable=self.v_port_currency,
+            values=["USD", "PLN", "EUR"], width=5, state="readonly"
+        ).pack(side="left", padx=(0, 8))
 
         tk.Button(
             inner, text="➕ Dodaj", bg=GREEN, fg=BG,
@@ -680,13 +687,14 @@ class InvestmentAdvisor(tk.Tk):
         tree_frame = tk.Frame(self.tab_portfolio, bg=BG)
         tree_frame.pack(fill="both", expand=True, padx=12, pady=4)
 
-        cols = ("Instrument", "Symbol", "Ilość", "Kup. ($)",
-                "Akt. ($)", "Wartość ($)", "Zysk ($)", "Zysk %")
+        cols = ("Instrument", "Symbol", "Ilość", "Waluta",
+                "Kup.", "Kup. ($)", "Akt. ($)",
+                "Wartość ($)", "Zysk ($)", "Zysk %")
         self.port_tree = ttk.Treeview(
             tree_frame, columns=cols, show="headings", height=18)
 
-        widths = [150, 75, 70, 90, 90, 100, 100, 80]
-        anchors = ["w", "center", "e", "e", "e", "e", "e", "e"]
+        widths = [130, 70, 60, 50, 85, 85, 85, 95, 95, 70]
+        anchors = ["w", "center", "e", "center", "e", "e", "e", "e", "e", "e"]
         for col, w, anc in zip(cols, widths, anchors):
             self.port_tree.heading(col, text=col)
             self.port_tree.column(col, width=w, anchor=anc)
@@ -735,6 +743,7 @@ class InvestmentAdvisor(tk.Tk):
         inst_str  = self.v_port_inst.get()
         qty_str   = self.v_port_qty.get().strip()
         price_str = self.v_port_price.get().strip()
+        currency  = self.v_port_currency.get()
 
         if not inst_str or not qty_str or not price_str:
             messagebox.showwarning(
@@ -749,9 +758,19 @@ class InvestmentAdvisor(tk.Tk):
                 "Błąd", "Ilość i cena zakupu muszą być liczbami > 0.")
             return
 
+        fx_rate = get_fx_to_usd(currency)
+        if fx_rate is None:
+            messagebox.showwarning(
+                "Brak kursu FX",
+                f"Nie udało się pobrać kursu {currency}→USD.\n"
+                "Sprawdź połączenie z internetem i spróbuj ponownie.")
+            return
+
         symbol = inst_str.split("(")[-1].rstrip(")")
         name   = inst_str.split("(")[0].strip()
-        add_portfolio_position(symbol, name, qty, price)
+        add_portfolio_position(symbol, name, qty, price,
+                               buy_currency=currency,
+                               buy_fx_to_usd=fx_rate)
         self.v_port_qty.set("")
         self.v_port_price.set("")
         self._refresh_portfolio()
@@ -775,17 +794,32 @@ class InvestmentAdvisor(tk.Tk):
         total_current  = 0.0
 
         for pos in positions:
-            pid, symbol, name, qty, buy_price, _ = pos
+            # Tuple: id, symbol, name, qty, buy_price, created_at,
+            #        buy_currency, buy_fx_to_usd, buy_price_usd
+            pid        = pos[0]
+            symbol     = pos[1]
+            name       = pos[2]
+            qty        = pos[3]
+            buy_price  = pos[4]
+            currency   = pos[6] if len(pos) > 6 and pos[6] else "USD"
+            fx_rate    = pos[7] if len(pos) > 7 and pos[7] else 1.0
+            price_usd  = pos[8] if len(pos) > 8 and pos[8] else (buy_price * fx_rate)
+
             d = self.current_market_data.get(symbol, {})
             current_price = d.get("price") if "error" not in d else None
 
-            invested = qty * buy_price
-            total_invested += invested
+            invested_usd = qty * price_usd
+            total_invested += invested_usd
+
+            # Format buy price in original currency
+            buy_display = f"{buy_price:,.4f}"
+            if currency != "USD":
+                buy_display += f" {currency}"
 
             if current_price is not None:
                 current_val = qty * current_price
-                pnl_usd     = current_val - invested
-                pnl_pct     = (pnl_usd / invested * 100) if invested else 0
+                pnl_usd     = current_val - invested_usd
+                pnl_pct     = (pnl_usd / invested_usd * 100) if invested_usd else 0
                 total_current += current_val
                 tag = "profit" if pnl_usd >= 0 else "loss"
                 self.port_tree.insert(
@@ -793,18 +827,21 @@ class InvestmentAdvisor(tk.Tk):
                     values=(
                         name or symbol, symbol,
                         f"{qty:g}",
-                        f"{buy_price:,.4f}",
+                        currency,
+                        buy_display,
+                        f"{price_usd:,.4f}",
                         f"{current_price:,.4f}",
                         f"{current_val:,.2f}",
                         f"{pnl_usd:+,.2f}",
                         f"{pnl_pct:+.2f}%",
                     ))
             else:
-                total_current += invested
+                total_current += invested_usd
                 self.port_tree.insert(
                     "", "end", iid=str(pid),
                     values=(name or symbol, symbol,
-                            f"{qty:g}", f"{buy_price:,.4f}",
+                            f"{qty:g}", currency,
+                            buy_display, f"{price_usd:,.4f}",
                             "N/A", "—", "—", "—"))
 
         total_pnl = total_current - total_invested
@@ -1011,19 +1048,23 @@ class InvestmentAdvisor(tk.Tk):
         ).pack(side="left", padx=8)
 
         # ── PanedWindow: chart (top) + chat (bottom) ──
-        paned = tk.PanedWindow(self.tab_charts, orient="vertical", bg=BG,
-                                sashwidth=5, sashrelief="flat")
-        paned.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self._chart_paned = tk.PanedWindow(
+            self.tab_charts, orient="vertical", bg=BG,
+            sashwidth=5, sashrelief="flat")
+        self._chart_paned.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
-        self.chart_container = tk.Frame(paned, bg=BG)
-        paned.add(self.chart_container, minsize=200)
+        self.chart_container = tk.Frame(self._chart_paned, bg=BG)
+        self._chart_paned.add(self.chart_container, minsize=200)
 
         # ── Chart chat panel ──
         self.chart_chat_frame = tk.LabelFrame(
-            paned, text=" Czat o wykresie ", bg=BG, fg=ACCENT,
+            self._chart_paned, text=" Czat o wykresie ", bg=BG, fg=ACCENT,
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
-        paned.add(self.chart_chat_frame, minsize=100)
+        self._chart_paned.add(self.chart_chat_frame, minsize=100)
+
+        # Set initial sash to ~2/3 chart, 1/3 chat after layout is realized
+        self._chart_paned.bind("<Map>", self._set_chart_sash, add="+")
 
         self.chart_chat_display = scrolledtext.ScrolledText(
             self.chart_chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
@@ -1037,7 +1078,20 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_chat_display.tag_configure("error", foreground=RED)
 
         chart_input_bar = tk.Frame(self.chart_chat_frame, bg=BG)
-        chart_input_bar.pack(fill="x", padx=4, pady=(0, 4))
+        chart_input_bar.pack(fill="x", padx=4, pady=(0, 6))
+
+        # Pack buttons right-to-left first so they always stay visible
+        tk.Button(
+            chart_input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=8, command=self._clear_chart_chat
+        ).pack(side="right", padx=(4, 0))
+
+        self.chart_chat_send_btn = tk.Button(
+            chart_input_bar, text="Wyślij", bg=ACCENT, fg=BG,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            cursor="hand2", padx=12, command=self._send_chart_chat_message)
+        self.chart_chat_send_btn.pack(side="right", padx=(4, 0))
 
         self.chart_chat_entry = tk.Entry(
             chart_input_bar, bg=BG2, fg=FG, insertbackground=FG,
@@ -1047,21 +1101,17 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_chat_entry.bind("<Return>",
                                     lambda e: self._send_chart_chat_message())
 
-        self.chart_chat_send_btn = tk.Button(
-            chart_input_bar, text="Wyślij", bg=ACCENT, fg=BG,
-            font=("Segoe UI", 10, "bold"), relief="flat",
-            cursor="hand2", padx=12, command=self._send_chart_chat_message)
-        self.chart_chat_send_btn.pack(side="left")
-
-        tk.Button(
-            chart_input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
-            font=("Segoe UI", 9), relief="flat", cursor="hand2",
-            padx=8, command=self._clear_chart_chat
-        ).pack(side="left", padx=(4, 0))
-
         # Task 1 + 3: markdown tags + click-to-focus for chart chat
         setup_markdown_tags(self.chart_chat_display)
         bind_chat_focus(self.chart_chat_frame, self.chart_chat_entry)
+
+    def _set_chart_sash(self, event=None):
+        """Set PanedWindow sash so chart gets ~2/3, chat ~1/3."""
+        self._chart_paned.unbind("<Map>")
+        self._chart_paned.update_idletasks()
+        h = self._chart_paned.winfo_height()
+        if h > 50:
+            self._chart_paned.sash_place(0, 0, int(h * 0.67))
 
     def _select_period(self, period):
         """Select a time period and visually highlight the active button."""
