@@ -452,6 +452,7 @@ class InvestmentAdvisor(tk.Tk):
         win = tk.Toplevel(self)
         win.title(f"Profil: {name} ({symbol})")
         win.geometry("620x580")
+        win.minsize(400, 350)
         win.configure(bg=BG)
         win.transient(self)
 
@@ -1530,12 +1531,28 @@ class InvestmentAdvisor(tk.Tk):
         for inst in self.config_data.get("instruments", []):
             self._add_instrument_row(inst)
 
+        inst_btn_frame = tk.Frame(inner, bg=BG)
+        inst_btn_frame.pack(fill="x", padx=16, pady=6)
+
         tk.Button(
-            inner, text="➕ Dodaj instrument", bg=BTN_BG, fg=GREEN,
+            inst_btn_frame, text="➕ Dodaj instrument", bg=BTN_BG, fg=GREEN,
             font=("Segoe UI", 10), relief="flat", cursor="hand2",
             padx=10, pady=4,
             command=lambda: self._add_instrument_row({})
-        ).pack(anchor="w", padx=16, pady=6)
+        ).pack(side="left")
+
+        self._gen_profiles_btn = tk.Button(
+            inst_btn_frame, text="🤖 Generuj brakujące opisy AI",
+            bg=BTN_BG, fg=YELLOW,
+            font=("Segoe UI", 10), relief="flat", cursor="hand2",
+            padx=10, pady=4,
+            command=self._generate_missing_profiles)
+        self._gen_profiles_btn.pack(side="left", padx=(8, 0))
+
+        self._gen_profiles_status = tk.Label(
+            inst_btn_frame, text="", bg=BG, fg=GRAY,
+            font=("Segoe UI", 9))
+        self._gen_profiles_status.pack(side="left", padx=(8, 0))
 
         section("🌐 Źródła danych (strony www)")
         tk.Label(
@@ -1686,6 +1703,54 @@ class InvestmentAdvisor(tk.Tk):
             entry[0].pack_forget()
         for entry in self.inst_entries:
             entry[0].pack(fill="x", pady=2)
+
+    def _generate_missing_profiles(self):
+        """Generate AI profiles for all instruments that don't have one yet."""
+        instruments = self.config_data.get("instruments", [])
+        missing = []
+        for inst in instruments:
+            sym = inst["symbol"]
+            if not get_instrument_profile(sym):
+                missing.append(inst)
+
+        if not missing:
+            self._gen_profiles_status.configure(
+                text="Wszystkie instrumenty mają już opisy.", fg=GREEN)
+            return
+
+        total = len(missing)
+        self._gen_profiles_btn.configure(state="disabled")
+        self._gen_profiles_status.configure(
+            text=f"0/{total} — rozpoczynam…", fg=YELLOW)
+
+        def _worker():
+            done = 0
+            errors = 0
+            for inst in missing:
+                sym = inst["symbol"]
+                name = inst.get("name", sym)
+                cat = inst.get("category", "Inne")
+                self.after(0, lambda d=done, s=sym: (
+                    self._gen_profiles_status.configure(
+                        text=f"{d}/{total} — generuję: {s}…")))
+                try:
+                    text = generate_instrument_profile(
+                        self.config_data, sym, name, cat)
+                    save_instrument_profile(sym, text)
+                    done += 1
+                except Exception:
+                    errors += 1
+                    done += 1
+
+            msg = f"Gotowe: {total - errors}/{total}"
+            if errors:
+                msg += f"  ({errors} błędów)"
+            self.after(0, lambda: self._gen_profiles_status.configure(
+                text=msg, fg=GREEN if not errors else YELLOW))
+            self.after(0, lambda: self._gen_profiles_btn.configure(
+                state="normal"))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _add_source_row(self, url=""):
         row_frame = tk.Frame(self.sources_frame, bg=BG)
