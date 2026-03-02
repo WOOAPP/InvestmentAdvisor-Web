@@ -1,10 +1,17 @@
 import sqlite3
 import json
 import os
+import sys
 import threading
 from contextlib import contextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    DB_DEFAULT_REPORTS_LIMIT, DB_REPORT_PREVIEW_LENGTH,
+    DB_DEFAULT_PRICE_HISTORY_DAYS, DB_PRICE_HISTORY_MULTIPLIER,
+)
 
 _WARSAW = ZoneInfo("Europe/Warsaw")
 
@@ -136,13 +143,13 @@ def save_report(provider, model, market_summary, analysis, risk_level=0,
         conn.commit()
         return report_id
 
-def get_reports(limit=50):
+def get_reports(limit=DB_DEFAULT_REPORTS_LIMIT):
     """Zwraca listę raportów (najnowsze pierwsze)."""
     with _connect() as conn:
         c = conn.cursor()
-        c.execute("""
+        c.execute(f"""
             SELECT id, created_at, provider, model, risk_level,
-                   substr(analysis, 1, 200) as preview
+                   substr(analysis, 1, {DB_REPORT_PREVIEW_LENGTH}) as preview
             FROM reports ORDER BY created_at DESC LIMIT ?
         """, (limit,))
         return c.fetchall()
@@ -174,7 +181,7 @@ def save_market_snapshot(market_data):
                 """, (now, symbol, d.get("name", symbol), d.get("price", 0), d.get("change_pct", 0)))
         conn.commit()
 
-def get_price_history(symbol, days=30):
+def get_price_history(symbol, days=DB_DEFAULT_PRICE_HISTORY_DAYS):
     """Zwraca historię cen dla wykresu."""
     with _connect() as conn:
         c = conn.cursor()
@@ -182,7 +189,7 @@ def get_price_history(symbol, days=30):
             SELECT created_at, price FROM market_snapshots
             WHERE symbol = ?
             ORDER BY created_at DESC LIMIT ?
-        """, (symbol, days * 10))
+        """, (symbol, days * DB_PRICE_HISTORY_MULTIPLIER))
         return list(reversed(c.fetchall()))
 
 def add_alert(symbol, message):

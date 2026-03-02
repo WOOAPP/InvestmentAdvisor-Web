@@ -8,8 +8,15 @@ import tkinter as tk
 import yfinance as yf
 import pandas as pd
 import logging
+import sys, os
 from datetime import datetime, timedelta
 from modules.http_client import safe_get
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    CHART_MA_SHORT_PERIOD, CHART_MA_LONG_PERIOD,
+    CHART_MAX_COMPARE_SYMBOLS, CHART_SPARSE_DATA_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +145,7 @@ def _setup_xaxis(ax, period, n_points):
 
 def _add_markers_sparse(ax, closes, color):
     """For very sparse data (≤10 points) add dot markers for visibility."""
-    if len(closes) <= 10:
+    if len(closes) <= CHART_SPARSE_DATA_THRESHOLD:
         ax.plot(closes.index, closes, "o", color=color, markersize=5,
                 zorder=4)
 
@@ -191,18 +198,18 @@ def create_price_chart(parent_frame, symbol, period="1M",
                 _add_markers_sparse(ax, plot_data, COLORS["blue"])
 
                 # MA20
-                if show_ma and not compare_symbols and len(closes) >= 20:
-                    ma20 = closes.rolling(20).mean()
-                    ax.plot(closes.index, ma20, color=COLORS["yellow"],
-                            linewidth=1.3, label="MA20", alpha=0.9,
-                            linestyle="--", zorder=2)
+                if show_ma and not compare_symbols and len(closes) >= CHART_MA_SHORT_PERIOD:
+                    ma_short = closes.rolling(CHART_MA_SHORT_PERIOD).mean()
+                    ax.plot(closes.index, ma_short, color=COLORS["yellow"],
+                            linewidth=1.3, label=f"MA{CHART_MA_SHORT_PERIOD}",
+                            alpha=0.9, linestyle="--", zorder=2)
 
-                # MA50
-                if show_ma and not compare_symbols and len(closes) >= 50:
-                    ma50 = closes.rolling(50).mean()
-                    ax.plot(closes.index, ma50, color=COLORS["purple"],
-                            linewidth=1.3, label="MA50", alpha=0.9,
-                            linestyle=":", zorder=2)
+                # MA long
+                if show_ma and not compare_symbols and len(closes) >= CHART_MA_LONG_PERIOD:
+                    ma_long = closes.rolling(CHART_MA_LONG_PERIOD).mean()
+                    ax.plot(closes.index, ma_long, color=COLORS["purple"],
+                            linewidth=1.3, label=f"MA{CHART_MA_LONG_PERIOD}",
+                            alpha=0.9, linestyle=":", zorder=2)
             else:
                 ax.text(0.5, 0.5, f"Brak danych cenowych dla {symbol}",
                         transform=ax.transAxes, ha="center", va="center",
@@ -219,7 +226,7 @@ def create_price_chart(parent_frame, symbol, period="1M",
     # ── Comparison instruments ──
     if compare_symbols:
         cmp_colors = [COLORS["green"], COLORS["yellow"], COLORS["red"]]
-        for i, sym in enumerate(compare_symbols[:3]):
+        for i, sym in enumerate(compare_symbols[:CHART_MAX_COMPARE_SYMBOLS]):
             if not sym:
                 continue
             try:

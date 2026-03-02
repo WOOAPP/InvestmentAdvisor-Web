@@ -8,14 +8,18 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import PRICING_CACHE_TTL, PRICING_TOKENS_PER_UNIT
 
 logger = logging.getLogger(__name__)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 CACHE_FILE = os.path.join(DATA_DIR, "llm_pricing_cache.json")
-CACHE_TTL = 86400  # 24 h
+CACHE_TTL = PRICING_CACHE_TTL
 
 PRICING_URL = "https://openai.com/pl-PL/api/pricing/"
 
@@ -78,7 +82,8 @@ def _load_cache(allow_stale=False) -> dict | None:
             if time.time() - ts > CACHE_TTL:
                 return None
         return data.get("pricing", None)
-    except Exception:
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.debug("Pricing cache load failed: %s", e)
         return None
 
 
@@ -88,7 +93,7 @@ def _save_cache(pricing: dict):
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump({"_timestamp": time.time(), "pricing": pricing},
                       f, indent=2)
-    except Exception as exc:
+    except (OSError, TypeError) as exc:
         logger.debug("Pricing cache save failed: %s", exc)
 
 
@@ -116,7 +121,7 @@ def _fetch_from_web() -> dict | None:
                         "output": float(out.group(1)),
                     }
         return pricing if pricing else None
-    except Exception as exc:
+    except (OSError, ValueError, ConnectionError, TimeoutError) as exc:
         logger.debug("OpenAI pricing fetch failed: %s", exc)
         return None
 
@@ -177,8 +182,8 @@ def get_model_cost(raw_model: str,
     if not rates:
         return None
 
-    return (input_tokens * rates["input"] / 1_000_000
-            + output_tokens * rates["output"] / 1_000_000)
+    return (input_tokens * rates["input"] / PRICING_TOKENS_PER_UNIT
+            + output_tokens * rates["output"] / PRICING_TOKENS_PER_UNIT)
 
 
 def refresh_pricing():

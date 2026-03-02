@@ -6,10 +6,17 @@ Output is a structured payload (dict), not long text.
 """
 
 import re
+import sys, os
 from collections import Counter
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    TREND_TOP_KEYWORDS, TREND_TOP_REGIONS, TREND_TOP_TOPICS,
+    TREND_NEW_TOPIC_THRESHOLD, TREND_DIFF_KEYWORDS_LIMIT,
+)
 
-def _extract_keywords(articles: list[dict], top_n: int = 10) -> list[str]:
+
+def _extract_keywords(articles: list[dict], top_n: int = TREND_TOP_KEYWORDS) -> list[str]:
     """Extract top keywords from article titles (simple word freq)."""
     stopwords = {
         "the", "a", "an", "in", "on", "at", "to", "for", "of", "and",
@@ -55,13 +62,13 @@ def _aggregate_window(articles: list[dict]) -> dict:
         "count": len(articles),
         "top_regions": [
             {"region": r, "count": c}
-            for r, c in region_counter.most_common(6)
+            for r, c in region_counter.most_common(TREND_TOP_REGIONS)
         ],
         "top_topics": [
             {"topic": t, "count": c}
-            for t, c in topic_counter.most_common(8)
+            for t, c in topic_counter.most_common(TREND_TOP_TOPICS)
         ],
-        "top_keywords": _extract_keywords(articles, top_n=10),
+        "top_keywords": _extract_keywords(articles, top_n=TREND_TOP_KEYWORDS),
     }
 
 
@@ -94,7 +101,7 @@ def _compare_windows(baseline: dict, comparison: dict,
     # New topics in 24h that weren't dominant before
     new_topics = [t for t in base_topics if t not in comp_topics
                   or (comp_topics.get(t, 0) / max(comparison["count"], 1))
-                  < (base_topics[t] / max(baseline["count"], 1)) * 0.5]
+                  < (base_topics[t] / max(baseline["count"], 1)) * TREND_NEW_TOPIC_THRESHOLD]
 
     # Determine overall signal
     if base_top_topic == comp_top_topic and base_top_region == comp_top_region:
@@ -107,8 +114,8 @@ def _compare_windows(baseline: dict, comparison: dict,
     # Build base keywords for comparison
     base_kw = set(baseline.get("top_keywords", []))
     comp_kw = set(comparison.get("top_keywords", []))
-    new_keywords = list(base_kw - comp_kw)[:5]
-    gone_keywords = list(comp_kw - base_kw)[:5]
+    new_keywords = list(base_kw - comp_kw)[:TREND_DIFF_KEYWORDS_LIMIT]
+    gone_keywords = list(comp_kw - base_kw)[:TREND_DIFF_KEYWORDS_LIMIT]
 
     return {
         "window": label,

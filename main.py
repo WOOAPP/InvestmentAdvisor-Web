@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
+import logging
 import threading
 import schedule
 import time
@@ -433,7 +434,7 @@ class InvestmentAdvisor(tk.Tk):
         widget.bind("<Button-1>", handler)
         try:
             widget.configure(cursor="hand2")
-        except Exception:
+        except tk.TclError:
             pass
         for child in widget.winfo_children():
             self._bind_tile_events(child, symbol)
@@ -642,7 +643,7 @@ class InvestmentAdvisor(tk.Tk):
                     f"  {label}:  {direction} {change_pct:+.2f}%  |  "
                     f"zmienność: {vol_label} ({vol:.1f}%)  |  "
                     f"zakres: {low:.2f} – {high:.2f}")
-            except Exception:
+            except (ValueError, TypeError, KeyError, IndexError):
                 lines.append(f"  {label}: błąd pobierania danych")
 
         # Momentum from 1M data
@@ -662,7 +663,7 @@ class InvestmentAdvisor(tk.Tk):
                     else:
                         mom = "neutralne"
                     lines.append(f"\n  Momentum (1M): {mom}")
-        except Exception:
+        except (ValueError, TypeError, KeyError, IndexError):
             pass
 
         return "\n".join(lines) if lines else "Brak danych do analizy trendu."
@@ -862,7 +863,8 @@ class InvestmentAdvisor(tk.Tk):
                     self.after(0, lambda: messagebox.showwarning(
                         "Brak ceny",
                         "Brak aktualnej ceny dla instrumentu."))
-                except Exception:
+                except (KeyError, ValueError, TypeError, ConnectionError) as e:
+                    logging.getLogger(__name__).debug("Price fetch failed: %s", e)
                     self.after(0, lambda: messagebox.showwarning(
                         "Brak ceny",
                         "Brak aktualnej ceny dla instrumentu."))
@@ -1310,14 +1312,14 @@ class InvestmentAdvisor(tk.Tk):
         if fig is not None:
             try:
                 plt.close(fig)
-            except Exception:
+            except (ValueError, RuntimeError):
                 pass
 
         # 2. Now safe to destroy Tk children (canvas, toolbar)
         for w in self.chart_container.winfo_children():
             try:
                 w.destroy()
-            except Exception:
+            except tk.TclError:
                 pass
 
         symbol  = self.chart_symbol_var.get()
@@ -1422,7 +1424,8 @@ class InvestmentAdvisor(tk.Tk):
                         avg_vol = hist["Volume"].mean()
                         if avg_vol > 0:
                             lines.append(f"Średni wolumen: {avg_vol:,.0f}")
-        except Exception:
+        except (ValueError, TypeError, KeyError, IndexError) as e:
+            logging.getLogger(__name__).debug("Chart stats fetch failed: %s", e)
             lines.append("(Nie udało się pobrać danych cenowych)")
 
         return "\n".join(lines)
@@ -1459,7 +1462,7 @@ class InvestmentAdvisor(tk.Tk):
                         if full:
                             # kolumna 5 = analysis
                             report_text = full[5] or ""
-                except Exception:
+                except (IndexError, TypeError):
                     pass
             if report_text:
                 system += (
@@ -2078,7 +2081,8 @@ class InvestmentAdvisor(tk.Tk):
                         self.config_data, sym, name, cat)
                     save_instrument_profile(sym, text)
                     done += 1
-                except Exception:
+                except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
+                    logging.getLogger(__name__).debug("Profile gen %s failed: %s", sym, e)
                     errors += 1
                     done += 1
 
@@ -2129,7 +2133,7 @@ class InvestmentAdvisor(tk.Tk):
                         self.config_data, sym, name, cat)
                     save_instrument_profile(sym, text)
                     updated += 1
-                except Exception as exc:
+                except (ConnectionError, TimeoutError, ValueError, KeyError) as exc:
                     _log.error("Profile refresh %s failed: %s", sym, exc)
                     errors += 1
 
@@ -2441,7 +2445,7 @@ class InvestmentAdvisor(tk.Tk):
             try:
                 canvas, _ = create_risk_gauge(self.gauge_frame, risk)
                 canvas.get_tk_widget().pack()
-            except Exception:
+            except (tk.TclError, ValueError, RuntimeError):
                 tk.Label(self.gauge_frame, text=f"Ryzyko: {risk}/10",
                          bg=BG, fg=YELLOW,
                          font=("Segoe UI", 14, "bold")).pack(pady=8)
@@ -2563,7 +2567,7 @@ class InvestmentAdvisor(tk.Tk):
         try:
             canvas, _ = create_risk_gauge(self.gauge_frame, risk)
             canvas.get_tk_widget().pack()
-        except Exception:
+        except (tk.TclError, ValueError, RuntimeError):
             tk.Label(self.gauge_frame, text=f"Ryzyko: {risk}/10",
                      bg=BG, fg=YELLOW,
                      font=("Segoe UI", 14, "bold")).pack(pady=8)
@@ -2675,7 +2679,7 @@ class InvestmentAdvisor(tk.Tk):
                             pdf.add_font("UTFFont", "B", bold_path, uni=True)
                         use_utf8 = True
                         break
-            except Exception:
+            except (OSError, RuntimeError):
                 continue
 
         from zoneinfo import ZoneInfo as _ZI
@@ -2764,7 +2768,7 @@ class InvestmentAdvisor(tk.Tk):
             report = get_latest_report()
             if report and report[1]:
                 report_date_str = report[1][:16]  # "YYYY-MM-DD HH:MM"
-        except Exception:
+        except (IndexError, TypeError):
             pass
 
         if report_date_str:
@@ -2916,7 +2920,7 @@ class InvestmentAdvisor(tk.Tk):
         if self._analysis_overlay_after:
             try:
                 self.after_cancel(self._analysis_overlay_after)
-            except Exception:
+            except (tk.TclError, ValueError):
                 pass
             self._analysis_overlay_after = None
         self._analysis_overlay.place_forget()
@@ -2930,7 +2934,7 @@ class InvestmentAdvisor(tk.Tk):
         msg = self._analysis_overlay_msg or "Analizuję"
         try:
             self._analysis_overlay.configure(text=f"{frame}  {msg}  {frame}")
-        except Exception:
+        except (tk.TclError, RuntimeError):
             self._analysis_overlay_visible = False
             return
         self._analysis_overlay_step += 1
@@ -2946,7 +2950,7 @@ class InvestmentAdvisor(tk.Tk):
                 for btn in self._busy_buttons:
                     try:
                         btn.configure(state="disabled")
-                    except Exception:
+                    except tk.TclError:
                         pass
                 if self._spinner:
                     self._spinner.start(message)
@@ -2955,7 +2959,7 @@ class InvestmentAdvisor(tk.Tk):
                 for btn in self._busy_buttons:
                     try:
                         btn.configure(state="normal")
-                    except Exception:
+                    except tk.TclError:
                         pass
                 if self._spinner:
                     self._spinner.stop(message)
@@ -2975,7 +2979,7 @@ class InvestmentAdvisor(tk.Tk):
                 plt.close(self._current_chart_fig)
                 self._current_chart_fig = None
             plt.close("all")
-        except Exception:
+        except (ValueError, RuntimeError):
             pass
         schedule.clear()
         self.destroy()

@@ -1,3 +1,4 @@
+import logging
 import anthropic
 import openai
 from datetime import datetime
@@ -7,6 +8,13 @@ import sys, os
 _WARSAW = ZoneInfo("Europe/Warsaw")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import get_api_key
+
+logger = logging.getLogger(__name__)
+
+from constants import (
+    AI_MAX_TOKENS_ANALYSIS, AI_MAX_TOKENS_CHAT,
+    LEGACY_NEWS_LIMIT, LEGACY_DESCRIPTION_TRUNCATE,
+)
 
 # ── Provider configuration ────────────────────────────────────────
 _PROVIDER_DEFAULTS = {
@@ -22,7 +30,7 @@ _PROVIDER_DEFAULTS = {
 
 # ── Unified provider call ─────────────────────────────────────────
 def _call_provider(provider, api_key, model, system_prompt,
-                   messages, max_tokens=4096):
+                   messages, max_tokens=AI_MAX_TOKENS_ANALYSIS):
     """Call Anthropic or OpenAI-compatible API. Returns (text, usage)."""
     if provider == "anthropic":
         client = anthropic.Anthropic(api_key=api_key)
@@ -62,7 +70,9 @@ def _run_provider(config, system_prompt, user_message):
             provider, api_key, model, system_prompt,
             [{"role": "user", "content": user_message}])
         return _make_result(text, usage)
-    except Exception as e:
+    except (anthropic.APIError, openai.OpenAIError, KeyError,
+            ValueError, ConnectionError, TimeoutError) as e:
+        logger.warning("AI provider %s error: %s", provider, e)
         return _make_result(f"Błąd {provider.capitalize()} API: {e}")
 
 
@@ -100,9 +110,11 @@ def run_chat(config, messages, system_prompt=""):
     try:
         text, _ = _call_provider(
             provider, api_key, model, system_prompt,
-            messages, max_tokens=2048)
+            messages, max_tokens=AI_MAX_TOKENS_CHAT)
         return text
-    except Exception as e:
+    except (anthropic.APIError, openai.OpenAIError, KeyError,
+            ValueError, ConnectionError, TimeoutError) as e:
+        logger.warning("Chat %s error: %s", provider, e)
         return f"Błąd {provider.capitalize()}: {e}"
 
 
@@ -218,10 +230,10 @@ def _build_legacy_prompt(market_summary, news_list, scraped_text=""):
     news_text = ""
     if news_list and not any("error" in n for n in news_list):
         news_text = "\n=== AKTUALNE WIADOMOŚCI ===\n"
-        for i, n in enumerate(news_list[:8], 1):
+        for i, n in enumerate(news_list[:LEGACY_NEWS_LIMIT], 1):
             news_text += f"{i}. [{n.get('source','')}] {n.get('title','')}\n"
             if n.get("description"):
-                news_text += f"   {n.get('description','')[:150]}...\n"
+                news_text += f"   {n.get('description','')[:LEGACY_DESCRIPTION_TRUNCATE]}...\n"
 
     return (
         f"Data analizy: {datetime.now(_WARSAW).strftime('%Y-%m-%d %H:%M')}\n\n"

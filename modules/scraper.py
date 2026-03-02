@@ -1,4 +1,6 @@
 import logging
+import sys
+import os
 import threading
 import requests
 from requests.adapters import HTTPAdapter
@@ -6,6 +8,12 @@ from bs4 import BeautifulSoup
 from modules.url_validator import (
     validate_urls, MAX_REDIRECTS, CONNECT_TIMEOUT, READ_TIMEOUT,
     MAX_RESPONSE_BYTES,
+)
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    SCRAPER_CHUNK_SIZE, SCRAPER_DEFAULT_MAX_CHARS,
+    SCRAPER_MAX_CHARS_PER_SITE, SCRAPER_MIN_LINE_LENGTH,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +51,7 @@ def _get_session():
     return _session
 
 
-def scrape_url(url, max_chars=3000):
+def scrape_url(url, max_chars=SCRAPER_DEFAULT_MAX_CHARS):
     """Pobiera pełną treść tekstową ze strony (z limitami bezpieczeństwa)."""
     try:
         session = _get_session()
@@ -58,7 +66,7 @@ def scrape_url(url, max_chars=3000):
         # Limit rozmiaru odpowiedzi
         content_parts = []
         downloaded = 0
-        for chunk in r.iter_content(chunk_size=8192, decode_unicode=False):
+        for chunk in r.iter_content(chunk_size=SCRAPER_CHUNK_SIZE, decode_unicode=False):
             downloaded += len(chunk)
             if downloaded > MAX_RESPONSE_BYTES:
                 logger.warning("Przekroczono limit %d bajtów dla %s",
@@ -87,7 +95,7 @@ def scrape_url(url, max_chars=3000):
             content = soup.get_text(separator="\n", strip=True)
 
         # Wyczyść puste linie
-        lines = [l.strip() for l in content.split("\n") if len(l.strip()) > 40]
+        lines = [l.strip() for l in content.split("\n") if len(l.strip()) > SCRAPER_MIN_LINE_LENGTH]
         text = "\n".join(lines)
         return text[:max_chars]
 
@@ -104,13 +112,14 @@ def scrape_url(url, max_chars=3000):
             msg = f"[Błąd HTTP {status} dla {url}]"
             logger.warning(msg)
         return msg
-    except Exception as e:
+    except (requests.RequestException, ConnectionError, TimeoutError,
+            UnicodeDecodeError, ValueError) as e:
         msg = f"[Błąd pobierania {url}: {e}]"
         logger.warning(msg)
         return msg
 
 
-def scrape_all(urls, max_chars_per_site=2000, trusted_domains=None):
+def scrape_all(urls, max_chars_per_site=SCRAPER_MAX_CHARS_PER_SITE, trusted_domains=None):
     """Pobiera treść ze wszystkich podanych URL-i (z walidacją)."""
     if not urls:
         return ""

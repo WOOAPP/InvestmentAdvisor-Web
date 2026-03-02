@@ -6,8 +6,12 @@ Shared UI helpers for InvestmentAdvisor:
 """
 
 import re
+import sys, os
 import tkinter as tk
 import webbrowser
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import SPINNER_TICK_MS
 
 # ── Theme colors (must match main.py) ──────────────────────────────
 _BG = "#1e1e2e"
@@ -265,13 +269,13 @@ class BusySpinner:
         if self._after_id is not None:
             try:
                 self._root.after_cancel(self._after_id)
-            except Exception:
-                pass
+            except (tk.TclError, RuntimeError):
+                pass  # widget already destroyed
             self._after_id = None
         try:
             self._label.configure(text=final_message)
-        except Exception:
-            pass
+        except (tk.TclError, RuntimeError):
+            pass  # widget already destroyed
 
     def _tick(self):
         if not self._running:
@@ -279,8 +283,8 @@ class BusySpinner:
         char = _SPINNER_FRAMES[self._frame_idx % len(_SPINNER_FRAMES)]
         try:
             self._label.configure(text=f"{char}  {self._message}")
-        except Exception:
+        except (tk.TclError, RuntimeError):
             self._running = False
             return
         self._frame_idx += 1
-        self._after_id = self._root.after(100, self._tick)
+        self._after_id = self._root.after(SPINNER_TICK_MS, self._tick)
