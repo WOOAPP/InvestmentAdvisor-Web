@@ -121,6 +121,17 @@ DEFAULT_CONFIG = {
         "newsdata.io",
     ],
     "sources": [],
+    "profile_prompt": (
+        "Opisz ten instrument w trzech sekcjach:\n\n"
+        "## 1. Czym jest\n"
+        "Krótki opis instrumentu w kontekście jego kategorii.\n\n"
+        "## 2. Co wpływa na kurs\n"
+        "Najważniejsze czynniki wpływające na wahania ceny "
+        "(makro, geopolityka, sezonowość, korelacje).\n\n"
+        "## 3. Na co wpływa\n"
+        "Gdzie jest \"transmisja\" na inne rynki, branże, instrumenty.\n\n"
+        "Bądź zwięzły (max 300 słów łącznie). Używaj konkretnych przykładów."
+    ),
     "prompt": (
         "Jesteś analitykiem makroekonomicznym. Na podstawie danych rynkowych, "
         "newsów z wielu okien czasowych oraz analizy trendów, przeprowadź analizę "

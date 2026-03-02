@@ -224,18 +224,23 @@ def generate_instrument_profile(config, symbol, name, category):
         "Jesteś ekspertem rynków finansowych. Przygotuj zwięzły profil "
         "instrumentu finansowego. Odpowiadaj po polsku, konkretnie i rzeczowo."
     )
+    custom_prompt = config.get("profile_prompt", "").strip()
+    if not custom_prompt:
+        custom_prompt = (
+            "Opisz ten instrument w trzech sekcjach:\n\n"
+            "## 1. Czym jest\n"
+            "Krótki opis instrumentu w kontekście jego kategorii.\n\n"
+            "## 2. Co wpływa na kurs\n"
+            "Najważniejsze czynniki wpływające na wahania ceny "
+            "(makro, geopolityka, sezonowość, korelacje).\n\n"
+            "## 3. Na co wpływa\n"
+            "Gdzie jest \"transmisja\" na inne rynki, branże, instrumenty.\n\n"
+            "Bądź zwięzły (max 300 słów łącznie). Używaj konkretnych przykładów."
+        )
     user_msg = (
         f"Instrument: {name} ({symbol})\n"
         f"Kategoria: {category}\n\n"
-        "Opisz ten instrument w trzech sekcjach:\n\n"
-        "## 1. Czym jest\n"
-        f"Krótki opis instrumentu w kontekście jego kategorii ({category}).\n\n"
-        "## 2. Co wpływa na kurs\n"
-        "Najważniejsze czynniki wpływające na wahania ceny "
-        "(makro, geopolityka, sezonowość, korelacje).\n\n"
-        "## 3. Na co wpływa\n"
-        "Gdzie jest \"transmisja\" na inne rynki, branże, instrumenty.\n\n"
-        "Bądź zwięzły (max 300 słów łącznie). Używaj konkretnych przykładów."
+        f"{custom_prompt}"
     )
 
     if provider == "anthropic":

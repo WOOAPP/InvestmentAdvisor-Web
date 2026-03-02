@@ -1627,6 +1627,27 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_chart_chat_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
+        section("🧾 Prompt profilu instrumentu")
+        tk.Label(
+            inner,
+            text="Instrukcja dla AI przy generowaniu opisu instrumentu. "
+                 "Nazwa, symbol i kategoria są dołączane automatycznie.",
+            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+        self.profile_prompt_text = scrolledtext.ScrolledText(
+            inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=6,
+            relief="flat", wrap="word", insertbackground=FG)
+        self.profile_prompt_text.pack(fill="x", padx=16, pady=4)
+        self.profile_prompt_text.insert(
+            "end", self.config_data.get("profile_prompt", ""))
+
+        tk.Button(
+            inner, text="🔄 Przywróć domyślny prompt profilu",
+            bg=BTN_BG, fg=YELLOW,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            command=self._reset_profile_prompt
+        ).pack(anchor="w", padx=16, pady=2)
+
         tk.Button(
             inner, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
             font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
@@ -1857,6 +1878,11 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_chat_prompt_text.delete("1.0", "end")
         self.chart_chat_prompt_text.insert("end", DEFAULT_CONFIG["chart_chat_prompt"])
 
+    def _reset_profile_prompt(self):
+        from config import DEFAULT_CONFIG
+        self.profile_prompt_text.delete("1.0", "end")
+        self.profile_prompt_text.insert("end", DEFAULT_CONFIG["profile_prompt"])
+
     def _save_settings(self):
         # Nie nadpisuj kluczy zarządzanych przez env
         for kn, var in (("newsdata", self.v_newsdata), ("openai", self.v_openai),
@@ -1875,6 +1901,7 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data["prompt"] = self.prompt_text.get("1.0", "end").strip()
         self.config_data["chat_prompt"] = self.chat_prompt_text.get("1.0", "end").strip()
         self.config_data["chart_chat_prompt"] = self.chart_chat_prompt_text.get("1.0", "end").strip()
+        self.config_data["profile_prompt"] = self.profile_prompt_text.get("1.0", "end").strip()
 
         instruments = []
         for _, v_sym, v_name, v_cat, v_src in self.inst_entries:
