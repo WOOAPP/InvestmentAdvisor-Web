@@ -885,6 +885,10 @@ class InvestmentAdvisor(tk.Tk):
         # Cache FX rates for non-USD currencies used in positions
         fx_cache = {}
 
+        # Per-currency accumulators (non-USD) for summary line
+        currency_invested = {}   # {currency: total_invested_local}
+        currency_current  = {}   # {currency: total_current_local}
+
         for pos in positions:
             # Tuple: id, symbol, name, qty, buy_price, created_at,
             #        buy_currency, buy_fx_to_usd, buy_price_usd
@@ -902,6 +906,11 @@ class InvestmentAdvisor(tk.Tk):
 
             invested_usd = qty * price_usd
             total_invested += invested_usd
+
+            # Accumulate invested in original currency for non-USD
+            if currency != "USD":
+                currency_invested[currency] = (
+                    currency_invested.get(currency, 0.0) + qty * buy_price)
 
             # Format buy price in original currency
             buy_display = f"{buy_price:,.4f}"
@@ -921,6 +930,12 @@ class InvestmentAdvisor(tk.Tk):
                 pnl_pct     = (pnl_usd / invested_usd * 100) if invested_usd else 0
                 total_current += current_val
                 tag = "profit" if pnl_usd >= 0 else "loss"
+
+                # Accumulate current value in local currency
+                if currency != "USD" and cur_fx and cur_fx > 0:
+                    currency_current[currency] = (
+                        currency_current.get(currency, 0.0)
+                        + current_val / cur_fx)
 
                 # Format Akt., Wartość, Zysk — dual if non-USD
                 if currency != "USD" and cur_fx and cur_fx > 0:
@@ -971,10 +986,24 @@ class InvestmentAdvisor(tk.Tk):
         total_pnl = total_current - total_invested
         total_pct = (total_pnl / total_invested * 100) if total_invested else 0
         clr = GREEN if total_pnl >= 0 else RED
+
+        # Build per-currency suffixes for summary line
+        inv_parts = f"$ {total_invested:,.2f}"
+        val_parts = f"$ {total_current:,.2f}"
+        pnl_parts = f"{total_pnl:+,.2f} $"
+        for cur in sorted(currency_invested):
+            inv_local = currency_invested[cur]
+            inv_parts += f" ({cur} {inv_local:,.2f})"
+            if cur in currency_current:
+                cur_val = currency_current[cur]
+                cur_pnl = cur_val - inv_local
+                val_parts += f" ({cur} {cur_val:,.2f})"
+                pnl_parts += f" ({cur} {cur_pnl:+,.2f})"
+
         self.port_summary_lbl.configure(fg=clr, text=(
-            f"Zainwestowano: $ {total_invested:,.2f}  |  "
-            f"Wartość: $ {total_current:,.2f}  |  "
-            f"P&L: {total_pnl:+,.2f} $ ({total_pct:+.2f}%)"
+            f"Zainwestowano: {inv_parts}  |  "
+            f"Wartość: {val_parts}  |  "
+            f"P&L: {pnl_parts} ({total_pct:+.2f}%)"
         ))
 
     def _quick_fetch_prices(self):
