@@ -221,7 +221,7 @@ class InvestmentAdvisor(tk.Tk):
 
         # Report date label (CEL 3)
         self.report_date_label = tk.Label(
-            analysis_frame, text="", bg=BG, fg=GRAY,
+            analysis_frame, text="", bg=BG, fg=GREEN,
             font=("Segoe UI", 8), anchor="w")
         self.report_date_label.pack(fill="x", padx=8, pady=(2, 0))
 
@@ -497,7 +497,7 @@ class InvestmentAdvisor(tk.Tk):
         btn_frame = tk.Frame(win, bg=BG)
         btn_frame.pack(fill="x", padx=16, pady=(0, 8))
 
-        profile_status = tk.Label(btn_frame, text="", bg=BG, fg=GRAY,
+        profile_status = tk.Label(btn_frame, text="", bg=BG, fg=YELLOW,
                                   font=("Segoe UI", 8))
         profile_status.pack(side="right")
 
