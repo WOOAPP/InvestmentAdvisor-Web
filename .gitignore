@@ -6,6 +6,9 @@ __pycache__/
 # Database (dane użytkownika, nie wersjonowane)
 data/advisor.db
 
+# Konfiguracja – zawiera klucze API, nie wersjonowana
+data/config.json
+
 # PDF raporty
 data/reports/
 
