@@ -52,6 +52,7 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data = load_config()
         self.current_analysis = ""
         self.current_market_data = {}
+        self._fx_cache = {}         # currency→USD rate cache for portfolio
         self._chat_history = []     # list of {"role": ..., "content": ...}
         self.inst_entries = []
         self.source_entries = []
@@ -909,8 +910,8 @@ class InvestmentAdvisor(tk.Tk):
         total_invested = 0.0
         total_current  = 0.0
 
-        # Cache FX rates for non-USD currencies used in positions
-        fx_cache = {}
+        # Re-use cached FX rates across refreshes (instance-level cache)
+        fx_cache = self._fx_cache
 
         # Per-currency accumulators (non-USD) for summary line
         currency_invested = {}   # {currency: total_invested_local}
@@ -1605,26 +1606,44 @@ class InvestmentAdvisor(tk.Tk):
         # Mousewheel scrolling for settings
         self._bind_mousewheel(self._settings_canvas, self._settings_canvas)
 
-        def section(text):
-            tk.Label(inner, text=text, bg=BG, fg=ACCENT,
-                     font=("Segoe UI", 12, "bold")
-                     ).pack(anchor="w", padx=16, pady=(16, 4))
-            tk.Frame(inner, bg=GRAY, height=1).pack(
-                fill="x", padx=16, pady=(0, 8))
+        self._settings_inner = inner
+        self._build_settings_api_keys(inner)
+        self._build_settings_ai_model(inner)
+        self._build_settings_chat_model(inner)
+        self._build_settings_schedule(inner)
+        self._build_settings_instruments(inner)
+        self._build_settings_sources(inner)
+        self._build_settings_prompts(inner)
 
-        def entry_row(parent, label, var, show=""):
-            f = tk.Frame(parent, bg=BG)
-            f.pack(fill="x", padx=16, pady=3)
-            tk.Label(f, text=label, bg=BG, fg=FG, font=("Segoe UI", 10),
-                     width=22, anchor="w").pack(side="left")
-            tk.Entry(f, textvariable=var, bg=BG2, fg=FG,
-                     insertbackground=FG, relief="flat",
-                     font=("Segoe UI", 10), show=show,
-                     highlightbackground=GRAY, highlightthickness=1
-                     ).pack(side="left", fill="x", expand=True, padx=4)
+        tk.Button(
+            inner, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
+            font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
+            padx=20, pady=8, command=self._save_settings
+        ).pack(pady=16)
 
-        section("🔑 Klucze API")
-        # Klucze z env mają priorytet — w UI pokazujemy zamaskowane
+    # ── Settings sub-builders ─────────────────────────────────────
+    @staticmethod
+    def _settings_section(parent, text):
+        tk.Label(parent, text=text, bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 12, "bold")
+                 ).pack(anchor="w", padx=16, pady=(16, 4))
+        tk.Frame(parent, bg=GRAY, height=1).pack(
+            fill="x", padx=16, pady=(0, 8))
+
+    @staticmethod
+    def _settings_entry_row(parent, label, var, show=""):
+        f = tk.Frame(parent, bg=BG)
+        f.pack(fill="x", padx=16, pady=3)
+        tk.Label(f, text=label, bg=BG, fg=FG, font=("Segoe UI", 10),
+                 width=22, anchor="w").pack(side="left")
+        tk.Entry(f, textvariable=var, bg=BG2, fg=FG,
+                 insertbackground=FG, relief="flat",
+                 font=("Segoe UI", 10), show=show,
+                 highlightbackground=GRAY, highlightthickness=1
+                 ).pack(side="left", fill="x", expand=True, padx=4)
+
+    def _build_settings_api_keys(self, inner):
+        self._settings_section(inner, "🔑 Klucze API")
         self._key_from_env = {}
         for kn in ("newsdata", "openai", "anthropic", "openrouter"):
             from config import ENV_KEY_MAP
@@ -1642,12 +1661,13 @@ class InvestmentAdvisor(tk.Tk):
         self.v_openai    = tk.StringVar(value=_key_display("openai"))
         self.v_anthropic = tk.StringVar(value=_key_display("anthropic"))
         self.v_openrouter = tk.StringVar(value=_key_display("openrouter"))
-        entry_row(inner, "Newsdata.io:", self.v_newsdata, show="*")
-        entry_row(inner, "OpenAI API Key:", self.v_openai, show="*")
-        entry_row(inner, "Anthropic API Key:", self.v_anthropic, show="*")
-        entry_row(inner, "OpenRouter API Key:", self.v_openrouter, show="*")
+        self._settings_entry_row(inner, "Newsdata.io:", self.v_newsdata, show="*")
+        self._settings_entry_row(inner, "OpenAI API Key:", self.v_openai, show="*")
+        self._settings_entry_row(inner, "Anthropic API Key:", self.v_anthropic, show="*")
+        self._settings_entry_row(inner, "OpenRouter API Key:", self.v_openrouter, show="*")
 
-        section("🤖 Model AI")
+    def _build_settings_ai_model(self, inner):
+        self._settings_section(inner, "🤖 Model AI")
         prov_frame = tk.Frame(inner, bg=BG)
         prov_frame.pack(fill="x", padx=16, pady=3)
         tk.Label(prov_frame, text="Dostawca:", bg=BG, fg=FG,
@@ -1693,7 +1713,8 @@ class InvestmentAdvisor(tk.Tk):
 
         self._update_model_list()
 
-        section("💬 Model Czatu")
+    def _build_settings_chat_model(self, inner):
+        self._settings_section(inner, "💬 Model Czatu")
         tk.Label(
             inner,
             text="Model używany do dyskusji o raporcie (używa tych samych kluczy API).",
@@ -1745,7 +1766,8 @@ class InvestmentAdvisor(tk.Tk):
 
         self._update_chat_model_list()
 
-        section("⏰ Harmonogram")
+    def _build_settings_schedule(self, inner):
+        self._settings_section(inner, "⏰ Harmonogram")
         sched_frame = tk.Frame(inner, bg=BG)
         sched_frame.pack(fill="x", padx=16, pady=3)
         self.v_sched_enabled = tk.BooleanVar(
@@ -1770,7 +1792,8 @@ class InvestmentAdvisor(tk.Tk):
                  highlightbackground=GRAY, highlightthickness=1
                  ).pack(side="left", fill="x", expand=True, padx=4)
 
-        section("📊 Instrumenty finansowe")
+    def _build_settings_instruments(self, inner):
+        self._settings_section(inner, "📊 Instrumenty finansowe")
         tk.Label(
             inner,
             text="Symbol: ticker (np. AAPL) lub ID CoinGecko (np. bitcoin). "
@@ -1822,7 +1845,8 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 9))
         self._gen_profiles_status.pack(side="left", padx=(8, 0))
 
-        section("🌐 Źródła danych (strony www)")
+    def _build_settings_sources(self, inner):
+        self._settings_section(inner, "🌐 Źródła danych (strony www)")
         tk.Label(
             inner,
             text="Aplikacja pobierze treść z tych stron przed każdą analizą.",
@@ -1840,7 +1864,8 @@ class InvestmentAdvisor(tk.Tk):
             padx=10, pady=4, command=lambda: self._add_source_row("")
         ).pack(anchor="w", padx=16, pady=6)
 
-        section("📝 Prompt systemowy")
+    def _build_settings_prompts(self, inner):
+        self._settings_section(inner, "📝 Prompt systemowy")
         _pf1 = tk.Frame(inner, bg=BG)
         _pf1.pack(fill="x", padx=16, pady=(0, 2))
         tk.Button(
@@ -1861,7 +1886,7 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
-        section("💬 Prompt czatu")
+        self._settings_section(inner, "💬 Prompt czatu")
         _pf2 = tk.Frame(inner, bg=BG)
         _pf2.pack(fill="x", padx=16, pady=(0, 2))
         tk.Label(
@@ -1890,7 +1915,7 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_chat_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
-        section("📊 Prompt czatu wykresów")
+        self._settings_section(inner, "📊 Prompt czatu wykresów")
         _pf3 = tk.Frame(inner, bg=BG)
         _pf3.pack(fill="x", padx=16, pady=(0, 2))
         tk.Label(
@@ -1919,7 +1944,7 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_chart_chat_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
-        section("🧾 Prompt profilu instrumentu")
+        self._settings_section(inner, "🧾 Prompt profilu instrumentu")
         _pf4 = tk.Frame(inner, bg=BG)
         _pf4.pack(fill="x", padx=16, pady=(0, 2))
         tk.Label(
@@ -1947,12 +1972,6 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             command=self._reset_profile_prompt
         ).pack(anchor="w", padx=16, pady=2)
-
-        tk.Button(
-            inner, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
-            font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
-            padx=20, pady=8, command=self._save_settings
-        ).pack(pady=16)
 
     def _add_instrument_row(self, inst=None):
         if inst is None:
