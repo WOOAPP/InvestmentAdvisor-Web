@@ -2,6 +2,14 @@ import sqlite3
 import json
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_WARSAW = ZoneInfo("Europe/Warsaw")
+
+
+def _now_warsaw():
+    """Return current datetime in Europe/Warsaw timezone."""
+    return datetime.now(_WARSAW)
 
 DB_PATH = "data/advisor.db"
 
@@ -107,7 +115,7 @@ def save_report(provider, model, market_summary, analysis, risk_level=0,
             (created_at, provider, model, market_summary, analysis,
              risk_level, input_tokens, output_tokens)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), provider, model,
+    """, (_now_warsaw().strftime("%Y-%m-%d %H:%M:%S"), provider, model,
           market_summary, analysis, risk_level,
           int(input_tokens or 0), int(output_tokens or 0)))
     report_id = c.lastrowid
@@ -150,7 +158,7 @@ def save_market_snapshot(market_data):
     """Zapisuje snapshot cen rynkowych."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = _now_warsaw().strftime("%Y-%m-%d %H:%M:%S")
     for symbol, d in market_data.items():
         if "error" not in d:
             c.execute("""
@@ -180,7 +188,7 @@ def add_alert(symbol, message):
     c.execute("""
         INSERT INTO alerts (created_at, symbol, message)
         VALUES (?, ?, ?)
-    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), symbol, message))
+    """, (_now_warsaw().strftime("%Y-%m-%d %H:%M:%S"), symbol, message))
     conn.commit()
     conn.close()
 
@@ -222,7 +230,7 @@ def add_portfolio_position(symbol, name, quantity, buy_price,
              buy_currency, buy_fx_to_usd, buy_price_usd)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (symbol, name or symbol, float(quantity), float(buy_price),
-          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+          _now_warsaw().strftime("%Y-%m-%d %H:%M:%S"),
           buy_currency, float(buy_fx_to_usd), buy_price_usd))
     conn.commit()
     conn.close()
@@ -268,7 +276,7 @@ def save_instrument_profile(symbol, profile_text):
     c.execute("""
         INSERT OR REPLACE INTO instrument_profiles (symbol, profile_text, created_at)
         VALUES (?, ?, ?)
-    """, (symbol, profile_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    """, (symbol, profile_text, _now_warsaw().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
 
