@@ -214,12 +214,21 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
         paned.add(analysis_frame, minsize=120)
+        # Container with overlay support
+        self._analysis_container = tk.Frame(analysis_frame, bg=BG2)
+        self._analysis_container.pack(fill="both", expand=True, padx=4, pady=4)
         self.analysis_text = scrolledtext.ScrolledText(
-            analysis_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            self._analysis_container, bg=BG2, fg=FG, font=("Segoe UI", 10),
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT)
-        self.analysis_text.pack(fill="both", expand=True, padx=4, pady=4)
+        self.analysis_text.pack(fill="both", expand=True)
         setup_markdown_tags(self.analysis_text)
+        # Loading overlay (hidden by default)
+        self._analysis_overlay = tk.Label(
+            self._analysis_container, bg="#181825", fg=ACCENT,
+            font=("Segoe UI", 16, "bold"), anchor="center")
+        self._analysis_overlay_visible = False
+        self._analysis_overlay_after = None
 
         # Report date label (CEL 3)
         self.report_date_label = tk.Label(
@@ -484,20 +493,30 @@ class InvestmentAdvisor(tk.Tk):
                  bg=BG, fg=GRAY, font=("Segoe UI", 9)
                  ).pack(padx=16, pady=(0, 8), anchor="w")
 
+        # ── PanedWindow: resizable split between profile and trend ──
+        profile_paned = tk.PanedWindow(
+            win, orient="vertical", bg=BG,
+            sashwidth=6, sashrelief="raised", sashpad=2)
+        profile_paned.pack(fill="both", expand=True, padx=16, pady=(8, 16))
+
         # ── Section A: AI Profile (persistent cache) ──
-        tk.Label(win, text="Profil instrumentu (AI)", bg=BG, fg=ACCENT,
-                 font=("Segoe UI", 11, "bold")
-                 ).pack(padx=16, pady=(8, 2), anchor="w")
-        tk.Frame(win, bg=GRAY, height=1).pack(fill="x", padx=16, pady=(0, 4))
+        profile_section = tk.Frame(profile_paned, bg=BG)
+        profile_paned.add(profile_section, minsize=80)
+
+        tk.Label(profile_section, text="Profil instrumentu (AI)", bg=BG,
+                 fg=ACCENT, font=("Segoe UI", 11, "bold")
+                 ).pack(pady=(0, 2), anchor="w")
+        tk.Frame(profile_section, bg=GRAY, height=1
+                 ).pack(fill="x", pady=(0, 4))
 
         profile_display = scrolledtext.ScrolledText(
-            win, bg=BG2, fg=FG, font=("Segoe UI", 10),
-            relief="flat", wrap="word", state="disabled", height=10)
-        profile_display.pack(fill="x", padx=16, pady=(0, 4))
+            profile_section, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled")
+        profile_display.pack(fill="both", expand=True, pady=(0, 4))
         setup_markdown_tags(profile_display)
 
-        btn_frame = tk.Frame(win, bg=BG)
-        btn_frame.pack(fill="x", padx=16, pady=(0, 8))
+        btn_frame = tk.Frame(profile_section, bg=BG)
+        btn_frame.pack(fill="x", pady=(0, 4))
 
         profile_status = tk.Label(btn_frame, text="", bg=BG, fg=YELLOW,
                                   font=("Segoe UI", 8))
@@ -510,15 +529,19 @@ class InvestmentAdvisor(tk.Tk):
         refresh_btn.pack(side="left")
 
         # ── Section B: Dynamic trend (no AI) ──
-        tk.Label(win, text="Aktualna sytuacja", bg=BG, fg=ACCENT,
+        trend_section = tk.Frame(profile_paned, bg=BG)
+        profile_paned.add(trend_section, minsize=80)
+
+        tk.Label(trend_section, text="Aktualna sytuacja", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 11, "bold")
-                 ).pack(padx=16, pady=(8, 2), anchor="w")
-        tk.Frame(win, bg=GRAY, height=1).pack(fill="x", padx=16, pady=(0, 4))
+                 ).pack(pady=(0, 2), anchor="w")
+        tk.Frame(trend_section, bg=GRAY, height=1
+                 ).pack(fill="x", pady=(0, 4))
 
         trend_display = scrolledtext.ScrolledText(
-            win, bg=BG2, fg=FG, font=("Segoe UI", 10),
-            relief="flat", wrap="word", state="disabled", height=8)
-        trend_display.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+            trend_section, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled")
+        trend_display.pack(fill="both", expand=True)
 
         # ── Helpers ──
         def _set_text(widget, text, use_markdown=False):
@@ -1816,6 +1839,14 @@ class InvestmentAdvisor(tk.Tk):
         ).pack(anchor="w", padx=16, pady=6)
 
         section("📝 Prompt systemowy")
+        _pf1 = tk.Frame(inner, bg=BG)
+        _pf1.pack(fill="x", padx=16, pady=(0, 2))
+        tk.Button(
+            _pf1, text="⛶", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 11), relief="flat", cursor="hand2",
+            width=3, command=lambda: self._open_prompt_popup(
+                "Prompt systemowy", self.prompt_text)
+        ).pack(side="right")
         self.prompt_text = scrolledtext.ScrolledText(
             inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=10,
             relief="flat", wrap="word", insertbackground=FG)
@@ -1829,12 +1860,20 @@ class InvestmentAdvisor(tk.Tk):
         ).pack(anchor="w", padx=16, pady=2)
 
         section("💬 Prompt czatu")
+        _pf2 = tk.Frame(inner, bg=BG)
+        _pf2.pack(fill="x", padx=16, pady=(0, 2))
         tk.Label(
-            inner,
+            _pf2,
             text="Instrukcja systemowa dla czatu. Raport z analizy jest "
                  "dołączany automatycznie.",
             bg=BG, fg=GRAY, font=("Segoe UI", 9)
-        ).pack(anchor="w", padx=16, pady=(0, 4))
+        ).pack(side="left")
+        tk.Button(
+            _pf2, text="⛶", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 11), relief="flat", cursor="hand2",
+            width=3, command=lambda: self._open_prompt_popup(
+                "Prompt czatu", self.chat_prompt_text)
+        ).pack(side="right")
         self.chat_prompt_text = scrolledtext.ScrolledText(
             inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=5,
             relief="flat", wrap="word", insertbackground=FG)
@@ -1850,12 +1889,20 @@ class InvestmentAdvisor(tk.Tk):
         ).pack(anchor="w", padx=16, pady=2)
 
         section("📊 Prompt czatu wykresów")
+        _pf3 = tk.Frame(inner, bg=BG)
+        _pf3.pack(fill="x", padx=16, pady=(0, 2))
         tk.Label(
-            inner,
+            _pf3,
             text="Instrukcja systemowa dla czatu na zakładce Wykresy. "
                  "Dane wykresu (symbol, okres, ceny) są dołączane automatycznie.",
             bg=BG, fg=GRAY, font=("Segoe UI", 9)
-        ).pack(anchor="w", padx=16, pady=(0, 4))
+        ).pack(side="left")
+        tk.Button(
+            _pf3, text="⛶", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 11), relief="flat", cursor="hand2",
+            width=3, command=lambda: self._open_prompt_popup(
+                "Prompt czatu wykresów", self.chart_chat_prompt_text)
+        ).pack(side="right")
         self.chart_chat_prompt_text = scrolledtext.ScrolledText(
             inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=5,
             relief="flat", wrap="word", insertbackground=FG)
@@ -1871,12 +1918,20 @@ class InvestmentAdvisor(tk.Tk):
         ).pack(anchor="w", padx=16, pady=2)
 
         section("🧾 Prompt profilu instrumentu")
+        _pf4 = tk.Frame(inner, bg=BG)
+        _pf4.pack(fill="x", padx=16, pady=(0, 2))
         tk.Label(
-            inner,
+            _pf4,
             text="Instrukcja dla AI przy generowaniu opisu instrumentu. "
                  "Nazwa, symbol i kategoria są dołączane automatycznie.",
             bg=BG, fg=GRAY, font=("Segoe UI", 9)
-        ).pack(anchor="w", padx=16, pady=(0, 4))
+        ).pack(side="left")
+        tk.Button(
+            _pf4, text="⛶", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 11), relief="flat", cursor="hand2",
+            width=3, command=lambda: self._open_prompt_popup(
+                "Prompt profilu instrumentu", self.profile_prompt_text)
+        ).pack(side="right")
         self.profile_prompt_text = scrolledtext.ScrolledText(
             inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=6,
             relief="flat", wrap="word", insertbackground=FG)
@@ -2178,6 +2233,42 @@ class InvestmentAdvisor(tk.Tk):
         from config import DEFAULT_CONFIG
         self.profile_prompt_text.delete("1.0", "end")
         self.profile_prompt_text.insert("end", DEFAULT_CONFIG["profile_prompt"])
+
+    def _open_prompt_popup(self, title, source_widget):
+        """Open a larger popup window for editing a prompt, then sync back."""
+        popup = tk.Toplevel(self)
+        popup.title(title)
+        popup.geometry("750x520")
+        popup.minsize(500, 350)
+        popup.configure(bg=BG)
+        popup.transient(self)
+        popup.grab_set()
+
+        editor = scrolledtext.ScrolledText(
+            popup, bg=BG2, fg=FG, font=("Segoe UI", 11),
+            relief="flat", wrap="word", insertbackground=FG)
+        editor.pack(fill="both", expand=True, padx=12, pady=(12, 6))
+        editor.insert("end", source_widget.get("1.0", "end").strip())
+        editor.focus_set()
+
+        btn_bar = tk.Frame(popup, bg=BG)
+        btn_bar.pack(fill="x", padx=12, pady=(0, 12))
+
+        def _save_and_close():
+            source_widget.delete("1.0", "end")
+            source_widget.insert("end", editor.get("1.0", "end").strip())
+            popup.destroy()
+
+        tk.Button(
+            btn_bar, text="💾 Zapisz i zamknij", bg=GREEN, fg=BG,
+            font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
+            padx=14, pady=6, command=_save_and_close
+        ).pack(side="right")
+        tk.Button(
+            btn_bar, text="Anuluj", bg=BTN_BG, fg=FG,
+            font=("Segoe UI", 10), relief="flat", cursor="hand2",
+            padx=14, pady=6, command=popup.destroy
+        ).pack(side="right", padx=(0, 8))
 
     def _save_settings(self):
         # Nie nadpisuj kluczy zarządzanych przez env
@@ -2787,6 +2878,43 @@ class InvestmentAdvisor(tk.Tk):
         except RuntimeError:
             pass
 
+    def _show_analysis_overlay(self, message=""):
+        """Show a pulsing overlay on the analysis text area."""
+        self._analysis_overlay_msg = message
+        if not self._analysis_overlay_visible:
+            self._analysis_overlay_visible = True
+            self._analysis_overlay_step = 0
+            self._analysis_overlay.place(
+                relx=0, rely=0, relwidth=1, relheight=1)
+            self._analysis_overlay.lift()
+            self._tick_overlay()
+
+    def _hide_analysis_overlay(self):
+        """Hide the analysis overlay."""
+        self._analysis_overlay_visible = False
+        if self._analysis_overlay_after:
+            try:
+                self.after_cancel(self._analysis_overlay_after)
+            except Exception:
+                pass
+            self._analysis_overlay_after = None
+        self._analysis_overlay.place_forget()
+
+    def _tick_overlay(self):
+        """Animate the overlay text with a pulsing dot pattern."""
+        if not self._analysis_overlay_visible:
+            return
+        _OVERLAY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        frame = _OVERLAY_FRAMES[self._analysis_overlay_step % len(_OVERLAY_FRAMES)]
+        msg = self._analysis_overlay_msg or "Analizuję"
+        try:
+            self._analysis_overlay.configure(text=f"{frame}  {msg}  {frame}")
+        except Exception:
+            self._analysis_overlay_visible = False
+            return
+        self._analysis_overlay_step += 1
+        self._analysis_overlay_after = self.after(120, self._tick_overlay)
+
     def set_busy(self, is_busy, message="Pracuję…"):
         """Lock/unlock buttons and start/stop spinner animation.
 
@@ -2801,6 +2929,7 @@ class InvestmentAdvisor(tk.Tk):
                         pass
                 if self._spinner:
                     self._spinner.start(message)
+                self._show_analysis_overlay(message)
             else:
                 for btn in self._busy_buttons:
                     try:
@@ -2809,6 +2938,7 @@ class InvestmentAdvisor(tk.Tk):
                         pass
                 if self._spinner:
                     self._spinner.stop(message)
+                self._hide_analysis_overlay()
         if self._shutting_down:
             return
         try:
