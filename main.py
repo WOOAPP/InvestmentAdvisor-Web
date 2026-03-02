@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(__file__))
 from config import load_config, save_config, mask_key, get_api_key
 from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd
+from modules.openai_pricing import get_model_cost, refresh_pricing
 from modules.ai_engine import (run_analysis, run_chat, get_available_models,
                                generate_instrument_profile)
 from modules.database import (
@@ -65,6 +66,7 @@ class InvestmentAdvisor(tk.Tk):
         self._busy_buttons = []   # buttons to lock during analysis/fetch
         self._spinner = None      # BusySpinner instance (created after UI build)
         self._build_ui()
+        threading.Thread(target=refresh_pricing, daemon=True).start()
         self._autoload_last_report()
         self._start_scheduler()
         self._check_alerts()
@@ -1508,8 +1510,8 @@ class InvestmentAdvisor(tk.Tk):
         self.report_preview.pack(fill="both", expand=True)
 
         self.history_token_label = tk.Label(
-            preview_frame, text="", bg=BG, fg=GRAY,
-            font=("Segoe UI", 8), anchor="e")
+            preview_frame, text="", bg="#16161e", fg="#FFD54F",
+            font=("Segoe UI", 8, "bold"), anchor="w")
         self.history_token_label.pack(fill="x", padx=8, pady=(0, 2))
 
         self._load_history()
@@ -1539,17 +1541,13 @@ class InvestmentAdvisor(tk.Tk):
             model = report[3] or ""
             inp = report[7] if len(report) > 7 else 0
             out = report[8] if len(report) > 8 else 0
-            label = f"Model: {provider}/{model}"
-            if inp or out:
-                label += f"  •  Tokeny: input {inp}, output {out}, razem {(inp or 0) + (out or 0)}"
-            else:
-                label += "  •  Tokeny: brak danych"
-            self.history_token_label.configure(text=label)
-            # Update dashboard date + token display for selected report
             usage_info = {
                 "provider": provider, "model": model,
                 "input_tokens": inp or 0, "output_tokens": out or 0,
             }
+            self.history_token_label.configure(
+                text=self._build_token_cost_line(usage_info))
+            # Update dashboard date + token display for selected report
             self._update_token_info(usage_info, report_date=created_at)
 
     def _delete_selected_report(self):
@@ -2461,30 +2459,64 @@ class InvestmentAdvisor(tk.Tk):
         self._set_status(f"Analiza zakończona  •  {len(analysis)} znaków")
         self._load_history()
 
+    @staticmethod
+    def _fmt_cost(val):
+        """Format a small dollar/PLN amount with adaptive precision."""
+        if val < 0.01:
+            return f"{val:.6f}"
+        return f"{val:.4f}"
+
+    def _build_token_cost_line(self, usage_info):
+        """Return a formatted string: Model • Tokeny • Koszt."""
+        provider = usage_info.get("provider", "")
+        model = usage_info.get("model", "")
+        inp = usage_info.get("input_tokens", 0)
+        out = usage_info.get("output_tokens", 0)
+
+        parts = [f"Model: {provider}/{model}"]
+
+        if inp or out:
+            parts.append(
+                f"Tokeny: input {inp}, output {out}, razem {inp + out}")
+        else:
+            parts.append("Tokeny: brak danych")
+
+        # Cost calculation
+        if inp or out:
+            model_key = f"{provider}/{model}" if provider else model
+            cost_usd = get_model_cost(model_key, inp, out)
+            if cost_usd is not None:
+                cost_str = f"${self._fmt_cost(cost_usd)}"
+                # PLN via existing FX mechanism
+                fx = get_fx_to_usd("PLN")  # PLN→USD rate (~0.25)
+                if fx and fx > 0:
+                    cost_pln = cost_usd / fx
+                    cost_str += f" | {self._fmt_cost(cost_pln)} PLN"
+                else:
+                    cost_str += " | PLN —"
+                parts.append(f"Koszt: {cost_str}")
+            else:
+                parts.append("Koszt: brak danych")
+        else:
+            parts.append("Koszt: brak danych")
+
+        return "  •  ".join(parts)
+
     def _update_token_info(self, usage_info=None, report_date=None):
         """Update the token/model info label and report date on the dashboard."""
-        # Report date (CEL 3)
+        # Report date
         if report_date:
-            # Trim to YYYY-MM-DD HH:MM (no seconds)
             self.report_date_label.configure(
                 text=f"Data utworzenia raportu: {report_date[:16]}")
         else:
             self.report_date_label.configure(text="")
 
-        # Token / model info — single yellow line
+        # Token / model / cost info — single yellow line
         if not usage_info:
             self.token_line_label.configure(text="")
             return
-        provider = usage_info.get("provider", "")
-        model = usage_info.get("model", "")
-        inp = usage_info.get("input_tokens", 0)
-        out = usage_info.get("output_tokens", 0)
-        if inp or out:
-            tokens_part = f"Tokeny: input {inp}, output {out}, razem {inp + out}"
-        else:
-            tokens_part = "Tokeny: brak danych"
         self.token_line_label.configure(
-            text=f"Model: {provider}/{model}  •  {tokens_part}")
+            text=self._build_token_cost_line(usage_info))
 
     # ═══════════════════════════════════════
     # PDF EXPORT
