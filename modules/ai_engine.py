@@ -7,7 +7,8 @@ from config import get_api_key
 
 def run_analysis(config, market_summary, news_list, scraped_text="",
                   macro_text=""):
-    """Wysyła dane do wybranego modelu AI i zwraca analizę."""
+    """Wysyła dane do wybranego modelu AI i zwraca dict z kluczami:
+    text, input_tokens, output_tokens."""
     provider = config.get("ai_provider", "anthropic")
     prompt = config.get("prompt", "Przeanalizuj sytuację rynkową.")
 
@@ -27,7 +28,7 @@ def run_analysis(config, market_summary, news_list, scraped_text="",
     elif provider == "openrouter":
         return _run_openrouter(config, prompt, full_message)
     else:
-        return "Błąd: nieznany dostawca AI. Sprawdź ustawienia."
+        return _make_result("Błąd: nieznany dostawca AI. Sprawdź ustawienia.")
 
 
 def _build_macro_prompt(market_summary, macro_text, scraped_text=""):
@@ -76,10 +77,27 @@ def _build_legacy_prompt(market_summary, news_list, scraped_text=""):
     )
 
 
+def _make_result(text, usage=None):
+    """Wrap API response text and optional usage into a standard dict."""
+    inp = 0
+    out = 0
+    if usage is not None:
+        inp = getattr(usage, "input_tokens", 0) or getattr(usage, "prompt_tokens", 0) or 0
+        out = getattr(usage, "output_tokens", 0) or getattr(usage, "completion_tokens", 0) or 0
+    return {"text": text, "input_tokens": int(inp), "output_tokens": int(out)}
+
+
+def _result_text(result):
+    """Extract plain text from a result (dict or str)."""
+    if isinstance(result, dict):
+        return result.get("text", "")
+    return result
+
+
 def _run_anthropic(config, system_prompt, user_message):
     api_key = get_api_key(config, "anthropic")
     if not api_key:
-        return "Brak klucza API Anthropic. Ustaw ANTHROPIC_API_KEY lub dodaj klucz w Ustawieniach."
+        return _make_result("Brak klucza API Anthropic. Ustaw ANTHROPIC_API_KEY lub dodaj klucz w Ustawieniach.")
     try:
         client = anthropic.Anthropic(api_key=api_key)
         model = config.get("ai_model", "claude-opus-4-6")
@@ -89,14 +107,14 @@ def _run_anthropic(config, system_prompt, user_message):
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}]
         )
-        return response.content[0].text
+        return _make_result(response.content[0].text, getattr(response, "usage", None))
     except Exception as e:
-        return f"Błąd Anthropic API: {str(e)}"
+        return _make_result(f"Błąd Anthropic API: {str(e)}")
 
 def _run_openai(config, system_prompt, user_message):
     api_key = get_api_key(config, "openai")
     if not api_key:
-        return "Brak klucza API OpenAI. Ustaw OPENAI_API_KEY lub dodaj klucz w Ustawieniach."
+        return _make_result("Brak klucza API OpenAI. Ustaw OPENAI_API_KEY lub dodaj klucz w Ustawieniach.")
     try:
         client = openai.OpenAI(api_key=api_key)
         model = config.get("ai_model", "gpt-4o")
@@ -108,14 +126,14 @@ def _run_openai(config, system_prompt, user_message):
                 {"role": "user", "content": user_message}
             ]
         )
-        return response.choices[0].message.content
+        return _make_result(response.choices[0].message.content, getattr(response, "usage", None))
     except Exception as e:
-        return f"Błąd OpenAI API: {str(e)}"
+        return _make_result(f"Błąd OpenAI API: {str(e)}")
 
 def _run_openrouter(config, system_prompt, user_message):
     api_key = get_api_key(config, "openrouter")
     if not api_key:
-        return "Brak klucza API OpenRouter. Ustaw OPENROUTER_API_KEY lub dodaj klucz w Ustawieniach."
+        return _make_result("Brak klucza API OpenRouter. Ustaw OPENROUTER_API_KEY lub dodaj klucz w Ustawieniach.")
     try:
         client = openai.OpenAI(
             api_key=api_key,
@@ -130,12 +148,15 @@ def _run_openrouter(config, system_prompt, user_message):
                 {"role": "user", "content": user_message}
             ]
         )
-        return response.choices[0].message.content
+        return _make_result(response.choices[0].message.content, getattr(response, "usage", None))
     except Exception as e:
-        return f"Błąd OpenRouter API: {str(e)}"
+        return _make_result(f"Błąd OpenRouter API: {str(e)}")
 
 def run_chat(config, messages, system_prompt=""):
-    """Send a multi-turn chat conversation to the configured chat model."""
+    """Send a multi-turn chat conversation to the configured chat model.
+
+    Always returns a plain string (backward-compatible).
+    """
     provider = config.get("chat_provider") or config.get("ai_provider", "anthropic")
     model = config.get("chat_model") or config.get("ai_model", "claude-sonnet-4-6")
 
@@ -244,10 +265,10 @@ def generate_instrument_profile(config, symbol, name, category):
     )
 
     if provider == "anthropic":
-        return _run_anthropic(config, system, user_msg)
+        return _result_text(_run_anthropic(config, system, user_msg))
     elif provider == "openai":
-        return _run_openai(config, system, user_msg)
+        return _result_text(_run_openai(config, system, user_msg))
     elif provider == "openrouter":
-        return _run_openrouter(config, system, user_msg)
+        return _result_text(_run_openrouter(config, system, user_msg))
     else:
         return "Błąd: nieznany dostawca AI."

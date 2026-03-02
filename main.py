@@ -15,7 +15,7 @@ from modules.market_data import get_all_instruments, get_news, format_market_sum
 from modules.ai_engine import (run_analysis, run_chat, get_available_models,
                                generate_instrument_profile)
 from modules.database import (
-    save_report, get_reports, get_report_by_id,
+    save_report, get_reports, get_report_by_id, get_latest_report,
     save_market_snapshot, get_unseen_alerts, mark_alerts_seen, delete_report,
     add_portfolio_position, get_portfolio_positions, delete_portfolio_position,
     get_instrument_profile, save_instrument_profile,
@@ -65,6 +65,7 @@ class InvestmentAdvisor(tk.Tk):
         self._busy_buttons = []   # buttons to lock during analysis/fetch
         self._spinner = None      # BusySpinner instance (created after UI build)
         self._build_ui()
+        self._autoload_last_report()
         self._start_scheduler()
         self._check_alerts()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -217,6 +218,12 @@ class InvestmentAdvisor(tk.Tk):
             insertbackground=FG, selectbackground=ACCENT)
         self.analysis_text.pack(fill="both", expand=True, padx=4, pady=4)
         setup_markdown_tags(self.analysis_text)
+
+        # Token / model info bar (right-aligned, bottom of analysis)
+        self.token_info_label = tk.Label(
+            analysis_frame, text="", bg=BG, fg=GRAY,
+            font=("Segoe UI", 8), anchor="e")
+        self.token_info_label.pack(fill="x", padx=8, pady=(0, 2))
 
         # — Chat panel —
         self.chat_frame = tk.LabelFrame(
@@ -1260,6 +1267,10 @@ class InvestmentAdvisor(tk.Tk):
                   font=("Segoe UI", 10), relief="flat", cursor="hand2",
                   padx=10, pady=4, command=self._delete_selected_report
                   ).pack(side="left", padx=8)
+        tk.Button(top, text="📄 Eksportuj PDF", bg=BTN_BG, fg=FG,
+                  font=("Segoe UI", 10), relief="flat", cursor="hand2",
+                  padx=10, pady=4, command=self._export_history_pdf
+                  ).pack(side="left", padx=8)
 
         paned = tk.PanedWindow(self.tab_history, orient="horizontal",
                                 bg=BG, sashwidth=4)
@@ -1293,6 +1304,11 @@ class InvestmentAdvisor(tk.Tk):
             relief="flat", wrap="word", state="disabled")
         self.report_preview.pack(fill="both", expand=True)
 
+        self.history_token_label = tk.Label(
+            preview_frame, text="", bg=BG, fg=GRAY,
+            font=("Segoe UI", 8), anchor="e")
+        self.history_token_label.pack(fill="x", padx=8, pady=(0, 2))
+
         self._load_history()
 
     def _load_history(self):
@@ -1314,6 +1330,17 @@ class InvestmentAdvisor(tk.Tk):
             self.report_preview.delete("1.0", "end")
             self.report_preview.insert("end", report[5])
             self.report_preview.configure(state="disabled")
+            # Show token info for this report
+            provider = report[2] or ""
+            model = report[3] or ""
+            inp = report[7] if len(report) > 7 else 0
+            out = report[8] if len(report) > 8 else 0
+            label = f"Model: {provider}/{model}"
+            if inp or out:
+                label += f"  •  Tokeny: input {inp}, output {out}, razem {(inp or 0) + (out or 0)}"
+            else:
+                label += "  •  Tokeny: brak danych"
+            self.history_token_label.configure(text=label)
 
     def _delete_selected_report(self):
         sel = self.history_tree.selection()
@@ -1987,6 +2014,73 @@ class InvestmentAdvisor(tk.Tk):
         threading.Thread(target=_worker, daemon=True).start()
 
     # ═══════════════════════════════════════
+    # AUTOLOAD LAST REPORT
+    # ═══════════════════════════════════════
+    def _autoload_last_report(self):
+        """Load the most recent report from DB into the dashboard on startup."""
+        try:
+            report = get_latest_report()
+            if not report:
+                self.analysis_text.configure(state="normal")
+                self.analysis_text.delete("1.0", "end")
+                self.analysis_text.insert(
+                    "end",
+                    "Brak zapisanych raportów. Wygeneruj pierwszy raport.")
+                self.analysis_text.configure(state="disabled")
+                self._update_token_info(None)
+                return
+            # report tuple: id, created_at, provider, model, market_summary,
+            #               analysis, risk_level, input_tokens, output_tokens
+            rid          = report[0]
+            provider     = report[2] or ""
+            model        = report[3] or ""
+            analysis     = report[5] or ""
+            risk         = report[6] or 0
+            input_tokens = report[7] if len(report) > 7 else 0
+            output_tokens = report[8] if len(report) > 8 else 0
+
+            self.current_analysis = analysis
+
+            self.analysis_text.configure(state="normal")
+            self.analysis_text.delete("1.0", "end")
+            insert_markdown(self.analysis_text, analysis)
+            self.analysis_text.configure(state="disabled")
+
+            usage_info = {
+                "provider": provider, "model": model,
+                "input_tokens": input_tokens or 0,
+                "output_tokens": output_tokens or 0,
+            }
+            self._update_token_info(usage_info)
+
+            # Update risk gauge
+            for w in self.gauge_frame.winfo_children():
+                w.destroy()
+            try:
+                canvas, _ = create_risk_gauge(self.gauge_frame, risk)
+                canvas.get_tk_widget().pack()
+            except Exception:
+                tk.Label(self.gauge_frame, text=f"Ryzyko: {risk}/10",
+                         bg=BG, fg=YELLOW,
+                         font=("Segoe UI", 14, "bold")).pack(pady=8)
+
+            # Select this report in the history tree if present
+            rid_str = str(rid)
+            if self.history_tree.exists(rid_str):
+                self.history_tree.selection_set(rid_str)
+                self.history_tree.see(rid_str)
+
+        except Exception as exc:
+            self.analysis_text.configure(state="normal")
+            self.analysis_text.delete("1.0", "end")
+            self.analysis_text.insert(
+                "end",
+                f"Błąd wczytywania ostatniego raportu: {exc}\n"
+                "Wygeneruj nowy raport.")
+            self.analysis_text.configure(state="disabled")
+            self._update_token_info(None)
+
+    # ═══════════════════════════════════════
     # ANALYSIS
     # ═══════════════════════════════════════
     def _run_analysis_thread(self):
@@ -2031,19 +2125,32 @@ class InvestmentAdvisor(tk.Tk):
 
             self.set_busy(True, "Generowanie analizy AI…")
             summary  = format_market_summary(market_data)
-            analysis = run_analysis(cfg, summary, news, scraped_text,
+            result   = run_analysis(cfg, summary, news, scraped_text,
                                     macro_text=macro_text)
+            # result is a dict: {text, input_tokens, output_tokens}
+            analysis     = result.get("text", "")
+            input_tokens = result.get("input_tokens", 0)
+            output_tokens = result.get("output_tokens", 0)
             risk     = extract_risk_level(analysis)
 
-            save_report(cfg["ai_provider"], cfg["ai_model"],
-                        summary, analysis, risk)
+            provider = cfg["ai_provider"]
+            model    = cfg["ai_model"]
+            save_report(provider, model,
+                        summary, analysis, risk,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens)
             save_market_snapshot(market_data)
 
             self.current_analysis    = analysis
             self.current_market_data = market_data
 
+            usage_info = {
+                "provider": provider, "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
             self.after(0, lambda: self._update_dashboard(
-                analysis, risk, market_data))
+                analysis, risk, market_data, usage_info=usage_info))
         except Exception as exc:
             import traceback
             traceback.print_exc()
@@ -2053,12 +2160,13 @@ class InvestmentAdvisor(tk.Tk):
             self.after(0, lambda: self.analyze_btn.configure(
                 text="▶  Uruchom Analizę"))
 
-    def _update_dashboard(self, analysis, risk, market_data):
+    def _update_dashboard(self, analysis, risk, market_data, usage_info=None):
         self.analysis_text.configure(state="normal")
         self.analysis_text.delete("1.0", "end")
         insert_markdown(self.analysis_text, analysis)
         self.analysis_text.configure(state="disabled")
 
+        self._update_token_info(usage_info)
         self._update_price_tiles(market_data)
         self._refresh_portfolio()
 
@@ -2075,76 +2183,191 @@ class InvestmentAdvisor(tk.Tk):
         self._set_status(f"Analiza zakończona  •  {len(analysis)} znaków")
         self._load_history()
 
+    def _update_token_info(self, usage_info=None):
+        """Update the token/model info label on the dashboard."""
+        if not usage_info:
+            self.token_info_label.configure(text="")
+            return
+        provider = usage_info.get("provider", "")
+        model = usage_info.get("model", "")
+        inp = usage_info.get("input_tokens", 0)
+        out = usage_info.get("output_tokens", 0)
+        label = f"Model: {provider}/{model}"
+        if inp or out:
+            label += f"  •  Tokeny: input {inp}, output {out}, razem {inp + out}"
+        else:
+            label += "  •  Tokeny: brak danych"
+        self.token_info_label.configure(text=label)
+
     # ═══════════════════════════════════════
     # PDF EXPORT
     # ═══════════════════════════════════════
+    def _build_pdf(self, text, report_date=None):
+        """Build a FPDF object from report text. Returns the FPDF instance.
+
+        *report_date*: string shown as report date (defaults to now).
+        """
+        from fpdf import FPDF
+        from datetime import datetime as _dt
+
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        effective_w = pdf.w - pdf.l_margin - pdf.r_margin
+
+        # Try to register a UTF-8 capable font
+        use_utf8 = False
+        font_dirs = []
+        windir = os.environ.get("WINDIR", "C:\\Windows")
+        font_dirs.append(os.path.join(windir, "Fonts"))
+        # Linux common paths
+        for p in ("/usr/share/fonts/truetype/dejavu",
+                  "/usr/share/fonts/truetype/liberation",
+                  "/usr/share/fonts/TTF"):
+            font_dirs.append(p)
+
+        for fdir in font_dirs:
+            if use_utf8:
+                break
+            try:
+                candidates = [
+                    ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf"),
+                    ("LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf"),
+                    ("arial.ttf", "arialbd.ttf"),
+                ]
+                for regular, bold in candidates:
+                    font_path = os.path.join(fdir, regular)
+                    bold_path = os.path.join(fdir, bold)
+                    if os.path.exists(font_path):
+                        pdf.add_font("UTFFont", "", font_path, uni=True)
+                        if os.path.exists(bold_path):
+                            pdf.add_font("UTFFont", "B", bold_path, uni=True)
+                        use_utf8 = True
+                        break
+            except Exception:
+                continue
+
+        date_str = report_date or _dt.now().strftime("%Y-%m-%d %H:%M")
+
+        # Title
+        if use_utf8:
+            pdf.set_font("UTFFont", "B", 16)
+        else:
+            pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(effective_w, 10, "Investment Advisor - Raport",
+                 ln=True, align="C")
+
+        # Date
+        if use_utf8:
+            pdf.set_font("UTFFont", "", 9)
+        else:
+            pdf.set_font("Helvetica", size=9)
+        pdf.cell(effective_w, 6, date_str, ln=True, align="C")
+        pdf.ln(6)
+
+        # Body — with basic markdown heading support
+        for line in text.split("\n"):
+            if not use_utf8:
+                line = line.encode("latin-1", "replace").decode("latin-1")
+            stripped = line.strip()
+            pdf.set_x(pdf.l_margin)
+
+            if not stripped:
+                pdf.ln(4)
+            elif stripped.startswith("### "):
+                if use_utf8:
+                    pdf.set_font("UTFFont", "B", 11)
+                else:
+                    pdf.set_font("Helvetica", "B", 11)
+                pdf.multi_cell(effective_w, 5, stripped[4:])
+                if use_utf8:
+                    pdf.set_font("UTFFont", "", 10)
+                else:
+                    pdf.set_font("Helvetica", size=10)
+            elif stripped.startswith("## "):
+                pdf.ln(2)
+                if use_utf8:
+                    pdf.set_font("UTFFont", "B", 12)
+                else:
+                    pdf.set_font("Helvetica", "B", 12)
+                pdf.multi_cell(effective_w, 6, stripped[3:])
+                if use_utf8:
+                    pdf.set_font("UTFFont", "", 10)
+                else:
+                    pdf.set_font("Helvetica", size=10)
+            elif stripped.startswith("# "):
+                pdf.ln(3)
+                if use_utf8:
+                    pdf.set_font("UTFFont", "B", 14)
+                else:
+                    pdf.set_font("Helvetica", "B", 14)
+                pdf.multi_cell(effective_w, 7, stripped[2:])
+                if use_utf8:
+                    pdf.set_font("UTFFont", "", 10)
+                else:
+                    pdf.set_font("Helvetica", size=10)
+            else:
+                if use_utf8:
+                    pdf.set_font("UTFFont", "", 10)
+                else:
+                    pdf.set_font("Helvetica", size=10)
+                pdf.multi_cell(effective_w, 5, line)
+
+        return pdf
+
     def _export_pdf(self):
+        """Export current dashboard analysis to PDF (auto-path)."""
         if not self.current_analysis:
             messagebox.showwarning("Brak analizy", "Najpierw uruchom analizę!")
             return
         try:
-            from fpdf import FPDF
-            from datetime import datetime
-            pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.add_page()
-            effective_w = pdf.w - pdf.l_margin - pdf.r_margin
-
-            # Try to register a UTF-8 capable font
-            use_utf8 = False
-            try:
-                windir = os.environ.get("WINDIR", "C:\\Windows")
-                font_path = os.path.join(windir, "Fonts", "arial.ttf")
-                bold_path = os.path.join(windir, "Fonts", "arialbd.ttf")
-                if os.path.exists(font_path):
-                    pdf.add_font("ArialUTF", "", font_path, uni=True)
-                    if os.path.exists(bold_path):
-                        pdf.add_font("ArialUTF", "B", bold_path, uni=True)
-                    use_utf8 = True
-            except Exception:
-                pass
-
-            # Title
-            if use_utf8:
-                pdf.set_font("ArialUTF", "B", 16)
-            else:
-                pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(effective_w, 10, "Investment Advisor - Raport",
-                     ln=True, align="C")
-
-            # Date
-            if use_utf8:
-                pdf.set_font("ArialUTF", "", 9)
-            else:
-                pdf.set_font("Helvetica", size=9)
-            pdf.cell(effective_w, 6,
-                     datetime.now().strftime("%Y-%m-%d %H:%M"),
-                     ln=True, align="C")
-            pdf.ln(6)
-
-            # Body
-            if use_utf8:
-                pdf.set_font("ArialUTF", "", 10)
-            else:
-                pdf.set_font("Helvetica", size=10)
-
-            for line in self.current_analysis.split("\n"):
-                if not use_utf8:
-                    line = line.encode("latin-1", "replace").decode("latin-1")
-                pdf.set_x(pdf.l_margin)
-                if not line.strip():
-                    pdf.ln(4)
-                else:
-                    pdf.multi_cell(effective_w, 5, line)
-
+            from datetime import datetime as _dt
+            pdf = self._build_pdf(self.current_analysis)
             os.makedirs("data/reports", exist_ok=True)
             path = (f"data/reports/raport_"
-                    f"{datetime.now().strftime('%Y%m%d_%H%M')}.pdf")
+                    f"{_dt.now().strftime('%Y%m%d_%H%M')}.pdf")
             pdf.output(path)
             messagebox.showinfo("PDF",
                                 f"Raport zapisany:\n{os.path.abspath(path)}")
         except Exception as exc:
             messagebox.showerror("Błąd PDF", str(exc))
+
+    def _export_history_pdf(self):
+        """Export selected history report to PDF via Save As dialog."""
+        sel = self.history_tree.selection()
+        if not sel:
+            messagebox.showinfo(
+                "Eksport PDF", "Zaznacz raport na liście historii.")
+            return
+        report = get_report_by_id(int(sel[0]))
+        if not report:
+            messagebox.showwarning("Eksport PDF", "Nie znaleziono raportu.")
+            return
+
+        analysis = report[5] or ""
+        report_date = (report[1] or "")[:16]
+
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(
+            title="Zapisz raport jako PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialfile=f"raport_{report_date.replace(':', '').replace(' ', '_').replace('-', '')}.pdf",
+        )
+        if not path:
+            return
+
+        def _generate():
+            try:
+                pdf = self._build_pdf(analysis, report_date=report_date)
+                pdf.output(path)
+                self.after(0, lambda: messagebox.showinfo(
+                    "PDF", f"Raport zapisany:\n{os.path.abspath(path)}"))
+            except Exception as exc:
+                self.after(0, lambda: messagebox.showerror(
+                    "Błąd PDF", str(exc)))
+
+        threading.Thread(target=_generate, daemon=True).start()
 
     # ═══════════════════════════════════════
     # ALERTS
