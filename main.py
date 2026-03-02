@@ -941,7 +941,7 @@ class InvestmentAdvisor(tk.Tk):
                 if currency != "USD" and cur_fx and cur_fx > 0:
                     price_local = current_price / cur_fx
                     val_local = current_val / cur_fx
-                    pnl_local = pnl_usd / cur_fx
+                    pnl_local = val_local - qty * buy_price
                     akt_display = (f"$ {current_price:,.2f} | "
                                    f"{currency} {price_local:,.2f}")
                     val_display = (f"$ {current_val:,.2f} | "
