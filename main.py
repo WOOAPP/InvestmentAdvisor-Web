@@ -219,11 +219,25 @@ class InvestmentAdvisor(tk.Tk):
         self.analysis_text.pack(fill="both", expand=True, padx=4, pady=4)
         setup_markdown_tags(self.analysis_text)
 
-        # Token / model info bar (right-aligned, bottom of analysis)
-        self.token_info_label = tk.Label(
+        # Report date label (CEL 3)
+        self.report_date_label = tk.Label(
             analysis_frame, text="", bg=BG, fg=GRAY,
-            font=("Segoe UI", 8), anchor="e")
-        self.token_info_label.pack(fill="x", padx=8, pady=(0, 2))
+            font=("Segoe UI", 8), anchor="w")
+        self.report_date_label.pack(fill="x", padx=8, pady=(2, 0))
+
+        # Token / model info bar — yellow tokens, visually separated (CEL 4)
+        self.token_info_frame = tk.Frame(analysis_frame, bg=BG2,
+                                         highlightbackground=GRAY,
+                                         highlightthickness=1)
+        self.token_info_frame.pack(fill="x", padx=8, pady=(2, 4))
+        self.token_model_label = tk.Label(
+            self.token_info_frame, text="", bg=BG2, fg=GRAY,
+            font=("Segoe UI", 8), anchor="w")
+        self.token_model_label.pack(side="left", padx=(6, 0), pady=3)
+        self.token_count_label = tk.Label(
+            self.token_info_frame, text="", bg=BG2, fg="#FFD54F",
+            font=("Segoe UI", 8, "bold"), anchor="w")
+        self.token_count_label.pack(side="left", padx=(4, 6), pady=3)
 
         # — Chat panel —
         self.chat_frame = tk.LabelFrame(
@@ -1381,6 +1395,7 @@ class InvestmentAdvisor(tk.Tk):
             self.report_preview.insert("end", report[5])
             self.report_preview.configure(state="disabled")
             # Show token info for this report
+            created_at = report[1] or ""
             provider = report[2] or ""
             model = report[3] or ""
             inp = report[7] if len(report) > 7 else 0
@@ -1391,6 +1406,12 @@ class InvestmentAdvisor(tk.Tk):
             else:
                 label += "  •  Tokeny: brak danych"
             self.history_token_label.configure(text=label)
+            # Update dashboard date + token display for selected report
+            usage_info = {
+                "provider": provider, "model": model,
+                "input_tokens": inp or 0, "output_tokens": out or 0,
+            }
+            self._update_token_info(usage_info, report_date=created_at)
 
     def _delete_selected_report(self):
         sel = self.history_tree.selection()
@@ -1626,6 +1647,14 @@ class InvestmentAdvisor(tk.Tk):
             command=self._generate_missing_profiles)
         self._gen_profiles_btn.pack(side="left", padx=(8, 0))
 
+        self._refresh_profiles_btn = tk.Button(
+            inst_btn_frame, text="🔄 Odśwież opisy AI",
+            bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 10), relief="flat", cursor="hand2",
+            padx=10, pady=4,
+            command=self._refresh_all_profiles)
+        self._refresh_profiles_btn.pack(side="left", padx=(8, 0))
+
         self._gen_profiles_status = tk.Label(
             inst_btn_frame, text="", bg=BG, fg=GRAY,
             font=("Segoe UI", 9))
@@ -1846,6 +1875,59 @@ class InvestmentAdvisor(tk.Tk):
             self.after(0, lambda: self._gen_profiles_status.configure(
                 text=msg, fg=GREEN if not errors else YELLOW))
             self.after(0, lambda: self._gen_profiles_btn.configure(
+                state="normal"))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _refresh_all_profiles(self):
+        """Regenerate ALL AI instrument profiles (overwrite existing cache)."""
+        if not messagebox.askyesno(
+                "Odśwież opisy AI",
+                "To spowoduje ponowne wygenerowanie wszystkich opisów AI "
+                "i nadpisanie zapisanych danych. Kontynuować?"):
+            return
+
+        instruments = self.config_data.get("instruments", [])
+        if not instruments:
+            self._gen_profiles_status.configure(
+                text="Brak instrumentów.", fg=YELLOW)
+            return
+
+        total = len(instruments)
+        self._gen_profiles_btn.configure(state="disabled")
+        self._refresh_profiles_btn.configure(state="disabled")
+        self._gen_profiles_status.configure(
+            text=f"0/{total} — rozpoczynam…", fg=YELLOW)
+
+        def _worker():
+            import logging
+            _log = logging.getLogger(__name__)
+            updated = 0
+            errors = 0
+            for inst in instruments:
+                sym = inst["symbol"]
+                name = inst.get("name", sym)
+                cat = inst.get("category", "Inne")
+                self.after(0, lambda d=updated + errors, s=sym: (
+                    self._gen_profiles_status.configure(
+                        text=f"{d}/{total} — generuję: {s}…")))
+                try:
+                    text = generate_instrument_profile(
+                        self.config_data, sym, name, cat)
+                    save_instrument_profile(sym, text)
+                    updated += 1
+                except Exception as exc:
+                    _log.error("Profile refresh %s failed: %s", sym, exc)
+                    errors += 1
+
+            msg = f"Zaktualizowano {updated} opisów."
+            if errors:
+                msg += f"  ({errors} błędów)"
+            self.after(0, lambda: self._gen_profiles_status.configure(
+                text=msg, fg=GREEN if not errors else YELLOW))
+            self.after(0, lambda: self._gen_profiles_btn.configure(
+                state="normal"))
+            self.after(0, lambda: self._refresh_profiles_btn.configure(
                 state="normal"))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -2082,6 +2164,7 @@ class InvestmentAdvisor(tk.Tk):
             # report tuple: id, created_at, provider, model, market_summary,
             #               analysis, risk_level, input_tokens, output_tokens
             rid          = report[0]
+            created_at   = report[1] or ""
             provider     = report[2] or ""
             model        = report[3] or ""
             analysis     = report[5] or ""
@@ -2101,7 +2184,7 @@ class InvestmentAdvisor(tk.Tk):
                 "input_tokens": input_tokens or 0,
                 "output_tokens": output_tokens or 0,
             }
-            self._update_token_info(usage_info)
+            self._update_token_info(usage_info, report_date=created_at)
 
             # Update risk gauge
             for w in self.gauge_frame.winfo_children():
@@ -2194,13 +2277,18 @@ class InvestmentAdvisor(tk.Tk):
             self.current_analysis    = analysis
             self.current_market_data = market_data
 
+            from zoneinfo import ZoneInfo as _ZI
+            from datetime import datetime as _dt
+            now_str = _dt.now(_ZI("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M:%S")
+
             usage_info = {
                 "provider": provider, "model": model,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
             }
             self.after(0, lambda: self._update_dashboard(
-                analysis, risk, market_data, usage_info=usage_info))
+                analysis, risk, market_data, usage_info=usage_info,
+                report_date=now_str))
         except Exception as exc:
             import traceback
             traceback.print_exc()
@@ -2210,13 +2298,14 @@ class InvestmentAdvisor(tk.Tk):
             self.after(0, lambda: self.analyze_btn.configure(
                 text="▶  Uruchom Analizę"))
 
-    def _update_dashboard(self, analysis, risk, market_data, usage_info=None):
+    def _update_dashboard(self, analysis, risk, market_data, usage_info=None,
+                          report_date=None):
         self.analysis_text.configure(state="normal")
         self.analysis_text.delete("1.0", "end")
         insert_markdown(self.analysis_text, analysis)
         self.analysis_text.configure(state="disabled")
 
-        self._update_token_info(usage_info)
+        self._update_token_info(usage_info, report_date=report_date)
         self._update_price_tiles(market_data)
         self._refresh_portfolio()
 
@@ -2233,21 +2322,32 @@ class InvestmentAdvisor(tk.Tk):
         self._set_status(f"Analiza zakończona  •  {len(analysis)} znaków")
         self._load_history()
 
-    def _update_token_info(self, usage_info=None):
-        """Update the token/model info label on the dashboard."""
+    def _update_token_info(self, usage_info=None, report_date=None):
+        """Update the token/model info label and report date on the dashboard."""
+        # Report date (CEL 3)
+        if report_date:
+            # Trim to YYYY-MM-DD HH:MM (no seconds)
+            self.report_date_label.configure(
+                text=f"Data utworzenia raportu: {report_date[:16]}")
+        else:
+            self.report_date_label.configure(text="")
+
+        # Token / model info (CEL 4)
         if not usage_info:
-            self.token_info_label.configure(text="")
+            self.token_model_label.configure(text="")
+            self.token_count_label.configure(text="")
             return
         provider = usage_info.get("provider", "")
         model = usage_info.get("model", "")
         inp = usage_info.get("input_tokens", 0)
         out = usage_info.get("output_tokens", 0)
-        label = f"Model: {provider}/{model}"
+        self.token_model_label.configure(
+            text=f"Model: {provider}/{model}  •")
         if inp or out:
-            label += f"  •  Tokeny: input {inp}, output {out}, razem {inp + out}"
+            self.token_count_label.configure(
+                text=f"Tokeny: input {inp}, output {out}, razem {inp + out}")
         else:
-            label += "  •  Tokeny: brak danych"
-        self.token_info_label.configure(text=label)
+            self.token_count_label.configure(text="Tokeny: brak danych")
 
     # ═══════════════════════════════════════
     # PDF EXPORT
@@ -2297,7 +2397,9 @@ class InvestmentAdvisor(tk.Tk):
             except Exception:
                 continue
 
-        date_str = report_date or _dt.now().strftime("%Y-%m-%d %H:%M")
+        from zoneinfo import ZoneInfo as _ZI
+        date_str = report_date or _dt.now(
+            _ZI("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
 
         # Title
         if use_utf8:
@@ -2366,16 +2468,57 @@ class InvestmentAdvisor(tk.Tk):
         return pdf
 
     def _export_pdf(self):
-        """Export current dashboard analysis to PDF (auto-path)."""
+        """Export current dashboard analysis to PDF via Save-As dialog."""
         if not self.current_analysis:
             messagebox.showwarning("Brak analizy", "Najpierw uruchom analizę!")
             return
+
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo as _ZI
+        from tkinter import filedialog
+
+        # Determine report date for default filename
+        report_date_str = None
         try:
-            from datetime import datetime as _dt
-            pdf = self._build_pdf(self.current_analysis)
-            os.makedirs("data/reports", exist_ok=True)
-            path = (f"data/reports/raport_"
-                    f"{_dt.now().strftime('%Y%m%d_%H%M')}.pdf")
+            report = get_latest_report()
+            if report and report[1]:
+                report_date_str = report[1][:16]  # "YYYY-MM-DD HH:MM"
+        except Exception:
+            pass
+
+        if report_date_str:
+            # Parse stored date (treat naive as Warsaw)
+            fname_ts = (report_date_str
+                        .replace("-", "").replace(":", "").replace(" ", "_"))
+        else:
+            fname_ts = _dt.now(_ZI("Europe/Warsaw")).strftime("%Y%m%d_%H%M")
+
+        default_name = f"raport_{fname_ts}.pdf"
+
+        # Remember last export directory in config
+        initial_dir = self.config_data.get("last_export_dir", "")
+        if not initial_dir or not os.path.isdir(initial_dir):
+            initial_dir = os.path.expanduser("~/Documents")
+            if not os.path.isdir(initial_dir):
+                initial_dir = os.path.expanduser("~")
+
+        path = filedialog.asksaveasfilename(
+            title="Zapisz raport jako PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialdir=initial_dir,
+            initialfile=default_name,
+        )
+        if not path:
+            return
+
+        # Save last-used directory for next time
+        self.config_data["last_export_dir"] = os.path.dirname(path)
+        save_config(self.config_data)
+
+        try:
+            pdf = self._build_pdf(self.current_analysis,
+                                  report_date=report_date_str)
             pdf.output(path)
             messagebox.showinfo("PDF",
                                 f"Raport zapisany:\n{os.path.abspath(path)}")

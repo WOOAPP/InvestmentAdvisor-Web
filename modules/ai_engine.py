@@ -1,7 +1,10 @@
 import anthropic
 import openai
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import sys, os
+
+_WARSAW = ZoneInfo("Europe/Warsaw")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import get_api_key
 
@@ -34,7 +37,7 @@ def run_analysis(config, market_summary, news_list, scraped_text="",
 def _build_macro_prompt(market_summary, macro_text, scraped_text=""):
     """Build the new structured prompt with macro-trend data."""
     parts = [
-        f"Data analizy: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Data analizy: {datetime.now(_WARSAW).strftime('%Y-%m-%d %H:%M')}",
         "",
         market_summary,
         "",
@@ -69,7 +72,7 @@ def _build_legacy_prompt(market_summary, news_list, scraped_text=""):
                 news_text += f"   {n.get('description','')[:150]}...\n"
 
     return (
-        f"Data analizy: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+        f"Data analizy: {datetime.now(_WARSAW).strftime('%Y-%m-%d %H:%M')}\n\n"
         f"{market_summary}\n"
         f"{news_text}\n"
         f"{'=== TREŚĆ ZE ŹRÓDEŁ WWW ===' + chr(10) + scraped_text if scraped_text else ''}\n\n"

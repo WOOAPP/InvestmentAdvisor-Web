@@ -1,5 +1,6 @@
 import yfinance as yf
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import logging
 import pandas as pd
 import sys, os
@@ -54,7 +55,7 @@ def get_yfinance_data(symbol, name=""):
             "low_5d": round(float(closes.min()), 4),
             "sparkline": sparkline,
             "source": "yfinance",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
         }
     except Exception as e:
         return {"name": name or symbol, "error": str(e)}
@@ -101,7 +102,7 @@ def get_coingecko_data(coin_id, name=""):
             "low_5d": low_5d,
             "sparkline": sparkline,
             "source": "coingecko",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
         }
     except Exception as e:
         return {"name": name or coin_id, "error": str(e)}
@@ -130,7 +131,7 @@ def get_stooq_data(symbol, name=""):
             "low_5d": round(float(parts[4]), 4),
             "sparkline": [round(open_, 4), round(close, 4)],
             "source": "stooq",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+            "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
         }
     except Exception as e:
         return {"name": name or symbol, "error": str(e)}
