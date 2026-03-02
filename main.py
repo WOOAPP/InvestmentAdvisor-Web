@@ -225,19 +225,15 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 8), anchor="w")
         self.report_date_label.pack(fill="x", padx=8, pady=(2, 0))
 
-        # Token / model info bar — yellow tokens, visually separated (CEL 4)
-        self.token_info_frame = tk.Frame(analysis_frame, bg=BG2,
+        # Token / model info bar — entire line in yellow (#FFD54F)
+        self.token_info_frame = tk.Frame(analysis_frame, bg="#16161e",
                                          highlightbackground=GRAY,
                                          highlightthickness=1)
         self.token_info_frame.pack(fill="x", padx=8, pady=(2, 4))
-        self.token_model_label = tk.Label(
-            self.token_info_frame, text="", bg=BG2, fg=GRAY,
-            font=("Segoe UI", 8), anchor="w")
-        self.token_model_label.pack(side="left", padx=(6, 0), pady=3)
-        self.token_count_label = tk.Label(
-            self.token_info_frame, text="", bg=BG2, fg="#FFD54F",
+        self.token_line_label = tk.Label(
+            self.token_info_frame, text="", bg="#16161e", fg="#FFD54F",
             font=("Segoe UI", 8, "bold"), anchor="w")
-        self.token_count_label.pack(side="left", padx=(4, 6), pady=3)
+        self.token_line_label.pack(fill="x", padx=6, pady=4)
 
         # — Chat panel —
         self.chat_frame = tk.LabelFrame(
@@ -689,7 +685,13 @@ class InvestmentAdvisor(tk.Tk):
         ttk.Combobox(
             inner, textvariable=self.v_port_currency,
             values=["USD", "PLN", "EUR"], width=5, state="readonly"
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(0, 4))
+
+        self._btn_current_price = tk.Button(
+            inner, text="Aktualna", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=6, pady=2, command=self._fill_current_price)
+        self._btn_current_price.pack(side="left", padx=(0, 8))
 
         tk.Button(
             inner, text="➕ Dodaj", bg=GREEN, fg=BG,
@@ -702,12 +704,12 @@ class InvestmentAdvisor(tk.Tk):
         tree_frame.pack(fill="both", expand=True, padx=12, pady=4)
 
         cols = ("Instrument", "Symbol", "Ilość", "Waluta",
-                "Kup.", "Kup. ($)", "Akt. ($)",
-                "Wartość ($)", "Zysk ($)", "Zysk %")
+                "Kup.", "Kup. ($)", "Akt.",
+                "Wartość", "Zysk", "Zysk %")
         self.port_tree = ttk.Treeview(
             tree_frame, columns=cols, show="headings", height=18)
 
-        widths = [130, 70, 60, 50, 85, 85, 85, 95, 95, 70]
+        widths = [120, 70, 55, 45, 85, 85, 150, 155, 155, 65]
         anchors = ["w", "center", "e", "center", "e", "e", "e", "e", "e", "e"]
         for col, w, anc in zip(cols, widths, anchors):
             self.port_tree.heading(col, text=col)
@@ -789,6 +791,79 @@ class InvestmentAdvisor(tk.Tk):
         self.v_port_price.set("")
         self._refresh_portfolio()
 
+    def _fill_current_price(self):
+        """Fetch current price for selected instrument and fill the buy-price field."""
+        inst_str = self.v_port_inst.get()
+        if not inst_str:
+            messagebox.showwarning("Brak instrumentu",
+                                   "Wybierz instrument z listy.")
+            return
+
+        symbol = inst_str.split("(")[-1].rstrip(")")
+        currency = self.v_port_currency.get()
+
+        # Try cached market data first, then fetch fresh
+        d = self.current_market_data.get(symbol, {})
+        price_usd = d.get("price") if d and "error" not in d else None
+
+        if price_usd is None:
+            # Fetch fresh — quick, single instrument
+            self._btn_current_price.configure(state="disabled", text="…")
+
+            def _fetch():
+                try:
+                    instruments = self.config_data.get("instruments", [])
+                    inst_cfg = next(
+                        (i for i in instruments if i["symbol"] == symbol), None)
+                    if inst_cfg:
+                        source = inst_cfg.get("source", "yfinance")
+                        name = inst_cfg.get("name", symbol)
+                        from modules.market_data import (
+                            get_yfinance_data, get_coingecko_data, get_stooq_data)
+                        if source == "coingecko":
+                            result = get_coingecko_data(symbol.lower(), name)
+                        elif source == "stooq":
+                            result = get_stooq_data(symbol, name)
+                        else:
+                            result = get_yfinance_data(symbol, name)
+                        if "error" not in result and result.get("price"):
+                            self.current_market_data[symbol] = result
+                            self.after(0, lambda: self._apply_current_price(
+                                result["price"], currency))
+                            return
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Brak ceny",
+                        "Brak aktualnej ceny dla instrumentu."))
+                except Exception:
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Brak ceny",
+                        "Brak aktualnej ceny dla instrumentu."))
+                finally:
+                    self.after(0, lambda: self._btn_current_price.configure(
+                        state="normal", text="Aktualna"))
+
+            threading.Thread(target=_fetch, daemon=True).start()
+            return
+
+        self._apply_current_price(price_usd, currency)
+
+    def _apply_current_price(self, price_usd, currency):
+        """Set buy-price field, converting from USD if needed."""
+        if currency == "USD":
+            self.v_port_price.set(f"{price_usd:.4f}")
+            return
+
+        fx = get_fx_to_usd(currency)  # currency→USD rate
+        if fx is None or fx == 0:
+            messagebox.showwarning(
+                "Brak kursu FX",
+                f"Brak kursu FX, nie można przeliczyć na {currency}.")
+            return
+        # fx = how many USD per 1 unit of currency
+        # so price_in_currency = price_usd / fx
+        price_local = price_usd / fx
+        self.v_port_price.set(f"{price_local:.4f}")
+
     def _remove_portfolio_position(self):
         sel = self.port_tree.selection()
         if not sel:
@@ -807,6 +882,9 @@ class InvestmentAdvisor(tk.Tk):
         total_invested = 0.0
         total_current  = 0.0
 
+        # Cache FX rates for non-USD currencies used in positions
+        fx_cache = {}
+
         for pos in positions:
             # Tuple: id, symbol, name, qty, buy_price, created_at,
             #        buy_currency, buy_fx_to_usd, buy_price_usd
@@ -820,7 +898,7 @@ class InvestmentAdvisor(tk.Tk):
             price_usd  = pos[8] if len(pos) > 8 and pos[8] else (buy_price * fx_rate)
 
             d = self.current_market_data.get(symbol, {})
-            current_price = d.get("price") if "error" not in d else None
+            current_price = d.get("price") if d and "error" not in d else None
 
             invested_usd = qty * price_usd
             total_invested += invested_usd
@@ -830,12 +908,44 @@ class InvestmentAdvisor(tk.Tk):
             if currency != "USD":
                 buy_display += f" {currency}"
 
+            # Get current FX for non-USD positions (for dual display)
+            cur_fx = None
+            if currency != "USD":
+                if currency not in fx_cache:
+                    fx_cache[currency] = get_fx_to_usd(currency)
+                cur_fx = fx_cache[currency]  # currency→USD rate (or None)
+
             if current_price is not None:
                 current_val = qty * current_price
                 pnl_usd     = current_val - invested_usd
                 pnl_pct     = (pnl_usd / invested_usd * 100) if invested_usd else 0
                 total_current += current_val
                 tag = "profit" if pnl_usd >= 0 else "loss"
+
+                # Format Akt., Wartość, Zysk — dual if non-USD
+                if currency != "USD" and cur_fx and cur_fx > 0:
+                    price_local = current_price / cur_fx
+                    val_local = current_val / cur_fx
+                    pnl_local = pnl_usd / cur_fx
+                    akt_display = (f"$ {current_price:,.2f} | "
+                                   f"{currency} {price_local:,.2f}")
+                    val_display = (f"$ {current_val:,.2f} | "
+                                   f"{currency} {val_local:,.2f}")
+                    pnl_display = (f"$ {pnl_usd:+,.2f} | "
+                                   f"{currency} {pnl_local:+,.2f}")
+                elif currency != "USD":
+                    # FX unavailable — show USD only, mark local as N/A
+                    akt_display = (f"$ {current_price:,.2f} | "
+                                   f"{currency} —")
+                    val_display = (f"$ {current_val:,.2f} | "
+                                   f"{currency} —")
+                    pnl_display = (f"$ {pnl_usd:+,.2f} | "
+                                   f"{currency} —")
+                else:
+                    akt_display = f"$ {current_price:,.2f}"
+                    val_display = f"$ {current_val:,.2f}"
+                    pnl_display = f"$ {pnl_usd:+,.2f}"
+
                 self.port_tree.insert(
                     "", "end", iid=str(pid), tags=(tag,),
                     values=(
@@ -844,9 +954,9 @@ class InvestmentAdvisor(tk.Tk):
                         currency,
                         buy_display,
                         f"{price_usd:,.4f}",
-                        f"{current_price:,.4f}",
-                        f"{current_val:,.2f}",
-                        f"{pnl_usd:+,.2f}",
+                        akt_display,
+                        val_display,
+                        pnl_display,
                         f"{pnl_pct:+.2f}%",
                     ))
             else:
@@ -862,8 +972,8 @@ class InvestmentAdvisor(tk.Tk):
         total_pct = (total_pnl / total_invested * 100) if total_invested else 0
         clr = GREEN if total_pnl >= 0 else RED
         self.port_summary_lbl.configure(fg=clr, text=(
-            f"Zainwestowano: ${total_invested:,.2f}  |  "
-            f"Wartość: ${total_current:,.2f}  |  "
+            f"Zainwestowano: $ {total_invested:,.2f}  |  "
+            f"Wartość: $ {total_current:,.2f}  |  "
             f"P&L: {total_pnl:+,.2f} $ ({total_pct:+.2f}%)"
         ))
 
@@ -2332,22 +2442,20 @@ class InvestmentAdvisor(tk.Tk):
         else:
             self.report_date_label.configure(text="")
 
-        # Token / model info (CEL 4)
+        # Token / model info — single yellow line
         if not usage_info:
-            self.token_model_label.configure(text="")
-            self.token_count_label.configure(text="")
+            self.token_line_label.configure(text="")
             return
         provider = usage_info.get("provider", "")
         model = usage_info.get("model", "")
         inp = usage_info.get("input_tokens", 0)
         out = usage_info.get("output_tokens", 0)
-        self.token_model_label.configure(
-            text=f"Model: {provider}/{model}  •")
         if inp or out:
-            self.token_count_label.configure(
-                text=f"Tokeny: input {inp}, output {out}, razem {inp + out}")
+            tokens_part = f"Tokeny: input {inp}, output {out}, razem {inp + out}"
         else:
-            self.token_count_label.configure(text="Tokeny: brak danych")
+            tokens_part = "Tokeny: brak danych"
+        self.token_line_label.configure(
+            text=f"Model: {provider}/{model}  •  {tokens_part}")
 
     # ═══════════════════════════════════════
     # PDF EXPORT
