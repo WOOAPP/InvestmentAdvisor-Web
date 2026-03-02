@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ _FALLBACK_PRICING = {
 }
 
 # ── In-memory cache ──────────────────────────────────────────────
+_pricing_lock = threading.Lock()
 _pricing = None   # dict  |  None
 _pricing_ts = 0.0
 
@@ -123,14 +125,16 @@ def _fetch_from_web() -> dict | None:
 def _get_pricing() -> dict:
     global _pricing, _pricing_ts
 
-    if _pricing and (time.time() - _pricing_ts) < CACHE_TTL:
-        return _pricing
+    with _pricing_lock:
+        if _pricing and (time.time() - _pricing_ts) < CACHE_TTL:
+            return _pricing
 
     # 1. Disk cache (fresh)
     cached = _load_cache()
     if cached:
-        _pricing, _pricing_ts = cached, time.time()
-        return _pricing
+        with _pricing_lock:
+            _pricing, _pricing_ts = cached, time.time()
+            return _pricing
 
     # 2. Web fetch
     web = _fetch_from_web()
@@ -138,18 +142,21 @@ def _get_pricing() -> dict:
         merged = dict(_FALLBACK_PRICING)
         merged.update(web)
         _save_cache(merged)
-        _pricing, _pricing_ts = merged, time.time()
-        return _pricing
+        with _pricing_lock:
+            _pricing, _pricing_ts = merged, time.time()
+            return _pricing
 
     # 3. Stale disk cache
     stale = _load_cache(allow_stale=True)
     if stale:
-        _pricing, _pricing_ts = stale, time.time()
-        return _pricing
+        with _pricing_lock:
+            _pricing, _pricing_ts = stale, time.time()
+            return _pricing
 
     # 4. Hardcoded fallback
-    _pricing, _pricing_ts = dict(_FALLBACK_PRICING), time.time()
-    return _pricing
+    with _pricing_lock:
+        _pricing, _pricing_ts = dict(_FALLBACK_PRICING), time.time()
+        return _pricing
 
 
 # ── Public API ───────────────────────────────────────────────────
@@ -177,5 +184,6 @@ def get_model_cost(raw_model: str,
 def refresh_pricing():
     """Force-refresh (call from a background thread at startup)."""
     global _pricing, _pricing_ts
-    _pricing, _pricing_ts = None, 0.0
+    with _pricing_lock:
+        _pricing, _pricing_ts = None, 0.0
     _get_pricing()

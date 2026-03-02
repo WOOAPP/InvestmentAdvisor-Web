@@ -63,6 +63,8 @@ class InvestmentAdvisor(tk.Tk):
         self._click_pending = None   # after-id for single/double click
         self._click_symbol = None
         self._shutting_down = False
+        self._analysis_overlay_msg = ""
+        self._analysis_overlay_step = 0
         self._busy_buttons = []   # buttons to lock during analysis/fetch
         self._spinner = None      # BusySpinner instance (created after UI build)
         self._build_ui()
