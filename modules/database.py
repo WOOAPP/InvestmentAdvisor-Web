@@ -5,6 +5,19 @@ from datetime import datetime
 
 DB_PATH = "data/advisor.db"
 
+def _migrate_reports_usage(conn):
+    """Add usage columns to reports table if missing (backward-compat migration)."""
+    c = conn.cursor()
+    existing = {row[1] for row in c.execute("PRAGMA table_info(reports)").fetchall()}
+    for col, coltype, default in [
+        ("input_tokens", "INTEGER", "0"),
+        ("output_tokens", "INTEGER", "0"),
+    ]:
+        if col not in existing:
+            c.execute(f"ALTER TABLE reports ADD COLUMN {col} {coltype} DEFAULT {default}")
+    conn.commit()
+
+
 def init_db():
     """Tworzy tabele jeśli nie istnieją."""
     os.makedirs("data", exist_ok=True)
@@ -18,7 +31,9 @@ def init_db():
             model TEXT,
             market_summary TEXT,
             analysis TEXT,
-            risk_level INTEGER
+            risk_level INTEGER,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0
         )
     """)
     c.execute("""
@@ -58,16 +73,22 @@ def init_db():
         )
     """)
     conn.commit()
+    _migrate_reports_usage(conn)
     conn.close()
 
-def save_report(provider, model, market_summary, analysis, risk_level=0):
+def save_report(provider, model, market_summary, analysis, risk_level=0,
+                input_tokens=0, output_tokens=0):
     """Zapisuje raport do bazy."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
-        INSERT INTO reports (created_at, provider, model, market_summary, analysis, risk_level)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), provider, model, market_summary, analysis, risk_level))
+        INSERT INTO reports
+            (created_at, provider, model, market_summary, analysis,
+             risk_level, input_tokens, output_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), provider, model,
+          market_summary, analysis, risk_level,
+          int(input_tokens or 0), int(output_tokens or 0)))
     report_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -91,6 +112,15 @@ def get_report_by_id(report_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def get_latest_report():
+    """Zwraca najnowszy raport (po id malejąco) lub None."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM reports ORDER BY id DESC LIMIT 1")
     row = c.fetchone()
     conn.close()
     return row
