@@ -135,6 +135,44 @@ def get_stooq_data(symbol, name=""):
     except Exception as e:
         return {"name": name or symbol, "error": str(e)}
 
+# ── FX RATES CACHE ──
+_fx_cache = {}       # {"PLNUSD": (rate, timestamp), ...}
+_FX_CACHE_TTL = 600  # seconds
+
+def get_fx_to_usd(currency):
+    """Return the multiplier that converts *currency* → USD.
+
+    E.g. for PLN it returns ~0.25 (1 PLN = 0.25 USD).
+    USD returns 1.0 immediately.  On failure returns None.
+    """
+    currency = currency.upper()
+    if currency == "USD":
+        return 1.0
+
+    import time
+    cache_key = f"{currency}USD"
+    cached = _fx_cache.get(cache_key)
+    if cached and (time.time() - cached[1]) < _FX_CACHE_TTL:
+        return cached[0]
+
+    # yfinance ticker format: PLNUSD=X, EURUSD=X
+    ticker_symbol = f"{currency}USD=X"
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+        hist = ticker.history(period="5d")
+        if hist.empty:
+            return None
+        closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+        if closes.empty:
+            return None
+        rate = float(closes.iloc[-1])
+        _fx_cache[cache_key] = (rate, time.time())
+        return rate
+    except Exception as e:
+        logger.warning("FX fetch %s failed: %s", ticker_symbol, e)
+        return None
+
+
 # ── POBIERZ WSZYSTKIE INSTRUMENTY ──
 def get_all_instruments(instruments_config):
     """
