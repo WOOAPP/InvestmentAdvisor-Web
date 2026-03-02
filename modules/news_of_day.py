@@ -9,7 +9,20 @@ Scoring factors:
 """
 
 import re
+import sys, os
 from datetime import datetime, timedelta
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    NOD_DEFAULT_SOURCE_WEIGHT,
+    NOD_RECENCY_MAX_SCORE, NOD_RECENCY_MIN_SCORE,
+    NOD_RECENCY_UNKNOWN_SCORE, NOD_RECENCY_WINDOW_HOURS,
+    NOD_KEYWORD_BASE_BONUS, NOD_KEYWORD_MAX_BONUS,
+    NOD_SCORE_WEIGHT_SOURCE, NOD_SCORE_WEIGHT_RECENCY,
+    NOD_SCORE_WEIGHT_KEYWORD, NOD_SCORE_WEIGHT_TOPIC,
+    NOD_MAX_JUSTIFICATION, NOD_MAX_WATCH_SIGNALS,
+    NOD_SAME_TOPIC_STRONG, NOD_SAME_TOPIC_MODERATE,
+)
 
 # ── Source weights ──────────────────────────────────────────────────
 # Higher = more trusted / impactful.  Range 1-10.
@@ -35,7 +48,7 @@ SOURCE_WEIGHTS: dict[str, int] = {
     "coindesk": 5,
     "zerohedge": 4,
 }
-_DEFAULT_SOURCE_WEIGHT = 3
+_DEFAULT_SOURCE_WEIGHT = NOD_DEFAULT_SOURCE_WEIGHT
 
 # ── High-impact keywords ───────────────────────────────────────────
 _HIGH_IMPACT_RE = re.compile(
@@ -84,12 +97,14 @@ def _recency_score(published_at: str) -> float:
         else:
             dt = datetime.strptime(pub[:19], "%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
-        return 2.0  # unknown date → low score
+        return NOD_RECENCY_UNKNOWN_SCORE  # unknown date → low score
     age_hours = (datetime.utcnow() - dt).total_seconds() / 3600
     if age_hours < 0:
         age_hours = 0
-    # 0h → 10, 72h → 1
-    return max(1.0, 10.0 - (age_hours / 72.0) * 9.0)
+    # 0h → max, 72h → min
+    return max(NOD_RECENCY_MIN_SCORE,
+               NOD_RECENCY_MAX_SCORE - (age_hours / NOD_RECENCY_WINDOW_HOURS)
+               * (NOD_RECENCY_MAX_SCORE - NOD_RECENCY_MIN_SCORE))
 
 
 def _keyword_score(title: str, description: str = "") -> float:
@@ -98,7 +113,7 @@ def _keyword_score(title: str, description: str = "") -> float:
     matches = _HIGH_IMPACT_RE.findall(text)
     if not matches:
         return 0.0
-    return min(3.0 + len(matches), 6.0)
+    return min(NOD_KEYWORD_BASE_BONUS + len(matches), NOD_KEYWORD_MAX_BONUS)
 
 
 def _topic_score(topic: str) -> float:
@@ -113,7 +128,8 @@ def score_article(article: dict) -> float:
                         article.get("description", ""))
     tp = _topic_score(article.get("topic", "inne"))
     # Weighted composite
-    return (src * 1.5) + (rec * 1.0) + (kw * 2.0) + (tp * 1.5)
+    return (src * NOD_SCORE_WEIGHT_SOURCE) + (rec * NOD_SCORE_WEIGHT_RECENCY) + \
+           (kw * NOD_SCORE_WEIGHT_KEYWORD) + (tp * NOD_SCORE_WEIGHT_TOPIC)
 
 
 def select_news_of_day(articles: list[dict]) -> dict | None:
@@ -174,7 +190,7 @@ def _build_justification(article: dict, score: float) -> list[str]:
     bullets.append(f"Region: {region}")
 
     bullets.append(f"Łączny scoring: {score:.1f}")
-    return bullets[:6]
+    return bullets[:NOD_MAX_JUSTIFICATION]
 
 
 def _build_watch_signals(selected: dict, all_articles: list[dict]) -> list[str]:
@@ -211,12 +227,12 @@ def _build_watch_signals(selected: dict, all_articles: list[dict]) -> list[str]:
 
     # Count how many articles share the same topic → trend signal
     same_topic = sum(1 for a in all_articles if a.get("topic") == topic)
-    if same_topic >= 5:
+    if same_topic >= NOD_SAME_TOPIC_STRONG:
         signals.append(f"Temat '{topic}' dominuje ({same_topic} artykułów) — nasilony trend")
-    elif same_topic >= 3:
+    elif same_topic >= NOD_SAME_TOPIC_MODERATE:
         signals.append(f"Temat '{topic}' powtarza się ({same_topic} artykułów)")
 
     # Ensure 2-5
     if len(signals) < 2:
         signals.append("Ogólna zmienność i sentyment rynkowy")
-    return signals[:5]
+    return signals[:NOD_MAX_WATCH_SIGNALS]

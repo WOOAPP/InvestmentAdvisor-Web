@@ -3,16 +3,24 @@
 import ipaddress
 import socket
 import logging
+import sys, os
 from urllib.parse import urlparse
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    SCRAPER_MAX_REDIRECTS, SCRAPER_MAX_URLS_PER_RUN,
+    HTTP_CONNECT_TIMEOUT, HTTP_READ_TIMEOUT,
+    SCRAPER_MAX_RESPONSE_BYTES,
+)
 
 logger = logging.getLogger(__name__)
 
-# Limity bezpieczeństwa
-MAX_REDIRECTS = 3
-MAX_URLS_PER_RUN = 20
-CONNECT_TIMEOUT = 8        # sekundy
-READ_TIMEOUT = 15           # sekundy
-MAX_RESPONSE_BYTES = 2 * 1024 * 1024  # 2 MB
+# Re-export for backward compatibility (scraper.py imports from here)
+MAX_REDIRECTS = SCRAPER_MAX_REDIRECTS
+MAX_URLS_PER_RUN = SCRAPER_MAX_URLS_PER_RUN
+CONNECT_TIMEOUT = HTTP_CONNECT_TIMEOUT
+READ_TIMEOUT = HTTP_READ_TIMEOUT
+MAX_RESPONSE_BYTES = SCRAPER_MAX_RESPONSE_BYTES
 
 
 def _is_private_or_loopback(hostname: str) -> bool:

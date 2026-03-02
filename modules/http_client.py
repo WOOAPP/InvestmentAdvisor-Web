@@ -12,11 +12,19 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    HTTP_DEFAULT_TIMEOUT, HTTP_MAX_RETRIES, HTTP_BACKOFF_FACTOR,
+    HTTP_RETRY_STATUS_CODES, HTTP_AUTH_ERROR_CODES,
+    URL_MASK_PREFIX_LENGTH, URL_MASK_MIN_LENGTH,
+)
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = (8, 15)  # (connect, read) w sekundach
-MAX_RETRIES = 2
-BACKOFF_FACTOR = 1.0  # 1s, 2s między próbami
+DEFAULT_TIMEOUT = HTTP_DEFAULT_TIMEOUT
+MAX_RETRIES = HTTP_MAX_RETRIES
+BACKOFF_FACTOR = HTTP_BACKOFF_FACTOR
 
 HEADERS = {
     "User-Agent": (
@@ -38,9 +46,9 @@ def _mask_url(url: str) -> str:
     """Replace sensitive query params in URL with masked version for logs."""
     def _replacer(m):
         val = m.group(2)
-        if len(val) <= 6:
+        if len(val) <= URL_MASK_MIN_LENGTH:
             return m.group(1) + "***"
-        return m.group(1) + val[:4] + "***"
+        return m.group(1) + val[:URL_MASK_PREFIX_LENGTH] + "***"
     return _SENSITIVE_PARAMS.sub(_replacer, url)
 
 
@@ -51,7 +59,7 @@ def _build_session() -> requests.Session:
     retry = Retry(
         total=MAX_RETRIES,
         backoff_factor=BACKOFF_FACTOR,
-        status_forcelist=[429, 500, 502, 503, 504],
+        status_forcelist=HTTP_RETRY_STATUS_CODES,
         allowed_methods=["GET"],
         raise_on_status=False,
     )
@@ -88,7 +96,7 @@ def safe_get(url: str, timeout=DEFAULT_TIMEOUT, **kwargs) -> requests.Response:
     except requests.RequestException as exc:
         safe_url = _mask_url(url)
         status = getattr(getattr(exc, "response", None), "status_code", None)
-        if status in (401, 403):
+        if status in HTTP_AUTH_ERROR_CODES:
             logger.warning("HTTP %d dla %s", status, safe_url)
         else:
             logger.error("HTTP GET %s nie powiodło się: %s", safe_url, exc)

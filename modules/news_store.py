@@ -7,12 +7,20 @@ import hashlib
 import logging
 import sqlite3
 import os
+import sys
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import requests
 from modules.http_client import safe_get
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    NEWS_HASH_LENGTH, NEWS_DESCRIPTION_MAX_LENGTH, NEWS_DEFAULT_PAGE_SIZE,
+    NEWS_CLEANUP_DAYS, NEWS_DEFAULT_LIMIT_BY_WINDOW,
+    NEWS_DEFAULT_LIMIT_SINCE, NEWS_DEFAULT_LIMIT_IN_RANGE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +96,7 @@ def init_news_table():
 def _news_hash(title: str, source: str, published_at: str) -> str:
     """Deterministic hash from title+source+publishedAt."""
     raw = f"{title.strip().lower()}|{source.strip().lower()}|{published_at.strip()}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:NEWS_HASH_LENGTH]
 
 
 def _normalize_article(article: dict, window: str) -> dict:
@@ -99,7 +107,7 @@ def _normalize_article(article: dict, window: str) -> dict:
     return {
         "hash": _news_hash(title, source, published_at),
         "title": title,
-        "description": (article.get("description") or "")[:500],
+        "description": (article.get("description") or "")[:NEWS_DESCRIPTION_MAX_LENGTH],
         "source": source,
         "published_at": published_at,
         "url": article.get("link") or "",
@@ -116,7 +124,7 @@ class NewsAuthError(Exception):
 def fetch_news_window(api_key: str, window: str, days: int,
                       query: str = "geopolitics economy markets finance",
                       language: str = "en",
-                      page_size: int = 50) -> list[dict]:
+                      page_size: int = NEWS_DEFAULT_PAGE_SIZE) -> list[dict]:
     """Fetch news for a single time window from Newsdata.io.
 
     Uses /api/1/latest for recent windows (≤3 days) and /api/1/archive
@@ -149,7 +157,7 @@ def fetch_news_window(api_key: str, window: str, days: int,
         return articles
     except NewsAuthError:
         raise
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError) as e:
         logger.warning("Błąd pobierania newsów (window=%s): %s", window, e)
         return []
 
@@ -163,7 +171,7 @@ def _newsdata_request(api_key: str, endpoint: str, query: str,
         f"{base}?apikey={api_key}"
         f"&q={query}&language={language}"
         f"&from_date={from_date}&to_date={to_date}"
-        f"&size={min(page_size, 50)}"
+        f"&size={min(page_size, NEWS_DEFAULT_PAGE_SIZE)}"
     )
     try:
         r = safe_get(url)
@@ -246,12 +254,12 @@ def store_news(articles: list[dict]):
                     art.get("window", ""), art.get("region", ""),
                     art.get("topic", ""), now,
                 ))
-            except Exception as e:
+            except (sqlite3.Error, KeyError) as e:
                 logger.warning("store_news skip: %s", e)
         conn.commit()
 
 
-def get_news_by_window(window: str, limit: int = 50) -> list[dict]:
+def get_news_by_window(window: str, limit: int = NEWS_DEFAULT_LIMIT_BY_WINDOW) -> list[dict]:
     """Retrieve stored news for a given time window."""
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
@@ -265,7 +273,7 @@ def get_news_by_window(window: str, limit: int = 50) -> list[dict]:
         return [dict(r) for r in c.fetchall()]
 
 
-def get_news_since(hours: int, limit: int = 100) -> list[dict]:
+def get_news_since(hours: int, limit: int = NEWS_DEFAULT_LIMIT_SINCE) -> list[dict]:
     """Retrieve news published in the last N hours."""
     since = (datetime.utcnow() - timedelta(hours=hours)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
@@ -282,7 +290,7 @@ def get_news_since(hours: int, limit: int = 100) -> list[dict]:
 
 
 def get_news_in_range(days_from: int, days_to: int = 0,
-                      limit: int = 200) -> list[dict]:
+                      limit: int = NEWS_DEFAULT_LIMIT_IN_RANGE) -> list[dict]:
     """Retrieve news between days_from and days_to ago (0 = now)."""
     now = datetime.utcnow()
     start = (now - timedelta(days=days_from)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -299,7 +307,7 @@ def get_news_in_range(days_from: int, days_to: int = 0,
         return [dict(r) for r in c.fetchall()]
 
 
-def cleanup_old_news(days: int = 100):
+def cleanup_old_news(days: int = NEWS_CLEANUP_DAYS):
     """Delete news older than N days."""
     cutoff = (datetime.utcnow() - timedelta(days=days)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")

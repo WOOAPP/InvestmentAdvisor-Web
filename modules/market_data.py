@@ -1,4 +1,5 @@
 import yfinance as yf
+import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
@@ -7,6 +8,11 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import get_api_key
 from modules.http_client import safe_get
+from constants import (
+    FX_CACHE_TTL, YFINANCE_HISTORY_PERIOD,
+    PRICE_ROUND_DECIMALS, CHANGE_PCT_ROUND_DECIMALS,
+    NEWS_DEFAULT_PAGE_SIZE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +20,7 @@ logger = logging.getLogger(__name__)
 def get_yfinance_data(symbol, name=""):
     try:
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="5d")
+        hist = ticker.history(period=YFINANCE_HISTORY_PERIOD)
         if hist.empty:
             return {"name": name or symbol, "error": "brak danych"}
 
@@ -41,23 +47,24 @@ def get_yfinance_data(symbol, name=""):
         sparkline = []
         for v in closes.tolist():
             try:
-                sparkline.append(round(float(v), 4))
+                sparkline.append(round(float(v), PRICE_ROUND_DECIMALS))
             except (ValueError, TypeError):
                 pass
 
         return {
             "name": name or symbol,
-            "price": round(current, 4),
-            "change": round(change, 4),
-            "change_pct": round(change_pct, 2),
+            "price": round(current, PRICE_ROUND_DECIMALS),
+            "change": round(change, PRICE_ROUND_DECIMALS),
+            "change_pct": round(change_pct, CHANGE_PCT_ROUND_DECIMALS),
             "volume": vol,
-            "high_5d": round(float(closes.max()), 4),
-            "low_5d": round(float(closes.min()), 4),
+            "high_5d": round(float(closes.max()), PRICE_ROUND_DECIMALS),
+            "low_5d": round(float(closes.min()), PRICE_ROUND_DECIMALS),
             "sparkline": sparkline,
             "source": "yfinance",
             "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
         }
-    except Exception as e:
+    except (requests.RequestException, KeyError, ValueError, TypeError) as e:
+        logger.warning("yfinance %s failed: %s", symbol, e)
         return {"name": name or symbol, "error": str(e)}
 
 # ── COINGECKO ──
@@ -75,12 +82,12 @@ def get_coingecko_data(coin_id, name=""):
             chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
                          f"/market_chart?vs_currency=usd&days=5&interval=daily")
             cr = safe_get(chart_url)
-            sparkline = [round(p[1], 4) for p in cr.json().get("prices", [])]
-        except Exception:
-            pass
+            sparkline = [round(p[1], PRICE_ROUND_DECIMALS) for p in cr.json().get("prices", [])]
+        except (requests.RequestException, KeyError, ValueError) as e:
+            logger.debug("CoinGecko sparkline for %s unavailable: %s", coin_id, e)
 
         price = data.get("usd", 0)
-        change_pct = round(data.get("usd_24h_change", 0), 2)
+        change_pct = round(data.get("usd_24h_change", 0), CHANGE_PCT_ROUND_DECIMALS)
 
         # Calculate change, high_5d, low_5d from sparkline data
         change = 0
@@ -90,7 +97,7 @@ def get_coingecko_data(coin_id, name=""):
             high_5d = max(sparkline)
             low_5d = min(sparkline)
             if len(sparkline) >= 2:
-                change = round(sparkline[-1] - sparkline[-2], 4)
+                change = round(sparkline[-1] - sparkline[-2], PRICE_ROUND_DECIMALS)
 
         return {
             "name": name or coin_id,
@@ -104,7 +111,8 @@ def get_coingecko_data(coin_id, name=""):
             "source": "coingecko",
             "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
         }
-    except Exception as e:
+    except (requests.RequestException, KeyError, ValueError, TypeError) as e:
+        logger.warning("CoinGecko %s failed: %s", coin_id, e)
         return {"name": name or coin_id, "error": str(e)}
 
 # ── STOOQ ──
@@ -123,17 +131,18 @@ def get_stooq_data(symbol, name=""):
         change_pct = ((close - open_) / open_) * 100 if open_ != 0 else 0
         return {
             "name": name or symbol,
-            "price": round(close, 4),
-            "change": round(close - open_, 4),
-            "change_pct": round(change_pct, 2),
+            "price": round(close, PRICE_ROUND_DECIMALS),
+            "change": round(close - open_, PRICE_ROUND_DECIMALS),
+            "change_pct": round(change_pct, CHANGE_PCT_ROUND_DECIMALS),
             "volume": int(float(parts[7])) if len(parts) > 7 else 0,
-            "high_5d": round(float(parts[5]), 4),
-            "low_5d": round(float(parts[4]), 4),
-            "sparkline": [round(open_, 4), round(close, 4)],
+            "high_5d": round(float(parts[5]), PRICE_ROUND_DECIMALS),
+            "low_5d": round(float(parts[4]), PRICE_ROUND_DECIMALS),
+            "sparkline": [round(open_, PRICE_ROUND_DECIMALS), round(close, PRICE_ROUND_DECIMALS)],
             "source": "stooq",
             "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
         }
-    except Exception as e:
+    except (requests.RequestException, ValueError, IndexError) as e:
+        logger.warning("Stooq %s failed: %s", symbol, e)
         return {"name": name or symbol, "error": str(e)}
 
 # ── FX RATES CACHE ──
@@ -142,7 +151,7 @@ import time as _time
 
 _fx_cache = {}       # {"PLNUSD": (rate, timestamp), ...}
 _fx_lock = _threading.Lock()
-_FX_CACHE_TTL = 600  # seconds
+_FX_CACHE_TTL = FX_CACHE_TTL
 
 def get_fx_to_usd(currency):
     """Return the multiplier that converts *currency* → USD.
@@ -164,7 +173,7 @@ def get_fx_to_usd(currency):
     ticker_symbol = f"{currency}USD=X"
     try:
         ticker = yf.Ticker(ticker_symbol)
-        hist = ticker.history(period="5d")
+        hist = ticker.history(period=YFINANCE_HISTORY_PERIOD)
         if hist.empty:
             return None
         closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
@@ -174,7 +183,7 @@ def get_fx_to_usd(currency):
         with _fx_lock:
             _fx_cache[cache_key] = (rate, _time.time())
         return rate
-    except Exception as e:
+    except (requests.RequestException, KeyError, ValueError, TypeError) as e:
         logger.warning("FX fetch %s failed: %s", ticker_symbol, e)
         return None
 
@@ -223,7 +232,7 @@ def get_news(api_key, query="economy geopolitics markets", language="pl", page_s
     try:
         url = (f"https://newsdata.io/api/1/latest?"
                f"apikey={api_key}&q={query}&language={language}"
-               f"&size={min(page_size, 50)}")
+               f"&size={min(page_size, NEWS_DEFAULT_PAGE_SIZE)}")
         r = safe_get(url)
         data = r.json()
         if data.get("status") == "error":
@@ -242,7 +251,7 @@ def get_news(api_key, query="economy geopolitics markets", language="pl", page_s
             for a in data.get("results", [])
             if isinstance(a, dict) and a.get("title")
         ]
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError) as e:
         logger.error("Błąd pobierania newsów: %s", e)
         return [{"error": str(e)}]
 

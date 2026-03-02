@@ -7,6 +7,17 @@ Entry point: build_macro_payload(api_key, ...) -> dict
 
 import json
 import logging
+import sys, os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from constants import (
+    MACRO_MAX_24H_TO_LLM, MACRO_MAX_LONGER_WINDOW, MACRO_24H_HOURS,
+    NEWS_CLEANUP_DAYS, MACRO_GEO_ARTICLES_PER_REGION,
+    MACRO_SLIM_DESCRIPTION_TRUNCATE, MACRO_SLIM_TOP_REGIONS,
+    MACRO_SLIM_TOP_TOPICS, MACRO_SLIM_TOP_KEYWORDS,
+    MACRO_DISPLAY_24H_LIMIT, MACRO_DISPLAY_TITLE_TRUNCATE,
+    MACRO_DISPLAY_GEO_TITLES,
+)
 
 from modules.news_store import (
     fetch_all_windows, store_news, get_news_since, get_news_in_range,
@@ -18,9 +29,8 @@ from modules.trend_narrative import build_trend_payload, build_geo_24h
 
 logger = logging.getLogger(__name__)
 
-# Max articles sent to LLM per window (controls input size)
-MAX_24H_TO_LLM = 20
-MAX_LONGER_WINDOW = 50  # 7/30/90 used only for aggregation, not raw
+MAX_24H_TO_LLM = MACRO_MAX_24H_TO_LLM
+MAX_LONGER_WINDOW = MACRO_MAX_LONGER_WINDOW
 
 
 def build_macro_payload(api_key: str, **kwargs) -> dict:
@@ -46,10 +56,10 @@ def build_macro_payload(api_key: str, **kwargs) -> dict:
 
     # ── 3. Store ────────────────────────────────────────────────
     store_news(raw_articles)
-    cleanup_old_news(days=100)
+    cleanup_old_news(days=NEWS_CLEANUP_DAYS)
 
     # ── 4. Split by time range (from DB for completeness) ──────
-    articles_24h = get_news_since(hours=72)  # 24-72h window
+    articles_24h = get_news_since(hours=MACRO_24H_HOURS)  # 24-72h window
     classify_articles(articles_24h)  # re-classify DB rows missing region/topic
 
     articles_7d = get_news_in_range(days_from=7, days_to=0,
@@ -104,7 +114,7 @@ def _slim_articles(articles: list[dict]) -> list[dict]:
             "published_at": a.get("published_at", "")[:16],
             "region": a.get("region", ""),
             "topic": a.get("topic", ""),
-            "description": (a.get("description") or "")[:120],
+            "description": (a.get("description") or "")[:MACRO_SLIM_DESCRIPTION_TRUNCATE],
         })
     return slim
 
@@ -119,7 +129,7 @@ def _summarize_geo(geo: dict) -> dict:
                 "source": a.get("source", ""),
                 "topic": a.get("topic", ""),
             }
-            for a in articles[:5]
+            for a in articles[:MACRO_GEO_ARTICLES_PER_REGION]
         ]
     return summary
 
@@ -131,9 +141,9 @@ def _slim_trend(trend: dict) -> dict:
     for window, agg in trend.get("aggregates", {}).items():
         slim_agg[window] = {
             "count": agg.get("count", 0),
-            "top_regions": agg.get("top_regions", [])[:3],
-            "top_topics": agg.get("top_topics", [])[:3],
-            "top_keywords": agg.get("top_keywords", [])[:5],
+            "top_regions": agg.get("top_regions", [])[:MACRO_SLIM_TOP_REGIONS],
+            "top_topics": agg.get("top_topics", [])[:MACRO_SLIM_TOP_TOPICS],
+            "top_keywords": agg.get("top_keywords", [])[:MACRO_SLIM_TOP_KEYWORDS],
         }
     return {
         "aggregates": slim_agg,
@@ -173,15 +183,15 @@ def format_macro_payload_for_llm(payload: dict) -> str:
         for region, articles in geo.items():
             titles = [a.get("title", "") for a in articles]
             parts.append(f"\n[{region}] ({len(titles)} news)")
-            for t in titles[:3]:
-                parts.append(f"  - {t[:100]}")
+            for t in titles[:MACRO_DISPLAY_GEO_TITLES]:
+                parts.append(f"  - {t[:MACRO_DISPLAY_TITLE_TRUNCATE]}")
         parts.append("")
 
     # ── Top 24h articles ────────────────────────────────────────
     arts = payload.get("articles_24h", [])
     if arts:
         parts.append(f"=== NEWSY 24-72H (top {len(arts)}) ===")
-        for i, a in enumerate(arts[:15], 1):
+        for i, a in enumerate(arts[:MACRO_DISPLAY_24H_LIMIT], 1):
             parts.append(
                 f"{i}. [{a.get('source','')}] {a.get('title','')}"
                 f" | {a.get('region','')} | {a.get('topic','')}")

@@ -166,7 +166,7 @@ def fetch_calendar(week="this"):
                 dt = datetime.fromisoformat(date_str)
                 date_fmt = dt.strftime("%Y-%m-%d")
                 time_fmt = dt.strftime("%H:%M")
-            except Exception:
+            except (ValueError, TypeError):
                 date_fmt = date_str[:10] if date_str else "?"
                 time_fmt = ""
 
@@ -189,5 +189,5 @@ def fetch_calendar(week="this"):
             })
         events.sort(key=lambda x: (x["date"], x["time"]))
         return events, None
-    except Exception as exc:
+    except (ConnectionError, TimeoutError, ValueError, KeyError) as exc:
         return [], str(exc)
