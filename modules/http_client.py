@@ -6,6 +6,7 @@ Używany przez market_data, calendar_data, charts — wszędzie poza scraperem
 
 import logging
 import re
+import threading
 import time
 import requests
 from requests.adapters import HTTPAdapter
@@ -62,12 +63,15 @@ def _build_session() -> requests.Session:
 
 # Singleton session — thread-safe z urllib3
 _session: requests.Session | None = None
+_session_lock = threading.Lock()
 
 
 def _get_session() -> requests.Session:
     global _session
     if _session is None:
-        _session = _build_session()
+        with _session_lock:
+            if _session is None:
+                _session = _build_session()
     return _session
 
 

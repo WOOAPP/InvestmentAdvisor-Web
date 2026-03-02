@@ -1,4 +1,5 @@
 import logging
+import threading
 import requests
 from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
@@ -30,12 +31,15 @@ def _build_scraper_session():
 
 
 _session = None
+_session_lock = threading.Lock()
 
 
 def _get_session():
     global _session
     if _session is None:
-        _session = _build_scraper_session()
+        with _session_lock:
+            if _session is None:
+                _session = _build_scraper_session()
     return _session
 
 

@@ -7,6 +7,8 @@ import hashlib
 import logging
 import sqlite3
 import os
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import requests
@@ -15,6 +17,18 @@ from modules.http_client import safe_get
 logger = logging.getLogger(__name__)
 
 DB_PATH = "data/advisor.db"
+_db_lock = threading.RLock()
+
+
+@contextmanager
+def _connect():
+    """Thread-safe DB connection as a context manager."""
+    with _db_lock:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            yield conn
+        finally:
+            conn.close()
 
 # ── Time windows ────────────────────────────────────────────────────
 WINDOWS = {
@@ -30,45 +44,44 @@ WINDOWS = {
 def init_news_table():
     """Create news_items table if it doesn't exist. Safe for existing DBs."""
     os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS news_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            hash TEXT NOT NULL UNIQUE,
-            title TEXT NOT NULL,
-            description TEXT,
-            source TEXT,
-            published_at TEXT,
-            url TEXT,
-            window TEXT,
-            region TEXT,
-            topic TEXT,
-            fetched_at TEXT NOT NULL
-        )
-    """)
-    c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_news_published
-        ON news_items (published_at)
-    """)
-    c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_news_source
-        ON news_items (source)
-    """)
-    c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_news_window
-        ON news_items (window)
-    """)
-    c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_news_region
-        ON news_items (region)
-    """)
-    c.execute("""
-        CREATE INDEX IF NOT EXISTS idx_news_topic
-        ON news_items (topic)
-    """)
-    conn.commit()
-    conn.close()
+    with _connect() as conn:
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS news_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hash TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                description TEXT,
+                source TEXT,
+                published_at TEXT,
+                url TEXT,
+                window TEXT,
+                region TEXT,
+                topic TEXT,
+                fetched_at TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_news_published
+            ON news_items (published_at)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_news_source
+            ON news_items (source)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_news_window
+            ON news_items (window)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_news_region
+            ON news_items (region)
+        """)
+        c.execute("""
+            CREATE INDEX IF NOT EXISTS idx_news_topic
+            ON news_items (topic)
+        """)
+        conn.commit()
 
 
 # ── Hash / dedup ────────────────────────────────────────────────────
@@ -217,60 +230,55 @@ def store_news(articles: list[dict]):
     """Insert articles into news_items, skip duplicates (ON CONFLICT IGNORE)."""
     if not articles:
         return
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    for art in articles:
-        try:
-            c.execute("""
-                INSERT OR IGNORE INTO news_items
-                    (hash, title, description, source, published_at, url, window,
-                     region, topic, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                art["hash"], art["title"], art.get("description", ""),
-                art["source"], art["published_at"], art.get("url", ""),
-                art.get("window", ""), art.get("region", ""),
-                art.get("topic", ""), now,
-            ))
-        except Exception as e:
-            logger.warning("store_news skip: %s", e)
-    conn.commit()
-    conn.close()
+    with _connect() as conn:
+        c = conn.cursor()
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        for art in articles:
+            try:
+                c.execute("""
+                    INSERT OR IGNORE INTO news_items
+                        (hash, title, description, source, published_at, url, window,
+                         region, topic, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    art["hash"], art["title"], art.get("description", ""),
+                    art["source"], art["published_at"], art.get("url", ""),
+                    art.get("window", ""), art.get("region", ""),
+                    art.get("topic", ""), now,
+                ))
+            except Exception as e:
+                logger.warning("store_news skip: %s", e)
+        conn.commit()
 
 
 def get_news_by_window(window: str, limit: int = 50) -> list[dict]:
     """Retrieve stored news for a given time window."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM news_items
-        WHERE window = ?
-        ORDER BY published_at DESC
-        LIMIT ?
-    """, (window, limit))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT * FROM news_items
+            WHERE window = ?
+            ORDER BY published_at DESC
+            LIMIT ?
+        """, (window, limit))
+        return [dict(r) for r in c.fetchall()]
 
 
 def get_news_since(hours: int, limit: int = 100) -> list[dict]:
     """Retrieve news published in the last N hours."""
     since = (datetime.utcnow() - timedelta(hours=hours)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM news_items
-        WHERE published_at >= ?
-        ORDER BY published_at DESC
-        LIMIT ?
-    """, (since, limit))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT * FROM news_items
+            WHERE published_at >= ?
+            ORDER BY published_at DESC
+            LIMIT ?
+        """, (since, limit))
+        return [dict(r) for r in c.fetchall()]
 
 
 def get_news_in_range(days_from: int, days_to: int = 0,
@@ -279,29 +287,26 @@ def get_news_in_range(days_from: int, days_to: int = 0,
     now = datetime.utcnow()
     start = (now - timedelta(days=days_from)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end = (now - timedelta(days=days_to)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("""
-        SELECT * FROM news_items
-        WHERE published_at >= ? AND published_at <= ?
-        ORDER BY published_at DESC
-        LIMIT ?
-    """, (start, end, limit))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("""
+            SELECT * FROM news_items
+            WHERE published_at >= ? AND published_at <= ?
+            ORDER BY published_at DESC
+            LIMIT ?
+        """, (start, end, limit))
+        return [dict(r) for r in c.fetchall()]
 
 
 def cleanup_old_news(days: int = 100):
     """Delete news older than N days."""
     cutoff = (datetime.utcnow() - timedelta(days=days)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM news_items WHERE published_at < ?", (cutoff,))
-    conn.commit()
-    conn.close()
+    with _connect() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM news_items WHERE published_at < ?", (cutoff,))
+        conn.commit()
 
 
 # Init table on import

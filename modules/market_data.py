@@ -137,7 +137,11 @@ def get_stooq_data(symbol, name=""):
         return {"name": name or symbol, "error": str(e)}
 
 # ── FX RATES CACHE ──
+import threading as _threading
+import time as _time
+
 _fx_cache = {}       # {"PLNUSD": (rate, timestamp), ...}
+_fx_lock = _threading.Lock()
 _FX_CACHE_TTL = 600  # seconds
 
 def get_fx_to_usd(currency):
@@ -150,11 +154,11 @@ def get_fx_to_usd(currency):
     if currency == "USD":
         return 1.0
 
-    import time
     cache_key = f"{currency}USD"
-    cached = _fx_cache.get(cache_key)
-    if cached and (time.time() - cached[1]) < _FX_CACHE_TTL:
-        return cached[0]
+    with _fx_lock:
+        cached = _fx_cache.get(cache_key)
+        if cached and (_time.time() - cached[1]) < _FX_CACHE_TTL:
+            return cached[0]
 
     # yfinance ticker format: PLNUSD=X, EURUSD=X
     ticker_symbol = f"{currency}USD=X"
@@ -167,7 +171,8 @@ def get_fx_to_usd(currency):
         if closes.empty:
             return None
         rate = float(closes.iloc[-1])
-        _fx_cache[cache_key] = (rate, time.time())
+        with _fx_lock:
+            _fx_cache[cache_key] = (rate, _time.time())
         return rate
     except Exception as e:
         logger.warning("FX fetch %s failed: %s", ticker_symbol, e)
