@@ -2531,7 +2531,8 @@ class InvestmentAdvisor(tk.Tk):
             self.set_busy(True, "Generowanie analizy AI…")
             summary  = format_market_summary(market_data)
             result   = run_analysis(cfg, summary, news, scraped_text,
-                                    macro_text=macro_text)
+                                    macro_text=macro_text,
+                                    market_data=market_data)
             # result is a dict: {text, input_tokens, output_tokens}
             analysis     = result.get("text", "")
             input_tokens = result.get("input_tokens", 0)

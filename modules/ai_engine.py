@@ -77,11 +77,46 @@ def _run_provider(config, system_prompt, user_message):
 
 
 # ── Public API ────────────────────────────────────────────────────
+def _build_instrument_list(market_data, instruments_config=None):
+    """Buduje sformatowaną listę instrumentów z aktualnymi wartościami do system promptu."""
+    if not market_data:
+        return "(brak danych rynkowych)"
+
+    category_map = {}
+    if instruments_config:
+        for inst in instruments_config:
+            sym = inst.get("symbol", "")
+            if sym:
+                category_map[sym] = inst.get("category", "")
+
+    lines = []
+    for symbol, d in market_data.items():
+        name = d.get("name", symbol)
+        category = category_map.get(symbol, "")
+        if "error" in d:
+            line = f"- {name} ({symbol}): błąd pobierania danych"
+        else:
+            price = d.get("price", 0)
+            change_pct = d.get("change_pct", 0)
+            arrow = "▲" if change_pct >= 0 else "▼"
+            sign = "+" if change_pct >= 0 else ""
+            line = f"- {name} ({symbol}): {price} {arrow} {sign}{change_pct:.2f}%"
+            if category:
+                line += f" [{category}]"
+        lines.append(line)
+
+    return "\n".join(lines) if lines else "(brak instrumentów)"
+
+
 def run_analysis(config, market_summary, news_list, scraped_text="",
-                  macro_text=""):
+                  macro_text="", market_data=None):
     """Wysyła dane do wybranego modelu AI i zwraca dict z kluczami:
     text, input_tokens, output_tokens."""
     prompt = config.get("prompt", "Przeanalizuj sytuację rynkową.")
+    if "{INSTRUMENT_LIST}" in prompt:
+        instrument_list = _build_instrument_list(
+            market_data or {}, config.get("instruments", []))
+        prompt = prompt.replace("{INSTRUMENT_LIST}", instrument_list)
     if macro_text:
         full_message = _build_macro_prompt(
             market_summary, macro_text, scraped_text)
