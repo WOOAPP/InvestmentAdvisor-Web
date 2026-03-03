@@ -16,6 +16,7 @@ from modules.market_data import get_all_instruments, get_news, format_market_sum
 from modules.openai_pricing import get_model_cost, refresh_pricing
 from modules.ai_engine import (run_analysis, run_chat, get_available_models,
                                generate_instrument_profile,
+                               generate_calendar_event_analysis,
                                _build_instrument_list)
 from modules.database import (
     save_report, get_reports, get_report_by_id, get_latest_report,
@@ -63,6 +64,8 @@ class InvestmentAdvisor(tk.Tk):
         self._current_chart_fig = None
         self._chart_chat_history = []
         self._cal_events = []
+        self._cal_request_id = 0
+        self._cal_analysis_cache = {}   # {event_key: analysis_text}
         self._period_buttons = {}
         self._click_pending = None   # after-id for single/double click
         self._click_symbol = None
@@ -1262,21 +1265,29 @@ class InvestmentAdvisor(tk.Tk):
         # Mousewheel scrolling for calendar tree
         self._bind_mousewheel(self.cal_tree, self.cal_tree)
 
+        self.cal_tree.bind("<Double-Button-1>", self._on_cal_event_dblclick)
+
         self._load_calendar()
 
     def _load_calendar(self):
         self.cal_status.configure(text="Pobieranie…")
-        week_offset = self.cal_week_var.get()  # odczyt w głównym wątku
+        week_offset = self.cal_week_var.get()   # odczyt w głównym wątku
+        self._cal_request_id += 1
+        req_id = self._cal_request_id           # kopia dla domknięcia wątku
 
         def _fetch():
             events, err = fetch_calendar(week_offset)
+            # Odrzuć wynik jeśli zdążył przyjść nowszy request
+            if req_id != self._cal_request_id:
+                return
             self._cal_events = events
             if err:
                 self.after(0, lambda: self.cal_status.configure(
                     text=f"Błąd: {err[:60]}"))
             else:
                 self.after(0, lambda: self.cal_status.configure(
-                    text=f"{len(events)} wydarzeń"))
+                    text=f"{len(events)} wydarzeń — "
+                         f"{'bieżący' if week_offset == 'this' else 'następny'} tydzień"))
             self.after(0, self._apply_cal_filter)
 
         threading.Thread(target=_fetch, daemon=True).start()
@@ -1307,6 +1318,150 @@ class InvestmentAdvisor(tk.Tk):
                 e["forecast"],
                 e["previous"],
             ))
+
+    def _on_cal_event_dblclick(self, _event):
+        sel = self.cal_tree.selection()
+        if not sel:
+            return
+        iid = sel[0]
+        values = self.cal_tree.item(iid, "values")
+        # values = (Date, Time, Country, Event, Significance, Impact, Forecast, Previous)
+        if not values or len(values) < 4:
+            return
+        # Odszukaj pełny dict wydarzenie w _cal_events (po dacie + nazwie)
+        ev_date = values[0]
+        ev_name = values[3]
+        event_data = next(
+            (e for e in self._cal_events
+             if e["date"] == ev_date and e["event"] == ev_name),
+            None
+        )
+        if event_data is None:
+            event_data = {
+                "date": ev_date, "time": values[1],
+                "country": values[2], "event": ev_name,
+                "significance": values[4], "impact_label": values[5],
+                "impact_icon": "", "impact_raw": "Low",
+                "forecast": values[6], "previous": values[7],
+                "flag": "",
+            }
+        self._open_cal_event_popup(event_data)
+
+    def _open_cal_event_popup(self, event_data):
+        """Popup z detalami wydarzenia i generowaną na żądanie analizą AI."""
+        win = tk.Toplevel(self)
+        win.title("Szczegóły wydarzenia")
+        win.geometry("780x560")
+        win.configure(bg=BG)
+        win.transient(self)
+
+        # ── Nagłówek ──
+        hdr = tk.Frame(win, bg=BG2, pady=8)
+        hdr.pack(fill="x")
+        impact_icon = event_data.get("impact_icon", "")
+        impact_lbl  = event_data.get("impact_label", "")
+        tk.Label(
+            hdr,
+            text=f"{impact_icon}  {event_data.get('flag', '')} {event_data.get('country', '')}  "
+                 f"·  {event_data.get('date', '')}  {event_data.get('time', '')}",
+            bg=BG2, fg=SUBTEXT, font=("Segoe UI", 9)
+        ).pack(side="left", padx=16)
+        tk.Label(
+            hdr, text=impact_lbl,
+            bg=BG2, fg=(RED if "Wysoki" in impact_lbl else
+                        YELLOW if "Średni" in impact_lbl else FG),
+            font=("Segoe UI", 9, "bold")
+        ).pack(side="right", padx=16)
+
+        # ── Nazwa + znaczenie ──
+        info = tk.Frame(win, bg=BG, pady=6)
+        info.pack(fill="x", padx=16)
+        tk.Label(
+            info, text=event_data.get("event", ""),
+            bg=BG, fg=FG, font=("Segoe UI", 12, "bold"), wraplength=720, justify="left"
+        ).pack(anchor="w")
+        sig = event_data.get("significance", "")
+        if sig:
+            tk.Label(
+                info, text=sig,
+                bg=BG, fg=SUBTEXT, font=("Segoe UI", 9), wraplength=720, justify="left"
+            ).pack(anchor="w", pady=(2, 0))
+
+        # ── Prognoza / poprzedni ──
+        meta = tk.Frame(win, bg=BG, pady=4)
+        meta.pack(fill="x", padx=16)
+        for label, val in [("Prognoza:", event_data.get("forecast", "—")),
+                           ("Poprzedni:", event_data.get("previous", "—"))]:
+            if val and val != "—":
+                tk.Label(meta, text=label, bg=BG, fg=SUBTEXT,
+                         font=("Segoe UI", 9)).pack(side="left")
+                tk.Label(meta, text=f"  {val}  ", bg=BG, fg=FG,
+                         font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 16))
+
+        tk.Frame(win, bg=GRAY, height=1).pack(fill="x", padx=16, pady=6)
+
+        # ── Panel analizy AI ──
+        ai_frame = tk.Frame(win, bg=BG)
+        ai_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        ai_header = tk.Frame(ai_frame, bg=BG)
+        ai_header.pack(fill="x")
+        tk.Label(ai_header, text="Analiza AI", bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 10, "bold")).pack(side="left")
+
+        event_key = f"{event_data.get('date')}|{event_data.get('event', '')}"
+        cached = self._cal_analysis_cache.get(event_key)
+
+        ai_text = scrolledtext.ScrolledText(
+            ai_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled",
+            insertbackground=FG, height=14
+        )
+        ai_text.pack(fill="both", expand=True, pady=(6, 0))
+        setup_markdown_tags(ai_text)
+
+        def _set_text(content):
+            ai_text.configure(state="normal")
+            ai_text.delete("1.0", "end")
+            insert_markdown(ai_text, content)
+            ai_text.configure(state="disabled")
+
+        if cached:
+            _set_text(cached)
+
+        def _generate():
+            gen_btn.configure(state="disabled", text="Generowanie…")
+            ai_text.configure(state="normal")
+            ai_text.delete("1.0", "end")
+            ai_text.insert("end", "Generowanie analizy…")
+            ai_text.configure(state="disabled")
+
+            def _run():
+                result = generate_calendar_event_analysis(
+                    self.config_data, event_data)
+                self._cal_analysis_cache[event_key] = result
+                self.after(0, lambda: (
+                    _set_text(result),
+                    gen_btn.configure(state="normal", text="🔄 Generuj ponownie")
+                ))
+
+            threading.Thread(target=_run, daemon=True).start()
+
+        gen_btn = tk.Button(
+            ai_header,
+            text="Generuj analizę AI" if not cached else "🔄 Generuj ponownie",
+            bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=10, pady=2, command=_generate
+        )
+        gen_btn.pack(side="right")
+
+        # ── Stopka ──
+        tk.Button(
+            win, text="Zamknij", bg=BTN_BG, fg=FG,
+            font=("Segoe UI", 10), relief="flat", cursor="hand2",
+            padx=14, pady=5, command=win.destroy
+        ).pack(side="bottom", pady=8)
 
     # ═══════════════════════════════════════
     # CHARTS TAB
@@ -2260,6 +2415,36 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_profile_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
+        self._settings_section(inner, "📅 Prompt analizy wydarzeń kalendarza")
+        _pf5 = tk.Frame(inner, bg=BG)
+        _pf5.pack(fill="x", padx=16, pady=(0, 2))
+        tk.Label(
+            _pf5,
+            text="Instrukcja dla AI przy analizie wydarzenia z kalendarza ekonomicznego "
+                 "(wywołana przez dwuklik na wierszu w zakładce Kalendarz).",
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
+        ).pack(side="left")
+        tk.Button(
+            _pf5, text="⛶", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 11), relief="flat", cursor="hand2",
+            width=3, command=lambda: self._open_prompt_popup(
+                "Prompt analizy wydarzeń kalendarza",
+                self.calendar_event_prompt_text)
+        ).pack(side="right")
+        self.calendar_event_prompt_text = scrolledtext.ScrolledText(
+            inner, bg=BG2, fg=FG, font=("Segoe UI", 10), height=6,
+            relief="flat", wrap="word", insertbackground=FG)
+        self.calendar_event_prompt_text.pack(fill="x", padx=16, pady=4)
+        self.calendar_event_prompt_text.insert(
+            "end", self.config_data.get("calendar_event_prompt", ""))
+
+        tk.Button(
+            inner, text="🔄 Przywróć domyślny prompt kalendarza",
+            bg=BTN_BG, fg=YELLOW,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            command=self._reset_calendar_event_prompt
+        ).pack(anchor="w", padx=16, pady=2)
+
     def _add_instrument_row(self, inst=None):
         if inst is None:
             inst = {}
@@ -2543,6 +2728,12 @@ class InvestmentAdvisor(tk.Tk):
         self.profile_prompt_text.delete("1.0", "end")
         self.profile_prompt_text.insert("end", DEFAULT_CONFIG["profile_prompt"])
 
+    def _reset_calendar_event_prompt(self):
+        from config import DEFAULT_CONFIG
+        self.calendar_event_prompt_text.delete("1.0", "end")
+        self.calendar_event_prompt_text.insert(
+            "end", DEFAULT_CONFIG["calendar_event_prompt"])
+
     def _open_prompt_popup(self, title, source_widget):
         """Open a larger popup window for editing a prompt, then sync back."""
         popup = tk.Toplevel(self)
@@ -2598,6 +2789,7 @@ class InvestmentAdvisor(tk.Tk):
         self.config_data["chat_prompt"] = self.chat_prompt_text.get("1.0", "end").strip()
         self.config_data["chart_chat_prompt"] = self.chart_chat_prompt_text.get("1.0", "end").strip()
         self.config_data["profile_prompt"] = self.profile_prompt_text.get("1.0", "end").strip()
+        self.config_data["calendar_event_prompt"] = self.calendar_event_prompt_text.get("1.0", "end").strip()
 
         instruments = []
         for _, v_sym, v_name, v_cat, v_src in self.inst_entries:

@@ -377,6 +377,21 @@ DEFAULT_CONFIG = {
         "  Muszą być poprzedzone znakiem \"\\\" jeśli występują w treści.\n"
         "- Nie używaj standardowego Markdown (###, ## itp.), tylko styl zgodny z Markdown V2."
     ),
+    "calendar_event_prompt": (
+        "Przeanalizuj to wydarzenie z kalendarza ekonomicznego.\n\n"
+        "## Czym jest to wydarzenie\n"
+        "Wyjaśnij krótko co mierzy lub sygnalizuje ten wskaźnik/wydarzenie.\n\n"
+        "## Potencjalne znaczenie\n"
+        "Co może oznaczać odczyt wyższy od prognozy, a co niższy. "
+        "Jakie są możliwe interpretacje w obecnym kontekście makro.\n\n"
+        "## Następstwa rynkowe\n"
+        "Które klasy aktywów, waluty, indeksy lub surowce mogą zareagować "
+        "i w jaki sposób (risk-on / risk-off, umocnienie / osłabienie).\n\n"
+        "## Na co zwrócić uwagę\n"
+        "Kontekst (poprzedni odczyt, trend, konsensus rynkowy) "
+        "i konkretne sygnały do obserwacji po publikacji.\n\n"
+        "Bądź zwięzły (max 400 słów). Używaj konkretnych przykładów."
+    ),
     "language": "pl"
 }
 

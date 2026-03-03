@@ -224,6 +224,52 @@ def generate_instrument_profile(config, symbol, name, category):
     return _result_text(_run_provider(config, system, user_msg))
 
 
+def generate_calendar_event_analysis(config, event_data):
+    """Generate on-demand AI analysis for a single economic calendar event."""
+    system = (
+        "Jesteś ekspertem makroekonomicznym. Analizujesz dane z kalendarza "
+        "ekonomicznego. Odpowiadaj po polsku, konkretnie i rzeczowo."
+    )
+    custom_prompt = config.get("calendar_event_prompt", "").strip()
+    if not custom_prompt:
+        custom_prompt = (
+            "## Czym jest to wydarzenie\n"
+            "Wyjaśnij krótko co mierzy lub sygnalizuje ten wskaźnik/wydarzenie.\n\n"
+            "## Potencjalne znaczenie\n"
+            "Co może oznaczać odczyt wyższy od prognozy, a co niższy.\n\n"
+            "## Następstwa rynkowe\n"
+            "Które klasy aktywów, waluty lub indeksy mogą zareagować i w jaki sposób.\n\n"
+            "## Na co zwrócić uwagę\n"
+            "Kontekst (poprzedni odczyt, trend, konsensus) i sygnały do obserwacji.\n\n"
+            "Bądź zwięzły (max 400 słów). Używaj konkretnych przykładów."
+        )
+    parts = [f"Wydarzenie: {event_data.get('event', '?')}"]
+    country = event_data.get("country", "")
+    if country:
+        parts.append(
+            f"Kraj: {event_data.get('flag', '')} {country}".strip())
+    date_str = event_data.get("date", "")
+    time_str = event_data.get("time", "")
+    if date_str:
+        parts.append(f"Data: {date_str}  {time_str}".strip())
+    impact = event_data.get("impact_label", "")
+    if impact:
+        parts.append(
+            f"Wpływ: {event_data.get('impact_icon', '')} {impact}".strip())
+    forecast = event_data.get("forecast", "")
+    if forecast:
+        parts.append(f"Prognoza: {forecast}")
+    previous = event_data.get("previous", "")
+    if previous:
+        parts.append(f"Poprzedni odczyt: {previous}")
+    significance = event_data.get("significance", "")
+    if significance and significance != "Dane makroekonomiczne":
+        parts.append(f"Kontekst: {significance}")
+
+    user_msg = "\n".join(parts) + "\n\n" + custom_prompt
+    return _result_text(_run_provider(config, system, user_msg))
+
+
 def get_available_models(provider):
     """Zwraca listę dostępnych modeli dla danego dostawcy."""
     models = {
