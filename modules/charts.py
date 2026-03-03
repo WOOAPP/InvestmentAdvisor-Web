@@ -356,29 +356,103 @@ def create_price_chart(parent_frame, symbol, period="1M",
     canvas = FigureCanvasTkAgg(fig, master=parent_frame)
     canvas.draw()
 
-    toolbar = NavigationToolbar2Tk(canvas, parent_frame)
-    toolbar.update()
-    _style_toolbar(toolbar)
-
+    _build_chart_toolbar(canvas, parent_frame)
     canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
 
     return canvas, fig
 
 
-def _style_toolbar(toolbar):
-    """Apply dark theme to the matplotlib NavigationToolbar."""
-    try:
-        toolbar.configure(bg=COLORS["bg"])
-        for child in toolbar.winfo_children():
-            try:
-                child.configure(bg=COLORS["bg"], fg=COLORS["fg"])
-            except Exception:
-                try:
-                    child.configure(bg=COLORS["bg"])
-                except Exception:
-                    pass
-    except Exception:
-        pass
+def _build_chart_toolbar(canvas, parent_frame):
+    """Custom dark-themed toolbar replacing NavigationToolbar2Tk.
+
+    Uses a hidden real toolbar for navigation logic; own styled
+    buttons with unicode glyphs instead of bitmap PNG icons.
+    """
+    # Real toolbar in a hidden frame (never packed) — provides nav methods
+    _hidden = tk.Frame(parent_frame)
+    real_tb = NavigationToolbar2Tk(canvas, _hidden)
+    real_tb.update()
+
+    BG   = COLORS["bg"]
+    BG2  = COLORS["bg2"]
+    FG   = COLORS["fg"]
+    ACC  = COLORS["blue"]
+    GRAY = COLORS["grid"]
+
+    bar = tk.Frame(parent_frame, bg=BG2, pady=3)
+    bar.pack(side="bottom", fill="x")
+
+    _toggle_state = {"pan": False, "zoom": False}
+    _toggle_btns  = {}
+
+    def _btn(text, tip, cmd, toggle_key=None):
+        b = tk.Button(
+            bar, text=text, command=cmd,
+            bg=BG, fg=FG,
+            font=("Segoe UI", 11), relief="flat",
+            cursor="hand2", padx=7, pady=1,
+            activebackground=GRAY, activeforeground=FG,
+            bd=0, highlightthickness=0,
+        )
+        b.pack(side="left", padx=1)
+        if toggle_key:
+            _toggle_btns[toggle_key] = b
+        # Tooltip
+        def _enter(e, w=b, t=tip):
+            w._tip = tk.Label(
+                w.winfo_toplevel(), text=t,
+                bg=GRAY, fg=FG, font=("Segoe UI", 8),
+                relief="flat", padx=4, pady=2)
+            wx = w.winfo_rootx() - w.winfo_toplevel().winfo_rootx()
+            wy = w.winfo_rooty() - w.winfo_toplevel().winfo_rooty() - 28
+            w._tip.place(x=wx, y=wy)
+        def _leave(e, w=b):
+            if hasattr(w, "_tip"):
+                w._tip.destroy()
+        b.bind("<Enter>", _enter)
+        b.bind("<Leave>", _leave)
+        return b
+
+    def _sep():
+        tk.Frame(bar, bg=GRAY, width=1).pack(side="left", fill="y", padx=4, pady=4)
+
+    def _toggle_cmd(key, method):
+        def cmd():
+            getattr(real_tb, method)()
+            _toggle_state[key] = not _toggle_state[key]
+            other = "zoom" if key == "pan" else "pan"
+            if _toggle_state[key]:
+                _toggle_state[other] = False
+            for k, b in _toggle_btns.items():
+                if _toggle_state.get(k):
+                    b.configure(bg=ACC, fg=BG)
+                else:
+                    b.configure(bg=BG, fg=FG)
+        return cmd
+
+    _btn("⌂",  "Widok domyślny",   real_tb.home)
+    _btn("◂",  "Cofnij widok",      real_tb.back)
+    _btn("▸",  "Naprzód widok",     real_tb.forward)
+    _sep()
+    _btn("⠿",  "Przesuń (pan)",    _toggle_cmd("pan",  "pan"),  toggle_key="pan")
+    _btn("⊕",  "Powiększ (zoom)",  _toggle_cmd("zoom", "zoom"), toggle_key="zoom")
+    _sep()
+    _btn("💾", "Zapisz wykres",     real_tb.save_figure)
+
+    # Coordinate display on the right
+    coord_lbl = tk.Label(bar, text="", bg=BG2, fg=GRAY,
+                         font=("Segoe UI", 8), anchor="e")
+    coord_lbl.pack(side="right", padx=8)
+
+    def _on_motion(event):
+        if event.inaxes:
+            coord_lbl.configure(
+                text=f"x {event.xdata:.2f}  y {event.ydata:.4f}")
+        else:
+            coord_lbl.configure(text="")
+    canvas.mpl_connect("motion_notify_event", _on_motion)
+
+    return bar, real_tb
 
 
 def create_risk_gauge(parent_frame, risk_level=5):
