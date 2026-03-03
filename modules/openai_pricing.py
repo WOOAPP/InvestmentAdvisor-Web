@@ -21,7 +21,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 CACHE_FILE = os.path.join(DATA_DIR, "llm_pricing_cache.json")
 CACHE_TTL = PRICING_CACHE_TTL
 
-PRICING_URL = "https://openai.com/pl-PL/api/pricing/"
+PRICING_URL = "https://openai.com/api/pricing/"
 
 # ── Fallback pricing: USD per 1 M tokens, Standard tier ──────────
 # Sources (March 2026):
@@ -121,7 +121,7 @@ def _fetch_from_web() -> dict | None:
                         "output": float(out.group(1)),
                     }
         return pricing if pricing else None
-    except (OSError, ValueError, ConnectionError, TimeoutError) as exc:
+    except Exception as exc:
         logger.debug("OpenAI pricing fetch failed: %s", exc)
         return None
 

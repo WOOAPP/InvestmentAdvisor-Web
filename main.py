@@ -1136,9 +1136,10 @@ class InvestmentAdvisor(tk.Tk):
 
     def _load_calendar(self):
         self.cal_status.configure(text="Pobieranie…")
+        week_offset = self.cal_week_var.get()  # odczyt w głównym wątku
 
         def _fetch():
-            events, err = fetch_calendar(self.cal_week_var.get())
+            events, err = fetch_calendar(week_offset)
             self._cal_events = events
             if err:
                 self.after(0, lambda: self.cal_status.configure(

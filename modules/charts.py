@@ -49,15 +49,20 @@ COINGECKO_DAYS = {
     "3M": 90,
     "6M": 180,
     "1R": 365,
-    "2R": 730,
+    "2R": 365,   # free CoinGecko API max; paid tier needed for >365
 }
 
 
 def _fetch_coingecko_chart(coin_id, days):
     """Fetch historical chart data from CoinGecko API."""
+    import requests as _requests
     url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
            f"/market_chart?vs_currency=usd&days={days}")
-    r = safe_get(url)
+    try:
+        r = safe_get(url)
+    except _requests.RequestException as exc:
+        logger.warning("CoinGecko chart %s/%sd failed: %s", coin_id, days, exc)
+        return pd.DataFrame()
     data = r.json()
 
     prices = data.get("prices", [])
@@ -322,8 +327,10 @@ def create_price_chart(parent_frame, symbol, period="1M",
                 return f"{x:.6f}"
         ax.yaxis.set_major_formatter(FuncFormatter(_price_fmt))
 
-    ax.legend(facecolor=COLORS["bg"], edgecolor=COLORS["grid"],
-              labelcolor=COLORS["fg"], fontsize=9, loc="upper left")
+    _handles, _labels = ax.get_legend_handles_labels()
+    if _handles:
+        ax.legend(facecolor=COLORS["bg"], edgecolor=COLORS["grid"],
+                  labelcolor=COLORS["fg"], fontsize=9, loc="upper left")
 
     # Title with instrument name and current price
     title_text = f"{symbol}  ·  {period}"
