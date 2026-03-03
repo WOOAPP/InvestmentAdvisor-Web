@@ -356,13 +356,13 @@ def create_price_chart(parent_frame, symbol, period="1M",
     canvas = FigureCanvasTkAgg(fig, master=parent_frame)
     canvas.draw()
 
-    _build_chart_toolbar(canvas, parent_frame, period)
+    _build_chart_toolbar(canvas, parent_frame)
     canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
 
     return canvas, fig
 
 
-def _build_chart_toolbar(canvas, parent_frame, period="1M"):
+def _build_chart_toolbar(canvas, parent_frame):
     """Custom dark-themed toolbar replacing NavigationToolbar2Tk.
 
     Uses a hidden real toolbar for navigation logic; own styled
@@ -440,65 +440,16 @@ def _build_chart_toolbar(canvas, parent_frame, period="1M"):
     _btn("💾", "Zapisz wykres",     real_tb.save_figure)
 
     # Coordinate display on the right
-    coord_lbl = tk.Label(bar, text="", bg=BG2, fg=FG,
-                         font=("Segoe UI", 9), anchor="e")
-    coord_lbl.pack(side="right", padx=10)
-
-    # Crosshair lines — vertical on every axis, horizontal only on active one
-    _axes = canvas.figure.get_axes()
-    _vlines = []
-    _hlines = {}
-    for _ax in _axes:
-        vl = _ax.axvline(color=FG, linewidth=0.5, linestyle="--",
-                         alpha=0.40, visible=False, zorder=10)
-        _vlines.append(vl)
-        hl = _ax.axhline(color=ACC, linewidth=0.5, linestyle="--",
-                         alpha=0.40, visible=False, zorder=10)
-        _hlines[id(_ax)] = hl
+    coord_lbl = tk.Label(bar, text="", bg=BG2, fg=GRAY,
+                         font=("Segoe UI", 8), anchor="e")
+    coord_lbl.pack(side="right", padx=8)
 
     def _on_motion(event):
-        if event.inaxes and event.xdata is not None:
-            # Move crosshair
-            for vl in _vlines:
-                vl.set_xdata([event.xdata, event.xdata])
-                vl.set_visible(True)
-            for ax_id, hl in _hlines.items():
-                if id(event.inaxes) == ax_id:
-                    hl.set_ydata([event.ydata, event.ydata])
-                    hl.set_visible(True)
-                else:
-                    hl.set_visible(False)
-            canvas.draw_idle()
-
-            # Date/time string
-            try:
-                dt = mdates.num2date(event.xdata)
-                date_str = (dt.strftime("%d.%m.%Y  %H:%M")
-                            if period in ("1T", "5T")
-                            else dt.strftime("%d.%m.%Y"))
-            except (ValueError, OverflowError):
-                date_str = f"{event.xdata:.2f}"
-
-            # Price/value string
-            y = event.ydata
-            if abs(y) >= 1_000_000:
-                price_str = f"{y:,.0f}"
-            elif abs(y) >= 100:
-                price_str = f"{y:,.2f}"
-            elif abs(y) >= 1:
-                price_str = f"{y:.4f}"
-            else:
-                price_str = f"{y:.6f}"
-
-            coord_lbl.configure(text=f"{date_str}  │  {price_str}")
+        if event.inaxes:
+            coord_lbl.configure(
+                text=f"x {event.xdata:.2f}  y {event.ydata:.4f}")
         else:
-            for vl in _vlines:
-                vl.set_visible(False)
-            for hl in _hlines.values():
-                hl.set_visible(False)
-            canvas.draw_idle()
             coord_lbl.configure(text="")
-
     canvas.mpl_connect("motion_notify_event", _on_motion)
 
     return bar, real_tb
