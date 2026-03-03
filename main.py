@@ -151,12 +151,77 @@ class InvestmentAdvisor(tk.Tk):
         self.notebook.add(self.tab_history,    text="  📜  Historia  ")
         self.notebook.add(self.tab_settings,   text="  ⚙  Ustawienia  ")
 
+        self._prev_tab_idx = 0
+        self._tab_change_locked = False
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_change)
+
         self._build_dashboard()
         self._build_portfolio_tab()
         self._build_calendar_tab()
         self._build_charts_tab()
         self._build_history_tab()
         self._build_settings_tab()
+
+    # ═══════════════════════════════════════
+    # OCHRONA HASŁEM – USTAWIENIA
+    # ═══════════════════════════════════════
+    _SETTINGS_PASSWORD = "666"
+
+    def _on_tab_change(self, event):
+        if self._tab_change_locked:
+            return
+        selected = self.notebook.index(self.notebook.select())
+        settings_idx = self.notebook.index(self.tab_settings)
+        if selected == settings_idx:
+            if not self._verify_settings_password():
+                self._tab_change_locked = True
+                self.notebook.select(self._prev_tab_idx)
+                self._tab_change_locked = False
+                return
+        self._prev_tab_idx = selected
+
+    def _verify_settings_password(self):
+        dlg = tk.Toplevel(self)
+        dlg.title("Hasło")
+        dlg.resizable(False, False)
+        dlg.configure(bg=BG)
+        dlg.grab_set()
+
+        # Wyśrodkowanie względem okna głównego
+        self.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - 300) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - 140) // 2
+        dlg.geometry(f"300x140+{x}+{y}")
+
+        tk.Label(dlg, text="🔒 Podaj hasło do ustawień:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10)).pack(pady=(18, 6))
+
+        var = tk.StringVar()
+        entry = tk.Entry(dlg, textvariable=var, show="●", bg=GRAY, fg=FG,
+                         insertbackground=FG, relief="flat",
+                         font=("Segoe UI", 12), width=18)
+        entry.pack(pady=4)
+        entry.focus_set()
+
+        result = [False]
+
+        def _confirm(event=None):
+            result[0] = (var.get() == self._SETTINGS_PASSWORD)
+            if not result[0]:
+                entry.config(fg=RED)
+                var.set("")
+                entry.after(600, dlg.destroy)
+            else:
+                dlg.destroy()
+
+        entry.bind("<Return>", _confirm)
+        tk.Button(dlg, text="OK", bg=ACCENT, fg=BG,
+                  font=("Segoe UI", 10, "bold"), relief="flat",
+                  cursor="hand2", padx=20, pady=4,
+                  command=_confirm).pack(pady=(8, 0))
+
+        dlg.wait_window()
+        return result[0]
 
     # ═══════════════════════════════════════
     # DASHBOARD
