@@ -65,6 +65,17 @@ def _migrate_portfolio_currency(conn):
     conn.commit()
 
 
+def _migrate_portfolio_position_type(conn):
+    """Add position_type column to portfolio table if missing (backward-compat)."""
+    c = conn.cursor()
+    existing = {row[1] for row in c.execute("PRAGMA table_info(portfolio)").fetchall()}
+    if "position_type" not in existing:
+        c.execute("ALTER TABLE portfolio ADD COLUMN position_type TEXT DEFAULT 'long'")
+        # Back-fill: all existing rows are treated as long positions
+        c.execute("UPDATE portfolio SET position_type = 'long' WHERE position_type IS NULL")
+    conn.commit()
+
+
 def init_db():
     """Tworzy tabele jeśli nie istnieją."""
     os.makedirs("data", exist_ok=True)
@@ -112,7 +123,8 @@ def init_db():
                 created_at TEXT NOT NULL,
                 buy_currency TEXT DEFAULT 'USD',
                 buy_fx_to_usd REAL DEFAULT 1.0,
-                buy_price_usd REAL DEFAULT 0
+                buy_price_usd REAL DEFAULT 0,
+                position_type TEXT DEFAULT 'long'
             )
         """)
         c.execute("""
@@ -125,6 +137,7 @@ def init_db():
         conn.commit()
         _migrate_reports_usage(conn)
         _migrate_portfolio_currency(conn)
+        _migrate_portfolio_position_type(conn)
 
 def save_report(provider, model, market_summary, analysis, risk_level=0,
                 input_tokens=0, output_tokens=0):
@@ -226,30 +239,39 @@ def delete_report(report_id):
 # ── PORTFOLIO ──
 
 def add_portfolio_position(symbol, name, quantity, buy_price,
-                           buy_currency="USD", buy_fx_to_usd=1.0):
+                           buy_currency="USD", buy_fx_to_usd=1.0,
+                           position_type="long"):
     buy_price_usd = float(buy_price) * float(buy_fx_to_usd)
     with _connect() as conn:
         c = conn.cursor()
         c.execute("""
             INSERT INTO portfolio
                 (symbol, name, quantity, buy_price, created_at,
-                 buy_currency, buy_fx_to_usd, buy_price_usd)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 buy_currency, buy_fx_to_usd, buy_price_usd, position_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (symbol, name or symbol, float(quantity), float(buy_price),
               _now_warsaw().strftime("%Y-%m-%d %H:%M:%S"),
-              buy_currency, float(buy_fx_to_usd), buy_price_usd))
+              buy_currency, float(buy_fx_to_usd), buy_price_usd, position_type))
         conn.commit()
 
-def get_portfolio_positions():
+def get_portfolio_positions(position_type=None):
     """Returns tuples: (id, symbol, name, qty, buy_price, created_at,
-                        buy_currency, buy_fx_to_usd, buy_price_usd)"""
+                        buy_currency, buy_fx_to_usd, buy_price_usd, position_type)
+    If position_type is given, returns only rows matching that type."""
     with _connect() as conn:
         c = conn.cursor()
-        c.execute("""
-            SELECT id, symbol, name, quantity, buy_price, created_at,
-                   buy_currency, buy_fx_to_usd, buy_price_usd
-            FROM portfolio ORDER BY created_at
-        """)
+        if position_type:
+            c.execute("""
+                SELECT id, symbol, name, quantity, buy_price, created_at,
+                       buy_currency, buy_fx_to_usd, buy_price_usd, position_type
+                FROM portfolio WHERE position_type = ? ORDER BY created_at
+            """, (position_type,))
+        else:
+            c.execute("""
+                SELECT id, symbol, name, quantity, buy_price, created_at,
+                       buy_currency, buy_fx_to_usd, buy_price_usd, position_type
+                FROM portfolio ORDER BY created_at
+            """)
         return c.fetchall()
 
 def delete_portfolio_position(position_id):

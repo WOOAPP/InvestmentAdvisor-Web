@@ -672,8 +672,35 @@ class InvestmentAdvisor(tk.Tk):
     # PORTFOLIO TAB
     # ═══════════════════════════════════════
     def _build_portfolio_tab(self):
+        """Creates portfolio sub-notebook with 3 sub-tabs."""
+        sub_nb = ttk.Notebook(self.tab_portfolio)
+        sub_nb.pack(fill="both", expand=True, padx=4, pady=4)
+        self._port_sub_nb = sub_nb
+
+        # (position_type, display_label, add_button_label, is_short)
+        tab_defs = [
+            ("watch", "👁 Obserwowane",    "➕ Obserwuj",      False),
+            ("long",  "📈 Gra na wzrosty", "➕ Dodaj pozycję", False),
+            ("short", "📉 Gra na spadki",  "➕ Dodaj short",   True),
+        ]
+        self._port_tab_types = [t[0] for t in tab_defs]
+        self.port_widgets = {}
+
+        for pos_type, label, btn_label, is_short in tab_defs:
+            frame = tk.Frame(sub_nb, bg=BG)
+            sub_nb.add(frame, text=f"  {label}  ")
+            self.port_widgets[pos_type] = self._build_portfolio_sub_tab(
+                frame, pos_type, btn_label, is_short)
+
+        self._refresh_portfolio()
+
+    def _build_portfolio_sub_tab(self, parent, pos_type, btn_label, is_short):
+        """Builds form + treeview for one portfolio sub-tab. Returns widget dict."""
+        price_lbl = "Cena wejścia (short):" if is_short else "Cena zakupu:"
+
+        # ── Form ──────────────────────────────────────────────────────────────
         form_frame = tk.LabelFrame(
-            self.tab_portfolio, text=" Dodaj pozycję ", bg=BG, fg=ACCENT,
+            parent, text=" Dodaj pozycję ", bg=BG, fg=ACCENT,
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
         form_frame.pack(fill="x", padx=12, pady=(10, 4))
@@ -686,85 +713,81 @@ class InvestmentAdvisor(tk.Tk):
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 2))
 
         lbl("Instrument:")
-        all_inst = self.config_data.get("instruments", [])
+        all_inst  = self.config_data.get("instruments", [])
         inst_names = [f"{i['name']} ({i['symbol']})" for i in all_inst]
-        self.v_port_inst = tk.StringVar(value=inst_names[0] if inst_names else "")
-        self.port_inst_cb = ttk.Combobox(
-            inner, textvariable=self.v_port_inst,
-            values=inst_names, width=24, state="readonly")
-        self.port_inst_cb.pack(side="left", padx=(0, 8))
+        v_inst = tk.StringVar(value=inst_names[0] if inst_names else "")
+        inst_cb = ttk.Combobox(inner, textvariable=v_inst,
+                               values=inst_names, width=24, state="readonly")
+        inst_cb.pack(side="left", padx=(0, 8))
 
         lbl("Ilość:")
-        self.v_port_qty = tk.StringVar()
-        tk.Entry(inner, textvariable=self.v_port_qty, bg=BG2, fg=FG,
+        v_qty = tk.StringVar()
+        tk.Entry(inner, textvariable=v_qty, bg=BG2, fg=FG,
                  insertbackground=FG, relief="flat", width=10,
                  font=("Segoe UI", 10),
                  highlightbackground=GRAY, highlightthickness=1
                  ).pack(side="left", padx=(0, 8))
 
-        lbl("Cena zakupu:")
-        self.v_port_price = tk.StringVar()
-        tk.Entry(inner, textvariable=self.v_port_price, bg=BG2, fg=FG,
+        lbl(price_lbl)
+        v_price = tk.StringVar()
+        tk.Entry(inner, textvariable=v_price, bg=BG2, fg=FG,
                  insertbackground=FG, relief="flat", width=12,
                  font=("Segoe UI", 10),
                  highlightbackground=GRAY, highlightthickness=1
                  ).pack(side="left", padx=(0, 4))
 
-        self.v_port_currency = tk.StringVar(value="USD")
-        ttk.Combobox(
-            inner, textvariable=self.v_port_currency,
-            values=["USD", "PLN", "EUR"], width=5, state="readonly"
-        ).pack(side="left", padx=(0, 4))
+        v_currency = tk.StringVar(value="USD")
+        ttk.Combobox(inner, textvariable=v_currency,
+                     values=["USD", "PLN", "EUR"], width=5, state="readonly"
+                     ).pack(side="left", padx=(0, 4))
 
-        self._btn_current_price = tk.Button(
+        btn_cur = tk.Button(
             inner, text="Aktualna", bg=BTN_BG, fg=ACCENT,
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
-            padx=6, pady=2, command=self._fill_current_price)
-        self._btn_current_price.pack(side="left", padx=(0, 8))
+            padx=6, pady=2,
+            command=lambda pt=pos_type: self._fill_current_price(pt))
+        btn_cur.pack(side="left", padx=(0, 8))
 
         tk.Button(
-            inner, text="➕ Dodaj", bg=GREEN, fg=BG,
+            inner, text=btn_label, bg=GREEN, fg=BG,
             font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
-            padx=10, pady=3, command=self._add_portfolio_position
+            padx=10, pady=3,
+            command=lambda pt=pos_type: self._add_portfolio_position(pt)
         ).pack(side="left", padx=4)
 
-        # Treeview pozycji
-        tree_frame = tk.Frame(self.tab_portfolio, bg=BG)
+        # ── Treeview ──────────────────────────────────────────────────────────
+        tree_frame = tk.Frame(parent, bg=BG)
         tree_frame.pack(fill="both", expand=True, padx=12, pady=4)
 
         cols = ("Instrument", "Symbol", "Ilość", "Waluta",
-                "Kup.", "Kup. ($)", "Akt.",
-                "Wartość", "Zysk", "Zysk %")
-        self.port_tree = ttk.Treeview(
-            tree_frame, columns=cols, show="headings", height=18)
+                "Kup.", "Kup. ($)", "Akt.", "Wartość", "Zysk", "Zysk %")
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=16)
 
-        widths = [120, 70, 55, 45, 85, 85, 150, 155, 155, 65]
+        widths  = [120, 70, 55, 45, 85, 85, 150, 155, 155, 65]
         anchors = ["w", "center", "e", "center", "e", "e", "e", "e", "e", "e"]
         for col, w, anc in zip(cols, widths, anchors):
-            self.port_tree.heading(col, text=col)
-            self.port_tree.column(col, width=w, anchor=anc)
+            tree.heading(col, text=col)
+            tree.column(col, width=w, anchor=anc)
 
-        self.port_tree.tag_configure("profit", foreground=GREEN)
-        self.port_tree.tag_configure("loss",   foreground=RED)
+        tree.tag_configure("profit", foreground=GREEN)
+        tree.tag_configure("loss",   foreground=RED)
 
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical",
-                             command=self.port_tree.yview)
-        self.port_tree.configure(yscrollcommand=vsb.set)
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
-        self.port_tree.pack(fill="both", expand=True)
+        tree.pack(fill="both", expand=True)
+        self._bind_mousewheel(tree, tree)
 
-        # Mousewheel scrolling for portfolio tree
-        self._bind_mousewheel(self.port_tree, self.port_tree)
-
-        # Pasek podsumowania
-        bot = tk.Frame(self.tab_portfolio, bg=BG2,
+        # ── Bottom bar ────────────────────────────────────────────────────────
+        bot = tk.Frame(parent, bg=BG2,
                        highlightbackground=GRAY, highlightthickness=1)
         bot.pack(fill="x", padx=12, pady=(0, 8))
 
         tk.Button(
             bot, text="🗑️ Usuń zaznaczony", bg=BTN_BG, fg=RED,
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
-            padx=8, pady=4, command=self._remove_portfolio_position
+            padx=8, pady=4,
+            command=lambda pt=pos_type: self._remove_portfolio_position(pt)
         ).pack(side="left", padx=8, pady=6)
 
         tk.Button(
@@ -773,22 +796,38 @@ class InvestmentAdvisor(tk.Tk):
             padx=8, pady=4, command=self._quick_fetch_prices
         ).pack(side="left", padx=4, pady=6)
 
-        self._portfolio_status = tk.Label(
-            bot, text="", bg=BG2, fg=GRAY, font=("Segoe UI", 9))
-        self._portfolio_status.pack(side="left", padx=12)
+        status_lbl = tk.Label(bot, text="", bg=BG2, fg=GRAY,
+                              font=("Segoe UI", 9))
+        status_lbl.pack(side="left", padx=12)
 
-        self.port_summary_lbl = tk.Label(
-            bot, text="", bg=BG2, fg=FG,
-            font=("Segoe UI", 10, "bold"), anchor="e")
-        self.port_summary_lbl.pack(side="right", padx=16, pady=6)
+        summary_lbl = tk.Label(bot, text="", bg=BG2, fg=FG,
+                               font=("Segoe UI", 10, "bold"), anchor="e")
+        summary_lbl.pack(side="right", padx=16, pady=6)
 
-        self._refresh_portfolio()
+        return {
+            "tree":        tree,
+            "inst_cb":     inst_cb,
+            "v_inst":      v_inst,
+            "v_qty":       v_qty,
+            "v_price":     v_price,
+            "v_currency":  v_currency,
+            "btn_current": btn_cur,
+            "status_lbl":  status_lbl,
+            "summary_lbl": summary_lbl,
+            "is_short":    is_short,
+        }
 
-    def _add_portfolio_position(self):
-        inst_str  = self.v_port_inst.get()
-        qty_str   = self.v_port_qty.get().strip()
-        price_str = self.v_port_price.get().strip()
-        currency  = self.v_port_currency.get()
+    def _get_active_port_type(self):
+        """Returns position_type of the currently visible portfolio sub-tab."""
+        idx = self._port_sub_nb.index(self._port_sub_nb.select())
+        return self._port_tab_types[idx]
+
+    def _add_portfolio_position(self, pos_type):
+        w         = self.port_widgets[pos_type]
+        inst_str  = w["v_inst"].get()
+        qty_str   = w["v_qty"].get().strip()
+        price_str = w["v_price"].get().strip()
+        currency  = w["v_currency"].get()
 
         if not inst_str or not qty_str or not price_str:
             messagebox.showwarning(
@@ -815,29 +854,29 @@ class InvestmentAdvisor(tk.Tk):
         name   = inst_str.split("(")[0].strip()
         add_portfolio_position(symbol, name, qty, price,
                                buy_currency=currency,
-                               buy_fx_to_usd=fx_rate)
-        self.v_port_qty.set("")
-        self.v_port_price.set("")
-        self._refresh_portfolio()
+                               buy_fx_to_usd=fx_rate,
+                               position_type=pos_type)
+        w["v_qty"].set("")
+        w["v_price"].set("")
+        self._refresh_portfolio_for_type(pos_type)
 
-    def _fill_current_price(self):
-        """Fetch current price for selected instrument and fill the buy-price field."""
-        inst_str = self.v_port_inst.get()
+    def _fill_current_price(self, pos_type):
+        """Fetch current price for selected instrument and fill the price field."""
+        w        = self.port_widgets[pos_type]
+        inst_str = w["v_inst"].get()
         if not inst_str:
             messagebox.showwarning("Brak instrumentu",
                                    "Wybierz instrument z listy.")
             return
 
-        symbol = inst_str.split("(")[-1].rstrip(")")
-        currency = self.v_port_currency.get()
+        symbol   = inst_str.split("(")[-1].rstrip(")")
+        currency = w["v_currency"].get()
 
-        # Try cached market data first, then fetch fresh
         d = self.current_market_data.get(symbol, {})
         price_usd = d.get("price") if d and "error" not in d else None
 
         if price_usd is None:
-            # Fetch fresh — quick, single instrument
-            self._btn_current_price.configure(state="disabled", text="…")
+            w["btn_current"].configure(state="disabled", text="…")
 
             def _fetch():
                 try:
@@ -846,7 +885,7 @@ class InvestmentAdvisor(tk.Tk):
                         (i for i in instruments if i["symbol"] == symbol), None)
                     if inst_cfg:
                         source = inst_cfg.get("source", "yfinance")
-                        name = inst_cfg.get("name", symbol)
+                        name   = inst_cfg.get("name", symbol)
                         from modules.market_data import (
                             get_yfinance_data, get_coingecko_data, get_stooq_data)
                         if source == "coingecko":
@@ -858,120 +897,121 @@ class InvestmentAdvisor(tk.Tk):
                         if "error" not in result and result.get("price"):
                             self.current_market_data[symbol] = result
                             self.after(0, lambda: self._apply_current_price(
-                                result["price"], currency))
+                                result["price"], currency, pos_type))
                             return
                     self.after(0, lambda: messagebox.showwarning(
-                        "Brak ceny",
-                        "Brak aktualnej ceny dla instrumentu."))
+                        "Brak ceny", "Brak aktualnej ceny dla instrumentu."))
                 except (KeyError, ValueError, TypeError, ConnectionError) as e:
                     logging.getLogger(__name__).debug("Price fetch failed: %s", e)
                     self.after(0, lambda: messagebox.showwarning(
-                        "Brak ceny",
-                        "Brak aktualnej ceny dla instrumentu."))
+                        "Brak ceny", "Brak aktualnej ceny dla instrumentu."))
                 finally:
-                    self.after(0, lambda: self._btn_current_price.configure(
+                    self.after(0, lambda: w["btn_current"].configure(
                         state="normal", text="Aktualna"))
 
             threading.Thread(target=_fetch, daemon=True).start()
             return
 
-        self._apply_current_price(price_usd, currency)
+        self._apply_current_price(price_usd, currency, pos_type)
 
-    def _apply_current_price(self, price_usd, currency):
-        """Set buy-price field, converting from USD if needed."""
+    def _apply_current_price(self, price_usd, currency, pos_type):
+        """Set price field in given sub-tab, converting from USD if needed."""
+        w = self.port_widgets[pos_type]
         if currency == "USD":
-            self.v_port_price.set(f"{price_usd:.4f}")
+            w["v_price"].set(f"{price_usd:.4f}")
             return
-
-        fx = get_fx_to_usd(currency)  # currency→USD rate
+        fx = get_fx_to_usd(currency)
         if fx is None or fx == 0:
             messagebox.showwarning(
                 "Brak kursu FX",
                 f"Brak kursu FX, nie można przeliczyć na {currency}.")
             return
-        # fx = how many USD per 1 unit of currency
-        # so price_in_currency = price_usd / fx
-        price_local = price_usd / fx
-        self.v_port_price.set(f"{price_local:.4f}")
+        w["v_price"].set(f"{price_usd / fx:.4f}")
 
-    def _remove_portfolio_position(self):
-        sel = self.port_tree.selection()
+    def _remove_portfolio_position(self, pos_type):
+        w   = self.port_widgets[pos_type]
+        sel = w["tree"].selection()
         if not sel:
             return
         if messagebox.askyesno("Usuń pozycję",
                                 "Usunąć wybraną pozycję z portfela?"):
             for iid in sel:
                 delete_portfolio_position(int(iid))
-            self._refresh_portfolio()
+            self._refresh_portfolio_for_type(pos_type)
 
     def _refresh_portfolio(self):
-        for row in self.port_tree.get_children():
-            self.port_tree.delete(row)
+        """Refresh all three portfolio sub-tabs."""
+        for pos_type in self._port_tab_types:
+            self._refresh_portfolio_for_type(pos_type)
 
-        positions      = get_portfolio_positions()
+    def _refresh_portfolio_for_type(self, pos_type):
+        """Refresh treeview + summary for one portfolio sub-tab."""
+        w        = self.port_widgets[pos_type]
+        tree     = w["tree"]
+        is_short = w["is_short"]
+
+        for row in tree.get_children():
+            tree.delete(row)
+
+        positions      = get_portfolio_positions(position_type=pos_type)
         total_invested = 0.0
         total_current  = 0.0
-
-        # Re-use cached FX rates across refreshes (instance-level cache)
-        fx_cache = self._fx_cache
-
-        # Per-currency accumulators (non-USD) for summary line
-        currency_invested = {}   # {currency: total_invested_local}
-        currency_current  = {}   # {currency: total_current_local}
+        fx_cache       = self._fx_cache
+        currency_invested = {}
+        currency_current  = {}
 
         for pos in positions:
             # Tuple: id, symbol, name, qty, buy_price, created_at,
-            #        buy_currency, buy_fx_to_usd, buy_price_usd
-            pid        = pos[0]
-            symbol     = pos[1]
-            name       = pos[2]
-            qty        = pos[3]
-            buy_price  = pos[4]
-            currency   = pos[6] if len(pos) > 6 and pos[6] else "USD"
-            fx_rate    = pos[7] if len(pos) > 7 and pos[7] else 1.0
-            price_usd  = pos[8] if len(pos) > 8 and pos[8] else (buy_price * fx_rate)
+            #        buy_currency, buy_fx_to_usd, buy_price_usd, position_type
+            pid       = pos[0]
+            symbol    = pos[1]
+            name      = pos[2]
+            qty       = pos[3]
+            buy_price = pos[4]
+            currency  = pos[6] if len(pos) > 6 and pos[6] else "USD"
+            fx_rate   = pos[7] if len(pos) > 7 and pos[7] else 1.0
+            price_usd = pos[8] if len(pos) > 8 and pos[8] else (buy_price * fx_rate)
 
-            d = self.current_market_data.get(symbol, {})
+            d             = self.current_market_data.get(symbol, {})
             current_price = d.get("price") if d and "error" not in d else None
 
             invested_usd = qty * price_usd
             total_invested += invested_usd
 
-            # Accumulate invested in original currency for non-USD
             if currency != "USD":
                 currency_invested[currency] = (
                     currency_invested.get(currency, 0.0) + qty * buy_price)
 
-            # Format buy price in original currency
             buy_display = f"{buy_price:,.4f}"
             if currency != "USD":
                 buy_display += f" {currency}"
 
-            # Get current FX for non-USD positions (for dual display)
             cur_fx = None
             if currency != "USD":
                 if currency not in fx_cache:
                     fx_cache[currency] = get_fx_to_usd(currency)
-                cur_fx = fx_cache[currency]  # currency→USD rate (or None)
+                cur_fx = fx_cache[currency]
 
             if current_price is not None:
                 current_val = qty * current_price
-                pnl_usd     = current_val - invested_usd
-                pnl_pct     = (pnl_usd / invested_usd * 100) if invested_usd else 0
                 total_current += current_val
-                tag = "profit" if pnl_usd >= 0 else "loss"
 
-                # Accumulate current value in local currency
+                # P&L: inverted for short positions (profit when price falls)
+                pnl_usd = (invested_usd - current_val) if is_short \
+                          else (current_val - invested_usd)
+                pnl_pct = (pnl_usd / invested_usd * 100) if invested_usd else 0
+                tag     = "profit" if pnl_usd >= 0 else "loss"
+
                 if currency != "USD" and cur_fx and cur_fx > 0:
                     currency_current[currency] = (
                         currency_current.get(currency, 0.0)
                         + current_val / cur_fx)
 
-                # Format Akt., Wartość, Zysk — dual if non-USD
                 if currency != "USD" and cur_fx and cur_fx > 0:
                     price_local = current_price / cur_fx
-                    val_local = current_val / cur_fx
-                    pnl_local = val_local - qty * buy_price
+                    val_local   = current_val / cur_fx
+                    pnl_local   = (qty * buy_price - val_local) if is_short \
+                                  else (val_local - qty * buy_price)
                     akt_display = (f"$ {current_price:,.2f} | "
                                    f"{currency} {price_local:,.2f}")
                     val_display = (f"$ {current_val:,.2f} | "
@@ -979,45 +1019,32 @@ class InvestmentAdvisor(tk.Tk):
                     pnl_display = (f"$ {pnl_usd:+,.2f} | "
                                    f"{currency} {pnl_local:+,.2f}")
                 elif currency != "USD":
-                    # FX unavailable — show USD only, mark local as N/A
-                    akt_display = (f"$ {current_price:,.2f} | "
-                                   f"{currency} —")
-                    val_display = (f"$ {current_val:,.2f} | "
-                                   f"{currency} —")
-                    pnl_display = (f"$ {pnl_usd:+,.2f} | "
-                                   f"{currency} —")
+                    akt_display = f"$ {current_price:,.2f} | {currency} —"
+                    val_display = f"$ {current_val:,.2f} | {currency} —"
+                    pnl_display = f"$ {pnl_usd:+,.2f} | {currency} —"
                 else:
                     akt_display = f"$ {current_price:,.2f}"
                     val_display = f"$ {current_val:,.2f}"
                     pnl_display = f"$ {pnl_usd:+,.2f}"
 
-                self.port_tree.insert(
-                    "", "end", iid=str(pid), tags=(tag,),
-                    values=(
-                        name or symbol, symbol,
-                        f"{qty:g}",
-                        currency,
-                        buy_display,
-                        f"{price_usd:,.4f}",
-                        akt_display,
-                        val_display,
-                        pnl_display,
-                        f"{pnl_pct:+.2f}%",
-                    ))
+                tree.insert("", "end", iid=str(pid), tags=(tag,),
+                            values=(name or symbol, symbol, f"{qty:g}", currency,
+                                    buy_display, f"{price_usd:,.4f}",
+                                    akt_display, val_display,
+                                    pnl_display, f"{pnl_pct:+.2f}%"))
             else:
                 total_current += invested_usd
-                self.port_tree.insert(
-                    "", "end", iid=str(pid),
-                    values=(name or symbol, symbol,
-                            f"{qty:g}", currency,
-                            buy_display, f"{price_usd:,.4f}",
-                            "N/A", "—", "—", "—"))
+                tree.insert("", "end", iid=str(pid),
+                            values=(name or symbol, symbol, f"{qty:g}", currency,
+                                    buy_display, f"{price_usd:,.4f}",
+                                    "N/A", "—", "—", "—"))
 
-        total_pnl = total_current - total_invested
+        # Summary line — P&L sign also inverted for shorts
+        total_pnl = (total_invested - total_current) if is_short \
+                    else (total_current - total_invested)
         total_pct = (total_pnl / total_invested * 100) if total_invested else 0
-        clr = GREEN if total_pnl >= 0 else RED
+        clr       = GREEN if total_pnl >= 0 else RED
 
-        # Build per-currency suffixes for summary line
         inv_parts = f"$ {total_invested:,.2f}"
         val_parts = f"$ {total_current:,.2f}"
         pnl_parts = f"{total_pnl:+,.2f} $"
@@ -1026,18 +1053,19 @@ class InvestmentAdvisor(tk.Tk):
             inv_parts += f" ({cur} {inv_local:,.2f})"
             if cur in currency_current:
                 cur_val = currency_current[cur]
-                cur_pnl = cur_val - inv_local
+                cur_pnl = (inv_local - cur_val) if is_short else (cur_val - inv_local)
                 val_parts += f" ({cur} {cur_val:,.2f})"
                 pnl_parts += f" ({cur} {cur_pnl:+,.2f})"
 
-        self.port_summary_lbl.configure(fg=clr, text=(
+        w["summary_lbl"].configure(fg=clr, text=(
             f"Zainwestowano: {inv_parts}  |  "
             f"Wartość: {val_parts}  |  "
             f"P&L: {pnl_parts} ({total_pct:+.2f}%)"
         ))
 
     def _quick_fetch_prices(self):
-        self._portfolio_status.configure(text="Pobieranie cen…")
+        active = self._get_active_port_type()
+        self.port_widgets[active]["status_lbl"].configure(text="Pobieranie cen…")
         self.set_busy(True, "Pobieranie cen…")
 
         def _fetch():
@@ -1046,10 +1074,10 @@ class InvestmentAdvisor(tk.Tk):
                 self.current_market_data.update(data)
                 self.after(0, self._refresh_portfolio)
                 self.after(0, lambda: self._update_price_tiles(data))
-                self.after(0, lambda: self._portfolio_status.configure(
+                self.after(0, lambda: self.port_widgets[active]["status_lbl"].configure(
                     text="Ceny zaktualizowane"))
             except Exception as exc:
-                self.after(0, lambda: self._portfolio_status.configure(
+                self.after(0, lambda: self.port_widgets[active]["status_lbl"].configure(
                     text=f"Błąd: {exc}"))
             finally:
                 self.set_busy(False, "Gotowy")
@@ -2336,9 +2364,11 @@ class InvestmentAdvisor(tk.Tk):
         self._populate_tile_placeholders(instruments)
 
         inst_names = [f"{i['name']} ({i['symbol']})" for i in instruments]
-        self.port_inst_cb["values"] = inst_names
-        if inst_names:
-            self.v_port_inst.set(inst_names[0])
+        for pt in self._port_tab_types:
+            w = self.port_widgets[pt]
+            w["inst_cb"]["values"] = inst_names
+            if inst_names:
+                w["v_inst"].set(inst_names[0])
 
         messagebox.showinfo("Zapisano", "Ustawienia zostały zapisane!")
 
