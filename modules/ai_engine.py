@@ -113,16 +113,34 @@ def run_analysis(config, market_summary, news_list, scraped_text="",
     """Wysyła dane do wybranego modelu AI i zwraca dict z kluczami:
     text, input_tokens, output_tokens."""
     prompt = config.get("prompt", "Przeanalizuj sytuację rynkową.")
+
+    # Buduj listę instrumentów raz — używana w dwóch miejscach
+    instrument_list_text = _build_instrument_list(
+        market_data or {}, config.get("instruments", []))
+
+    # Podstaw placeholder w system promptcie (dla nowych konfiguracji)
     if "{INSTRUMENT_LIST}" in prompt:
-        instrument_list = _build_instrument_list(
-            market_data or {}, config.get("instruments", []))
-        prompt = prompt.replace("{INSTRUMENT_LIST}", instrument_list)
+        prompt = prompt.replace("{INSTRUMENT_LIST}", instrument_list_text)
+
     if macro_text:
         full_message = _build_macro_prompt(
             market_summary, macro_text, scraped_text)
     else:
         full_message = _build_legacy_prompt(
             market_summary, news_list, scraped_text)
+
+    # Zawsze dołącz listę instrumentów do wiadomości użytkownika.
+    # Dzięki temu AI objął KAŻDY instrument niezależnie od wersji
+    # system promptu zapisanej w data/config.json.
+    if market_data:
+        full_message += (
+            "\n\n=== INSTRUMENTY UŻYTKOWNIKA – SEKCJA 4 (OBOWIĄZKOWE) ===\n"
+            "Sekcja 4 raportu MUSI zawierać osobną analizę dla KAŻDEGO "
+            "z poniższych instrumentów (kierunek krótkoterminowy, wpływ makro, "
+            "wpływ geopolityki, sentyment globalny, czynniki wrażliwości):\n"
+            f"{instrument_list_text}"
+        )
+
     return _run_provider(config, prompt, full_message)
 
 
