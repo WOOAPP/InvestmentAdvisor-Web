@@ -20,8 +20,10 @@ DEFAULT_INSTRUMENTS = [
     {"symbol": "^FTSE",     "name": "FTSE 100",      "category": "Akcje",        "source": "yfinance"},
     {"symbol": "bitcoin",   "name": "Bitcoin",       "category": "Krypto",       "source": "coingecko"},
     {"symbol": "ethereum",  "name": "Ethereum",      "category": "Krypto",       "source": "coingecko"},
+    {"symbol": "DX-Y.NYB",  "name": "US Dollar Index","category": "Forex",        "source": "yfinance"},
     {"symbol": "EURUSD=X",  "name": "EUR/USD",       "category": "Forex",        "source": "yfinance"},
-    {"symbol": "PLNUSD=X",  "name": "PLN/USD",       "category": "Forex",        "source": "yfinance"},
+    {"symbol": "USDPLN=X",  "name": "USD/PLN",       "category": "Forex",        "source": "yfinance"},
+    {"symbol": "EURPLN=X",  "name": "EUR/PLN",       "category": "Forex",        "source": "yfinance"},
     {"symbol": "GC=F",      "name": "Złoto",         "category": "Surowce",      "source": "yfinance"},
     {"symbol": "SI=F",      "name": "Srebro",        "category": "Surowce",      "source": "yfinance"},
     {"symbol": "CL=F",      "name": "Ropa Brent",    "category": "Surowce",      "source": "yfinance"},
@@ -36,7 +38,6 @@ DEFAULT_INSTRUMENTS = [
     {"symbol": "ZW=F",      "name": "Pszenica",      "category": "Surowce",      "source": "yfinance"},
     {"symbol": "ZS=F",      "name": "Soja",          "category": "Surowce",      "source": "yfinance"},
     {"symbol": "ZC=F",      "name": "Kukurydza",     "category": "Surowce",      "source": "yfinance"},
-    {"symbol": "DX-Y.NYB",  "name": "US Dollar Index","category": "Forex",       "source": "yfinance"},
 ]
 
 DEFAULT_CONFIG = {
@@ -112,7 +113,7 @@ DEFAULT_CONFIG = {
     "instruments_legacy": {
         "stocks": ["SPY", "QQQ", "WIG20.WA", "^GDAXI", "^N225", "^FTSE", "^DJI", "^HSI"],
         "crypto": ["BTC-USD", "ETH-USD"],
-        "forex": ["EURUSD=X", "PLNUSD=X", "DX-Y.NYB"],
+        "forex": ["DX-Y.NYB", "EURUSD=X", "USDPLN=X", "EURPLN=X"],
         "commodities": ["GC=F", "SI=F", "CL=F", "NG=F", "HG=F", "PA=F", "PL=F",
                         "ZW=F", "ZS=F", "ZC=F", "KC=F", "CC=F"]
     },
