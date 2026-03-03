@@ -97,7 +97,8 @@ def safe_get(url: str, timeout=DEFAULT_TIMEOUT, **kwargs) -> requests.Response:
         safe_url = _mask_url(url)
         status = getattr(getattr(exc, "response", None), "status_code", None)
         if status in HTTP_AUTH_ERROR_CODES:
-            logger.warning("HTTP %d dla %s", status, safe_url)
+            # 401/403 często oczekiwane (bot-rejection, JS SPA) – nie zaśmiecaj logów
+            logger.debug("HTTP %d dla %s", status, safe_url)
         else:
             logger.error("HTTP GET %s nie powiodło się: %s", safe_url, exc)
         raise

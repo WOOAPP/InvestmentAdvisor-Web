@@ -17,11 +17,28 @@ from constants import (
 )
 
 # ── COINGECKO CACHE ──
-_CG_PRICE_TTL      = 300   # 5 min — odświeżaj ceny co najwyżej co 5 min
+_CG_PRICE_TTL      = 600   # 10 min — free tier ~30 req/min, nie bijemy zbyt często
 _CG_SPARKLINE_TTL  = 3600  # 1 h  — sparkline zmienia się wolno (interwał dzienny)
 _cg_price_cache     = {}   # {coin_id: (data_dict, ts)}
 _cg_sparkline_cache = {}   # {coin_id: (list,      ts)}
 _cg_lock            = _threading.Lock()
+
+# ── COINGECKO RATE LIMITER ──
+# Free tier: ~30 req/min = 1 req/2s. Używamy 2.5s marginesu bezpieczeństwa.
+_CG_MIN_INTERVAL    = 2.5  # sekundy między requestami do CoinGecko
+_cg_last_req_ts     = 0.0
+_cg_req_lock        = _threading.Lock()
+
+
+def _cg_rate_wait():
+    """Serializuje requesty do CoinGecko i pilnuje minimalnego odstępu."""
+    global _cg_last_req_ts
+    with _cg_req_lock:
+        now = _time.time()
+        wait = _CG_MIN_INTERVAL - (now - _cg_last_req_ts)
+        if wait > 0:
+            _time.sleep(wait)
+        _cg_last_req_ts = _time.time()
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +100,7 @@ def _cg_fetch_prices_batch(coin_ids):
     Zwraca dict {coin_id: {usd, usd_24h_change, usd_24h_vol}} lub {} przy błędzie.
     Wyniki trafiają do _cg_price_cache.
     """
+    _cg_rate_wait()
     ids_str = ",".join(coin_ids)
     url = (f"https://api.coingecko.com/api/v3/simple/price"
            f"?ids={ids_str}&vs_currencies=usd"
@@ -103,6 +121,7 @@ def _cg_get_sparkline(coin_id):
     if cached and (_time.time() - cached[1]) < _CG_SPARKLINE_TTL:
         return cached[0]
     try:
+        _cg_rate_wait()
         chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
                      f"/market_chart?vs_currency=usd&days=5&interval=daily")
         cr = safe_get(chart_url)
@@ -300,6 +319,7 @@ def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
     cfg = _SPARK_CFG.get(timeframe, _SPARK_CFG["1h"])
     try:
         if source == "coingecko":
+            _cg_rate_wait()
             coin_id = symbol.lower()
             url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
                    f"/market_chart?vs_currency=usd&days={cfg['cg_days']}")
