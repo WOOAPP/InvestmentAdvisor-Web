@@ -233,6 +233,7 @@ def get_available_models(provider):
             "claude-haiku-4-5-20251001"
         ],
         "openai": [
+            "gpt-5.2",
             "gpt-4o",
             "gpt-4o-mini",
             "gpt-4.1",
