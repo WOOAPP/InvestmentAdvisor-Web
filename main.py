@@ -1256,7 +1256,8 @@ class InvestmentAdvisor(tk.Tk):
     # ── Auto-odświeżanie cen co 5 sekund ──────────────────────
     def _start_price_autorefresh(self):
         self._price_fetch_in_progress = False
-        self._autorefresh_prices()
+        # Opóźniony start – czekamy aż mainloop ruszy
+        self.after(2000, self._autorefresh_prices)
 
     def _autorefresh_prices(self):
         if self._shutting_down:
@@ -1271,8 +1272,11 @@ class InvestmentAdvisor(tk.Tk):
             data = get_all_instruments(self.config_data.get("instruments", []))
             self.current_market_data.update(data)
             if not self._shutting_down:
-                self.after(0, lambda: self._update_price_tiles(data))
-                self.after(0, self._refresh_portfolio)
+                try:
+                    self.after(0, lambda: self._update_price_tiles(data))
+                    self.after(0, self._refresh_portfolio)
+                except RuntimeError:
+                    pass
         except Exception:
             pass
         finally:
