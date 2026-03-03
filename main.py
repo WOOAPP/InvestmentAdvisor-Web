@@ -209,6 +209,16 @@ class InvestmentAdvisor(tk.Tk):
         self._busy_buttons = [self.analyze_btn, self.fetch_btn, self.export_btn]
         self._spinner = BusySpinner(self, self.status_label)
 
+        # ── Token / model info bar – always visible, outside PanedWindow ──
+        self.token_info_frame = tk.Frame(right, bg="#16161e",
+                                         highlightbackground=GRAY,
+                                         highlightthickness=1)
+        self.token_info_frame.pack(fill="x", pady=(0, 4))
+        self.token_line_label = tk.Label(
+            self.token_info_frame, text="", bg="#16161e", fg="#FFD54F",
+            font=("Segoe UI", 8, "bold"), anchor="w")
+        self.token_line_label.pack(fill="x", padx=6, pady=4)
+
         # ── PanedWindow: analysis (top) + chat (bottom) ──
         paned = tk.PanedWindow(right, orient="vertical", bg=BG,
                                 sashwidth=5, sashrelief="flat")
@@ -243,16 +253,6 @@ class InvestmentAdvisor(tk.Tk):
             analysis_frame, text="", bg=BG, fg=GREEN,
             font=("Segoe UI", 8), anchor="w")
         self.report_date_label.pack(fill="x", padx=8, pady=(2, 0))
-
-        # Token / model info bar — entire line in yellow (#FFD54F)
-        self.token_info_frame = tk.Frame(analysis_frame, bg="#16161e",
-                                         highlightbackground=GRAY,
-                                         highlightthickness=1)
-        self.token_info_frame.pack(fill="x", padx=8, pady=(2, 4))
-        self.token_line_label = tk.Label(
-            self.token_info_frame, text="", bg="#16161e", fg="#FFD54F",
-            font=("Segoe UI", 8, "bold"), anchor="w")
-        self.token_line_label.pack(fill="x", padx=6, pady=4)
 
         # — Chat panel —
         self.chat_frame = tk.LabelFrame(
