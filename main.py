@@ -3,6 +3,9 @@ from tkinter import ttk, scrolledtext, messagebox
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import struct
+import zlib
+import base64
 import schedule
 import time
 import sys
@@ -47,6 +50,63 @@ BTN_BG  = "#313244"
 SUBTEXT = "#7f849c"   # Catppuccin overlay1 – czytelny tekst pomocniczy
 
 
+# ── ICON GENERATOR ────────────────────────────────────────────────────────────
+
+def _make_dollar_icon_png(size: int = 48) -> bytes:
+    """Generuje PNG z symbolem '$' (paleta Catppuccin Mocha). Tylko stdlib."""
+    _BG = (30,  30,  46)    # #1e1e2e
+    _FG = (137, 180, 250)   # #89b4fa
+
+    # Pikselowy glyph '$' (8 × 12), znak '1' = _FG, '0' = _BG
+    # Pionowa kreska na kolumnach 3-4 przez cały znak
+    GLYPH = [
+        "00011000",   # |    górna kreska pionowa
+        "00011000",   # |
+        "01111110",   # ─── górna pozioma kreska
+        "11011000",   # lewa krzywa  +  kreska pionowa
+        "11011000",   #
+        "01111100",   # przejście środkowe (lewa-dół / prawa-góra)
+        "00011110",   #
+        "00011011",   # prawa krzywa  +  kreska pionowa
+        "00011011",   #
+        "01111110",   # ─── dolna pozioma kreska
+        "00011000",   # |    dolna kreska pionowa
+        "00011000",   # |
+    ]
+
+    G_W, G_H = len(GLYPH[0]), len(GLYPH)
+    scale = min(size * 0.82 / G_W, size * 0.88 / G_H)
+    dw = int(G_W * scale)
+    dh = int(G_H * scale)
+    ox = (size - dw) // 2
+    oy = (size - dh) // 2
+
+    def _px(x, y):
+        gx = int((x - ox) / scale)
+        gy = int((y - oy) / scale)
+        if 0 <= gx < G_W and 0 <= gy < G_H and GLYPH[gy][gx] == "1":
+            return _FG
+        return _BG
+
+    # Surowe dane PNG: każdy wiersz poprzedza filtr 0x00 (None)
+    raw = b"".join(
+        b"\x00" + b"".join(bytes(_px(x, y)) for x in range(size))
+        for y in range(size)
+    )
+
+    def _chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return (struct.pack(">I", len(data))
+                + body
+                + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)  # RGB 8-bit
+    return (b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", zlib.compress(raw))
+            + _chunk(b"IEND", b""))
+
+
 class InvestmentAdvisor(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -54,6 +114,7 @@ class InvestmentAdvisor(tk.Tk):
         self.geometry("1280x800")
         self.minsize(1024, 700)
         self.configure(bg=BG)
+        self._setup_icon()
         self.config_data = load_config()
         self.current_analysis = ""
         self.current_market_data = {}
@@ -90,6 +151,15 @@ class InvestmentAdvisor(tk.Tk):
         self._start_price_autorefresh()
         self._refresh_sparklines_async()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _setup_icon(self):
+        """Ustawia ikonę aplikacji (pasek zadań + nagłówek okna) z symbolem '$'."""
+        try:
+            png = _make_dollar_icon_png(48)
+            self._app_icon = tk.PhotoImage(data=base64.b64encode(png).decode())
+            self.iconphoto(True, self._app_icon)
+        except Exception as e:
+            logging.getLogger(__name__).warning("App icon setup failed: %s", e)
 
     # ── Mousewheel scrolling helper ───────────────────────────
     def _bind_mousewheel(self, area_widget, scroll_target):
