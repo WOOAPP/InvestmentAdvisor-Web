@@ -630,12 +630,20 @@ class InvestmentAdvisor(tk.Tk):
             pass
 
     def _draw_sparkline(self, canvas_w, data, color):
-        canvas_w.update_idletasks()
-        w = canvas_w.winfo_width() or 130
-        h = canvas_w.winfo_height() or 26
+        # Bez update_idletasks() – blokuje UI przy każdym kafelku
+        w = canvas_w.winfo_width()
+        if w <= 1:
+            w = 130
+        h = canvas_w.winfo_height()
+        if h <= 1:
+            h = 26
         canvas_w.delete("all")
         if len(data) < 2:
             return
+        # Downsample – canvas 130px szeroki, >60 punktów to marnotrawstwo
+        if len(data) > 60:
+            step = len(data) / 60
+            data = [data[int(i * step)] for i in range(60)]
         mn, mx = min(data), max(data)
         rng = mx - mn
         if rng == 0:
@@ -644,11 +652,12 @@ class InvestmentAdvisor(tk.Tk):
             return
         margin = 2
         pts = []
+        n = len(data)
         for i, v in enumerate(data):
-            x = margin + int(i / (len(data) - 1) * (w - 2 * margin))
+            x = margin + int(i / (n - 1) * (w - 2 * margin))
             y = (h - margin) - int((v - mn) / rng * (h - 2 * margin))
             pts.extend([x, y])
-        canvas_w.create_line(pts, fill=color, width=1.5, smooth=True)
+        canvas_w.create_line(pts, fill=color, width=1.5)
 
     # ── Tile click handling (single → profile, double → charts) ──
 
@@ -722,6 +731,20 @@ class InvestmentAdvisor(tk.Tk):
                 return symbol, []
             return symbol, get_sparkline_by_timeframe(symbol, timeframe, source)
 
+        def _draw_one(symbol):
+            """Rysuje sparkline dla jednego symbolu – wywoływane z głównego wątku."""
+            data = self._spark_cache.get(symbol)
+            if not data:
+                return
+            for tile_dict in [self._tile_widgets, self._market_popup_tile_widgets]:
+                w = tile_dict.get(symbol)
+                if not w:
+                    continue
+                d = self.current_market_data.get(symbol, {})
+                color = GREEN if d.get("change_pct", 0) >= 0 else RED
+                self._draw_sparkline(w["spark"], data, color)
+                self._spark_last_color[symbol] = color
+
         try:
             with ThreadPoolExecutor(max_workers=8) as ex:
                 futures = {ex.submit(_fetch, inst): inst for inst in instruments}
@@ -730,15 +753,16 @@ class InvestmentAdvisor(tk.Tk):
                         symbol, data = future.result()
                         if data:
                             self._spark_cache[symbol] = data
+                            # Rysuj od razu po pobraniu – nie czekaj na resztę
+                            if not self._shutting_down:
+                                try:
+                                    self.after(0, lambda s=symbol: _draw_one(s))
+                                except RuntimeError:
+                                    pass
                         # Gdy fetch zwróci [] (np. stooq / WIG intraday), zachowujemy
                         # poprzedni wpis w cache — wykres nie znika podczas przełączania.
                     except Exception as e:
                         logger.warning("sparkline fetch error: %s", e)
-            if not self._shutting_down:
-                try:
-                    self.after(0, self._redraw_all_sparklines)
-                except RuntimeError:
-                    pass
         except Exception as e:
             logger.warning("_refresh_sparklines_worker failed: %s", e)
         finally:
