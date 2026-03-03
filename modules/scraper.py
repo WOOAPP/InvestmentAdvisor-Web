@@ -2,8 +2,9 @@ import logging
 import sys
 import os
 import threading
+import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
 from modules.url_validator import (
@@ -64,14 +65,18 @@ def scrape_url(url, max_chars=SCRAPER_DEFAULT_MAX_CHARS):
         )
         r.raise_for_status()
 
-        # Limit rozmiaru odpowiedzi
+        # Limit rozmiaru odpowiedzi + łączny czas pobierania
         content_parts = []
         downloaded = 0
+        deadline = time.monotonic() + READ_TIMEOUT * 2  # max łączny czas streamu
         for chunk in r.iter_content(chunk_size=SCRAPER_CHUNK_SIZE, decode_unicode=False):
             downloaded += len(chunk)
             if downloaded > MAX_RESPONSE_BYTES:
                 logger.warning("Przekroczono limit %d bajtów dla %s",
                                MAX_RESPONSE_BYTES, url)
+                break
+            if time.monotonic() > deadline:
+                logger.warning("Przekroczono łączny czas pobierania dla %s", url)
                 break
             content_parts.append(chunk)
         raw_html = b"".join(content_parts)
@@ -143,15 +148,24 @@ def scrape_all(urls, max_chars_per_site=SCRAPER_MAX_CHARS_PER_SITE, trusted_doma
                 executor.submit(scrape_url, url, max_chars_per_site): url
                 for url in clean_urls
             }
-            for future in as_completed(future_to_url,
-                                       timeout=per_url_timeout):
-                url = future_to_url[future]
-                try:
-                    text = future.result()
-                except Exception as exc:
-                    text = f"[Błąd pobierania {url}: {exc}]"
-                    logger.warning(text)
-                results_map[url] = text
+            try:
+                for future in as_completed(future_to_url,
+                                           timeout=per_url_timeout):
+                    url = future_to_url[future]
+                    try:
+                        text = future.result()
+                    except Exception as exc:
+                        text = f"[Błąd pobierania {url}: {exc}]"
+                        logger.warning(text)
+                    results_map[url] = text
+            except FuturesTimeoutError:
+                for future, url in future_to_url.items():
+                    future.cancel()
+                    if url not in results_map:
+                        msg = (f"[Pominięto {url}: "
+                               f"brak odpowiedzi w {per_url_timeout}s]")
+                        logger.warning(msg)
+                        results_map[url] = msg
 
     lines = results_map.pop(None, [])
     for url in clean_urls:
