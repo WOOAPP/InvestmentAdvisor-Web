@@ -15,7 +15,8 @@ from config import load_config, save_config, mask_key, get_api_key
 from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd
 from modules.openai_pricing import get_model_cost, refresh_pricing
 from modules.ai_engine import (run_analysis, run_chat, get_available_models,
-                               generate_instrument_profile)
+                               generate_instrument_profile,
+                               _build_instrument_list)
 from modules.database import (
     save_report, get_reports, get_report_by_id, get_latest_report,
     save_market_snapshot, get_unseen_alerts, mark_alerts_seen, delete_report,
@@ -2397,9 +2398,18 @@ class InvestmentAdvisor(tk.Tk):
             if not system:
                 system = "Jesteś asystentem inwestycyjnym. Odpowiadaj po polsku."
             system += "\n"
+            if self.current_market_data:
+                instrument_list = _build_instrument_list(
+                    self.current_market_data,
+                    self.config_data.get("instruments", []))
+                system += (
+                    "\nPoniżej znajdują się aktualne ceny instrumentów obserwowanych "
+                    "przez użytkownika (dane z ostatniej analizy):\n\n"
+                    f"--- INSTRUMENTY ---\n{instrument_list}\n--- KONIEC ---"
+                )
             if self.current_analysis:
                 system += (
-                    "\nPoniżej znajduje się ostatni raport analizy rynkowej, "
+                    "\n\nPoniżej znajduje się ostatni raport analizy rynkowej, "
                     "który przygotowałeś. Użytkownik chce o nim porozmawiać.\n\n"
                     f"--- RAPORT ---\n{self.current_analysis}\n--- KONIEC RAPORTU ---"
                 )
