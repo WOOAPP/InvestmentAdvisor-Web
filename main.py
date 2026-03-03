@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import schedule
 import time
 import sys
@@ -80,6 +81,7 @@ class InvestmentAdvisor(tk.Tk):
         self._spark_timeframe = "1h"         # aktywny przedział mini wykresu
         self._spark_cache = {}               # {symbol: [prices]}
         self._spark_fetching = False
+        self._spark_last_color = {}          # {symbol: last drawn color}
         self._build_ui()
         threading.Thread(target=refresh_pricing, daemon=True).start()
         self._autoload_last_report()
@@ -504,7 +506,12 @@ class InvestmentAdvisor(tk.Tk):
 
                 display_spark = self._spark_cache.get(symbol) or sparkline
                 if display_spark:
-                    self._draw_sparkline(w["spark"], display_spark, color)
+                    # Przerysuj tylko gdy kolor się zmienił lub sparkline nie był jeszcze rysowany.
+                    # Gdy cache jest wypełniony, _redraw_all_sparklines przejmuje odświeżanie.
+                    if (color != self._spark_last_color.get(symbol)
+                            or symbol not in self._spark_cache):
+                        self._draw_sparkline(w["spark"], display_spark, color)
+                        self._spark_last_color[symbol] = color
 
     def _flash_name_lbl(self, lbl, color):
         """Podświetla etykietę nazwy na chwilę, potem przywraca tło BG2."""
@@ -586,7 +593,7 @@ class InvestmentAdvisor(tk.Tk):
     def _set_spark_timeframe(self, timeframe):
         """Ustawia przedział mini wykresu i odświeża sparklines dla wszystkich kafelków."""
         self._spark_timeframe = timeframe
-        self._spark_cache.clear()
+        # Nie czyścimy cache — stare sparklines zostają widoczne podczas ładowania nowych.
         self._refresh_sparklines_async()
 
     def _refresh_sparklines_async(self):
@@ -597,25 +604,35 @@ class InvestmentAdvisor(tk.Tk):
         threading.Thread(target=self._refresh_sparklines_worker, daemon=True).start()
 
     def _refresh_sparklines_worker(self):
+        timeframe = self._spark_timeframe  # snapshot — unikamy race condition
+        instruments = self.config_data.get("instruments", [])
+
+        def _fetch(inst):
+            symbol = inst.get("symbol", "")
+            source = inst.get("source", "yfinance")
+            if not symbol:
+                return symbol, []
+            return symbol, get_sparkline_by_timeframe(symbol, timeframe, source)
+
         try:
-            instruments = self.config_data.get("instruments", [])
-            new_cache = {}
-            for inst in instruments:
-                symbol = inst.get("symbol", "")
-                source = inst.get("source", "yfinance")
-                if not symbol:
-                    continue
-                data = get_sparkline_by_timeframe(symbol, self._spark_timeframe, source)
-                if data:
-                    new_cache[symbol] = data
-            self._spark_cache.update(new_cache)
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                futures = {ex.submit(_fetch, inst): inst for inst in instruments}
+                for future in as_completed(futures):
+                    try:
+                        symbol, data = future.result()
+                        if data:
+                            self._spark_cache[symbol] = data
+                        # Gdy fetch zwróci [] (np. stooq / WIG intraday), zachowujemy
+                        # poprzedni wpis w cache — wykres nie znika podczas przełączania.
+                    except Exception as e:
+                        logger.warning("sparkline fetch error: %s", e)
             if not self._shutting_down:
                 try:
                     self.after(0, self._redraw_all_sparklines)
                 except RuntimeError:
                     pass
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_refresh_sparklines_worker failed: %s", e)
         finally:
             self._spark_fetching = False
 
@@ -630,6 +647,7 @@ class InvestmentAdvisor(tk.Tk):
                 change_pct = d.get("change_pct", 0)
                 color = GREEN if change_pct >= 0 else RED
                 self._draw_sparkline(w["spark"], spark_data, color)
+                self._spark_last_color[symbol] = color  # synchronizuj z hot-path
 
     def _show_toast(self, message, color=None, duration=2500):
         """Show a subtle auto-disappearing notification in the bottom-right corner."""

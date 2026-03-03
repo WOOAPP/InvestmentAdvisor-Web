@@ -283,19 +283,12 @@ def get_all_instruments(instruments_config):
     return results
 
 # ── SPARKLINE PO PRZEDZIALE CZASOWYM ──
-_SPARK_YF_CFG = {
-    "1m":  ("1d",  "1m"),
-    "15m": ("5d",  "15m"),
-    "1h":  ("5d",  "1h"),
-    "6h":  ("30d", "1h"),
-    "24h": ("60d", "1d"),
-}
-_SPARK_CG_DAYS = {
-    "1m":  "1",
-    "15m": "1",
-    "1h":  "1",
-    "6h":  "7",
-    "24h": "30",
+_SPARK_CFG = {
+    "1m":  {"yf_period": "1d",  "yf_interval": "1m",  "cg_days": "1"},
+    "15m": {"yf_period": "5d",  "yf_interval": "15m", "cg_days": "1"},
+    "1h":  {"yf_period": "5d",  "yf_interval": "1h",  "cg_days": "1"},
+    "6h":  {"yf_period": "30d", "yf_interval": "1h",  "cg_days": "7"},
+    "24h": {"yf_period": "60d", "yf_interval": "1d",  "cg_days": "30"},
 }
 
 def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
@@ -304,22 +297,20 @@ def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
     source: 'yfinance', 'coingecko', 'stooq'
     timeframe: '1m', '15m', '1h', '6h', '24h'
     """
+    cfg = _SPARK_CFG.get(timeframe, _SPARK_CFG["1h"])
     try:
         if source == "coingecko":
             coin_id = symbol.lower()
-            days = _SPARK_CG_DAYS.get(timeframe, "1")
             url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
-                   f"/market_chart?vs_currency=usd&days={days}")
+                   f"/market_chart?vs_currency=usd&days={cfg['cg_days']}")
             r = safe_get(url)
-            prices = [round(float(p[1]), PRICE_ROUND_DECIMALS)
-                      for p in r.json().get("prices", [])]
-            return prices
+            return [round(float(p[1]), PRICE_ROUND_DECIMALS)
+                    for p in r.json().get("prices", [])]
         elif source == "stooq":
             return []   # stooq nie wspiera danych intraday
         else:
-            period, interval = _SPARK_YF_CFG.get(timeframe, ("5d", "1h"))
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=period, interval=interval)
+            hist = ticker.history(period=cfg["yf_period"], interval=cfg["yf_interval"])
             if hist.empty:
                 return []
             closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
