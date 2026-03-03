@@ -20,7 +20,7 @@ from constants import (
 _PROVIDER_DEFAULTS = {
     "anthropic":   {"key": "anthropic",   "model": "claude-opus-4-6",
                     "env": "ANTHROPIC_API_KEY"},
-    "openai":      {"key": "openai",      "model": "gpt-4o",
+    "openai":      {"key": "openai",      "model": "o3-mini",
                     "env": "OPENAI_API_KEY"},
     "openrouter":  {"key": "openrouter",  "model": "openai/gpt-4o",
                     "env": "OPENROUTER_API_KEY",
@@ -175,8 +175,8 @@ def run_chat(config, messages, system_prompt=""):
 
     Always returns a plain string (backward-compatible).
     """
-    provider = config.get("chat_provider") or config.get("ai_provider", "anthropic")
-    model = config.get("chat_model") or config.get("ai_model", "claude-sonnet-4-6")
+    provider = config.get("chat_provider") or config.get("ai_provider", "openai")
+    model = config.get("chat_model") or config.get("ai_model", "gpt-4o")
 
     pcfg = _PROVIDER_DEFAULTS.get(provider)
     if not pcfg:

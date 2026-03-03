@@ -46,10 +46,10 @@ DEFAULT_CONFIG = {
         "anthropic": "",
         "openrouter": "",
     },
-    "ai_provider": "anthropic",
-    "ai_model": "claude-opus-4-6",
-    "chat_provider": "anthropic",
-    "chat_model": "claude-sonnet-4-6",
+    "ai_provider": "openai",
+    "ai_model": "o3-mini",
+    "chat_provider": "openai",
+    "chat_model": "gpt-4o",
     "chat_prompt": (
         "Jesteś strategicznym asystentem inwestycyjnym.\n"
         "Twoim zadaniem jest prowadzenie merytorycznej, pogłębionej dyskusji na temat wygenerowanego raportu makroekonomiczno-geopolitycznego.\n"
