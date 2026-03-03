@@ -32,14 +32,13 @@ _PROVIDER_DEFAULTS = {
 def _openai_token_kwarg(model: str, max_tokens: int) -> dict:
     """Return the correct token-limit kwarg for the given OpenAI model.
 
-    Reasoning and newer models (o-series, gpt-4.5+, gpt-5+) require
+    Reasoning and newer models (o-series, gpt-4.1+) require
     'max_completion_tokens'; older models use 'max_tokens'.
     """
     m = model.lower()
     use_completion = (
         m.startswith(("o1", "o3", "o4"))
-        or "gpt-4.5" in m
-        or "gpt-5" in m
+        or "gpt-4.1" in m
     )
     return {"max_completion_tokens" if use_completion else "max_tokens": max_tokens}
 
@@ -234,21 +233,23 @@ def get_available_models(provider):
             "claude-haiku-4-5-20251001"
         ],
         "openai": [
-            "gpt-5.2",
             "gpt-4o",
             "gpt-4o-mini",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
             "gpt-4-turbo",
-            "gpt-3.5-turbo",
+            "o4-mini",
+            "o3",
+            "o3-mini",
             "o1",
             "o1-mini",
-            "o1-preview",
-            "o3-mini",
         ],
         "openrouter": [
             "anthropic/claude-sonnet-4",
             "anthropic/claude-haiku-4",
-            "openai/gpt-5.2",
             "openai/gpt-4o",
+            "openai/gpt-4.1",
             "openai/gpt-4o-mini",
             "google/gemini-2.0-flash-001",
             "google/gemini-2.5-pro-preview",

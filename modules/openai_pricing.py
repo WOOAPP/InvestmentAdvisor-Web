@@ -28,28 +28,26 @@ PRICING_URL = "https://openai.com/api/pricing/"
 #   OpenAI  – https://openai.com/api/pricing/
 #   Anthropic – https://docs.anthropic.com/en/docs/about-claude/pricing
 _FALLBACK_PRICING = {
-    # OpenAI – GPT-5 family
-    "gpt-5.2":        {"input": 1.75,  "output": 14.00},
-    "gpt-5":          {"input": 1.25,  "output": 10.00},
-    "gpt-5-mini":     {"input": 0.30,  "output": 1.20},
     # OpenAI – GPT-4o family
+    # Source: openai.com/api/pricing (March 2026)
     "gpt-4o":         {"input": 2.50,  "output": 10.00},
     "gpt-4o-mini":    {"input": 0.15,  "output": 0.60},
-    # OpenAI – GPT-4.1 family
+    # OpenAI – GPT-4.1 family (released 2026)
     "gpt-4.1":        {"input": 2.00,  "output": 8.00},
     "gpt-4.1-mini":   {"input": 0.40,  "output": 1.60},
     "gpt-4.1-nano":   {"input": 0.10,  "output": 0.40},
-    # OpenAI – older
+    # OpenAI – legacy
     "gpt-4-turbo":    {"input": 10.00, "output": 30.00},
     "gpt-3.5-turbo":  {"input": 0.50,  "output": 1.50},
-    # OpenAI – o-series (reasoning)
+    # OpenAI – o-series reasoning models
     "o1":             {"input": 15.00, "output": 60.00},
-    "o1-mini":        {"input": 1.10,  "output": 4.40},
     "o1-preview":     {"input": 15.00, "output": 60.00},
-    "o3":             {"input": 0.40,  "output": 1.60},
+    "o1-mini":        {"input": 3.00,  "output": 12.00},
+    "o3":             {"input": 2.00,  "output": 8.00},
     "o3-mini":        {"input": 1.10,  "output": 4.40},
     "o4-mini":        {"input": 1.10,  "output": 4.40},
-    # Anthropic
+    # Anthropic – Claude 4.x series
+    # Source: platform.claude.com/docs/en/about-claude/pricing (March 2026)
     "claude-opus-4-6":           {"input": 5.00,  "output": 25.00},
     "claude-sonnet-4-6":         {"input": 3.00,  "output": 15.00},
     "claude-haiku-4-5-20251001": {"input": 1.00,  "output": 5.00},
