@@ -151,10 +151,6 @@ class InvestmentAdvisor(tk.Tk):
         self.notebook.add(self.tab_history,    text="  📜  Historia  ")
         self.notebook.add(self.tab_settings,   text="  ⚙  Ustawienia  ")
 
-        self._prev_tab_idx = 0
-        self._tab_change_locked = False
-        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_change)
-
         self._build_dashboard()
         self._build_portfolio_tab()
         self._build_calendar_tab()
@@ -163,22 +159,23 @@ class InvestmentAdvisor(tk.Tk):
         self._build_settings_tab()
 
     # ═══════════════════════════════════════
-    # OCHRONA HASŁEM – USTAWIENIA
+    # OCHRONA HASŁEM – PROMPTY
     # ═══════════════════════════════════════
     _SETTINGS_PASSWORD = "666"
 
-    def _on_tab_change(self, event):
-        if self._tab_change_locked:
+    def _on_prompts_tab_change(self, event):
+        if self._prompts_tab_locked:
             return
-        selected = self.notebook.index(self.notebook.select())
-        settings_idx = self.notebook.index(self.tab_settings)
-        if selected == settings_idx:
+        nb = self._settings_nb
+        selected = nb.index(nb.select())
+        prompts_idx = nb.index(self._tab_prompts)
+        if selected == prompts_idx:
             if not self._verify_settings_password():
-                self._tab_change_locked = True
-                self.notebook.select(self._prev_tab_idx)
-                self._tab_change_locked = False
+                self._prompts_tab_locked = True
+                nb.select(self._prompts_prev_idx)
+                self._prompts_tab_locked = False
                 return
-        self._prev_tab_idx = selected
+        self._prompts_prev_idx = selected
 
     def _verify_settings_password(self):
         dlg = tk.Toplevel(self)
@@ -2171,6 +2168,12 @@ class InvestmentAdvisor(tk.Tk):
         settings_nb.add(tab_general,     text="  ⚙  Ogólne  ")
         settings_nb.add(tab_instruments, text="  📊  Instrumenty  ")
         settings_nb.add(tab_prompts,     text="  📝  Prompty  ")
+
+        self._settings_nb       = settings_nb
+        self._tab_prompts       = tab_prompts
+        self._prompts_prev_idx  = 0
+        self._prompts_tab_locked = False
+        settings_nb.bind("<<NotebookTabChanged>>", self._on_prompts_tab_change)
 
         inner_general     = self._make_scrollable_inner(tab_general)
         inner_instruments = self._make_scrollable_inner(tab_instruments)
