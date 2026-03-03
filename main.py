@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 from config import load_config, save_config, mask_key, get_api_key
-from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd
+from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd, get_sparkline_by_timeframe
 from modules.openai_pricing import get_model_cost, refresh_pricing
 from modules.ai_engine import (run_analysis, run_chat, get_available_models,
                                generate_instrument_profile,
@@ -77,12 +77,16 @@ class InvestmentAdvisor(tk.Tk):
         self._chat_extra_displays = []   # extra chat display widgets (popups)
         self._market_popup_tile_widgets = {}  # tile widgets in market popup
         self._prev_prices = {}               # {symbol: last_known_price} dla efektu flash
+        self._spark_timeframe = "1h"         # aktywny przedział mini wykresu
+        self._spark_cache = {}               # {symbol: [prices]}
+        self._spark_fetching = False
         self._build_ui()
         threading.Thread(target=refresh_pricing, daemon=True).start()
         self._autoload_last_report()
         self._start_scheduler()
         self._check_alerts()
         self._start_price_autorefresh()
+        self._refresh_sparklines_async()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── Mousewheel scrolling helper ───────────────────────────
@@ -498,8 +502,9 @@ class InvestmentAdvisor(tk.Tk):
                     self._flash_name_lbl(w["name_lbl"], flash_col)
                 self._prev_prices[symbol] = price
 
-                if sparkline:
-                    self._draw_sparkline(w["spark"], sparkline, color)
+                display_spark = self._spark_cache.get(symbol) or sparkline
+                if display_spark:
+                    self._draw_sparkline(w["spark"], display_spark, color)
 
     def _flash_name_lbl(self, lbl, color):
         """Podświetla etykietę nazwy na chwilę, potem przywraca tło BG2."""
@@ -558,7 +563,73 @@ class InvestmentAdvisor(tk.Tk):
             label=f"💼  Dodaj do portfela — {name}",
             command=lambda: self._open_add_to_portfolio_dialog(symbol)
         )
+
+        menu.add_separator()
+
+        tf_menu = tk.Menu(menu, tearoff=0, bg=BG2, fg=FG,
+                          activebackground=ACCENT, activeforeground=BG,
+                          font=("Segoe UI", 10), relief="flat", bd=0)
+        for tf_key, tf_label in [("1m", "1 minuta"), ("15m", "15 minut"),
+                                  ("1h", "1 godzina"), ("6h", "6 godzin"),
+                                  ("24h", "24 godziny")]:
+            check = "✓  " if tf_key == self._spark_timeframe else "    "
+            tf_menu.add_command(
+                label=f"{check}{tf_label}",
+                command=lambda k=tf_key: self._set_spark_timeframe(k)
+            )
+        menu.add_cascade(label="📊  Zakres mini wykresu", menu=tf_menu)
+
         menu.tk_popup(event.x_root, event.y_root)
+
+    # ── Sparkline timeframe ──────────────────────────────────────
+
+    def _set_spark_timeframe(self, timeframe):
+        """Ustawia przedział mini wykresu i odświeża sparklines dla wszystkich kafelków."""
+        self._spark_timeframe = timeframe
+        self._spark_cache.clear()
+        self._refresh_sparklines_async()
+
+    def _refresh_sparklines_async(self):
+        """Uruchamia pobieranie sparklines w tle (tylko jedna instancja naraz)."""
+        if self._spark_fetching:
+            return
+        self._spark_fetching = True
+        threading.Thread(target=self._refresh_sparklines_worker, daemon=True).start()
+
+    def _refresh_sparklines_worker(self):
+        try:
+            instruments = self.config_data.get("instruments", [])
+            new_cache = {}
+            for inst in instruments:
+                symbol = inst.get("symbol", "")
+                source = inst.get("source", "yfinance")
+                if not symbol:
+                    continue
+                data = get_sparkline_by_timeframe(symbol, self._spark_timeframe, source)
+                if data:
+                    new_cache[symbol] = data
+            self._spark_cache.update(new_cache)
+            if not self._shutting_down:
+                try:
+                    self.after(0, self._redraw_all_sparklines)
+                except RuntimeError:
+                    pass
+        except Exception:
+            pass
+        finally:
+            self._spark_fetching = False
+
+    def _redraw_all_sparklines(self):
+        """Przerysowuje sparklines na wszystkich kafelkach z aktualnego cache."""
+        for tile_dict in [self._tile_widgets, self._market_popup_tile_widgets]:
+            for symbol, w in tile_dict.items():
+                spark_data = self._spark_cache.get(symbol)
+                if not spark_data:
+                    continue
+                d = self.current_market_data.get(symbol, {})
+                change_pct = d.get("change_pct", 0)
+                color = GREEN if change_pct >= 0 else RED
+                self._draw_sparkline(w["spark"], spark_data, color)
 
     def _show_toast(self, message, color=None, duration=2500):
         """Show a subtle auto-disappearing notification in the bottom-right corner."""

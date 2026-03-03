@@ -282,6 +282,52 @@ def get_all_instruments(instruments_config):
 
     return results
 
+# ── SPARKLINE PO PRZEDZIALE CZASOWYM ──
+_SPARK_YF_CFG = {
+    "1m":  ("1d",  "1m"),
+    "15m": ("5d",  "15m"),
+    "1h":  ("5d",  "1h"),
+    "6h":  ("30d", "1h"),
+    "24h": ("60d", "1d"),
+}
+_SPARK_CG_DAYS = {
+    "1m":  "1",
+    "15m": "1",
+    "1h":  "1",
+    "6h":  "7",
+    "24h": "30",
+}
+
+def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
+    """Zwraca listę cen (sparkline) dla danego przedziału czasowego.
+
+    source: 'yfinance', 'coingecko', 'stooq'
+    timeframe: '1m', '15m', '1h', '6h', '24h'
+    """
+    try:
+        if source == "coingecko":
+            coin_id = symbol.lower()
+            days = _SPARK_CG_DAYS.get(timeframe, "1")
+            url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+                   f"/market_chart?vs_currency=usd&days={days}")
+            r = safe_get(url)
+            prices = [round(float(p[1]), PRICE_ROUND_DECIMALS)
+                      for p in r.json().get("prices", [])]
+            return prices
+        elif source == "stooq":
+            return []   # stooq nie wspiera danych intraday
+        else:
+            period, interval = _SPARK_YF_CFG.get(timeframe, ("5d", "1h"))
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=period, interval=interval)
+            if hist.empty:
+                return []
+            closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
+            return [round(float(v), PRICE_ROUND_DECIMALS) for v in closes.tolist()]
+    except Exception as e:
+        logger.warning("sparkline_by_timeframe %s %s failed: %s", symbol, timeframe, e)
+        return []
+
 # ── LEGACY (zachowane dla kompatybilności) ──
 def get_market_data(symbols):
     results = {}
