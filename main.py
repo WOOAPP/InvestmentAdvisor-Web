@@ -1131,10 +1131,19 @@ class InvestmentAdvisor(tk.Tk):
                  ).pack(side="left", padx=(0, 4))
 
         w["v_currency"] = tk.StringVar(value="USD")
+        w["last_price_usd"] = None  # zapamiętana cena USD po kliknięciu "Aktualna"
         ttk.Combobox(
             inner, textvariable=w["v_currency"],
             values=["USD", "PLN", "EUR"], width=5, state="readonly"
         ).pack(side="left", padx=(0, 4))
+
+        def _on_currency_change(*_, tt=tab_type):
+            """Auto-przelicz cenę gdy zmieni się waluta (jeśli cena USD jest zapamiętana)."""
+            pw = self._port_widgets[tt]
+            usd = pw.get("last_price_usd")
+            if usd is not None:
+                self._apply_current_price(usd, pw["v_currency"].get(), tt)
+        w["v_currency"].trace_add("write", _on_currency_change)
 
         w["btn_price"] = tk.Button(
             inner, text="Aktualna", bg=BTN_BG, fg=ACCENT,
@@ -1302,6 +1311,7 @@ class InvestmentAdvisor(tk.Tk):
     def _apply_current_price(self, price_usd, currency, tab_type):
         """Set buy-price field, converting from USD if needed."""
         pw = self._port_widgets[tab_type]
+        pw["last_price_usd"] = price_usd  # zapamiętaj USD – potrzebne przy zmianie waluty
         if currency == "USD":
             pw["v_price"].set(f"{price_usd:.4f}")
             return
@@ -2052,15 +2062,19 @@ class InvestmentAdvisor(tk.Tk):
                      values=["USD", "PLN", "EUR"], width=8, state="readonly"
                      ).grid(row=3, column=1, padx=(8, 0), pady=4, sticky="w")
 
+        _dlg_price_usd = [None]  # mutable closure – zapamiętana cena USD
+
         # Pre-fill current price if available
         d = self.current_market_data.get(symbol, {})
         if d and "error" not in d and d.get("price"):
+            _dlg_price_usd[0] = d["price"]
             v_price.set(str(round(d["price"], 4)))
 
         btn_bar = tk.Frame(popup, bg=BG)
         btn_bar.pack(fill="x", padx=24, pady=(16, 12))
 
         def _apply_price(price_usd):
+            _dlg_price_usd[0] = price_usd  # zapamiętaj dla auto-przeliczenia
             currency = v_currency.get()
             if currency == "USD":
                 v_price.set(f"{price_usd:.4f}")
@@ -2073,6 +2087,12 @@ class InvestmentAdvisor(tk.Tk):
                     parent=popup)
                 return
             v_price.set(f"{price_usd / fx:.4f}")
+
+        def _on_dlg_currency_change(*_):
+            """Auto-przelicz cenę gdy zmieni się waluta w dialogu."""
+            if _dlg_price_usd[0] is not None:
+                _apply_price(_dlg_price_usd[0])
+        v_currency.trace_add("write", _on_dlg_currency_change)
 
         def _fetch_price():
             d = self.current_market_data.get(symbol, {})
