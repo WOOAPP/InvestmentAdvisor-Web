@@ -2583,11 +2583,6 @@ class InvestmentAdvisor(tk.Tk):
 
             provider = cfg["ai_provider"]
             model    = cfg["ai_model"]
-            save_report(provider, model,
-                        summary, analysis, risk,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens)
-            save_market_snapshot(market_data)
 
             self.current_analysis    = analysis
             self.current_market_data = market_data
@@ -2601,17 +2596,38 @@ class InvestmentAdvisor(tk.Tk):
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
             }
+            # Schedule UI update BEFORE DB saves — display is never blocked by DB errors
             self.after(0, lambda: self._update_dashboard(
                 analysis, risk, market_data, usage_info=usage_info,
                 report_date=now_str))
+
+            try:
+                save_report(provider, model,
+                            summary, analysis, risk,
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens)
+                save_market_snapshot(market_data)
+            except Exception as db_exc:
+                import logging as _log
+                _log.getLogger(__name__).warning("Błąd zapisu do bazy: %s", db_exc)
+
         except Exception as exc:
             import traceback
             traceback.print_exc()
-            self.set_busy(False, f"Błąd: {exc}")
+            err_msg = str(exc)
+            self.after(0, lambda m=err_msg: self._show_analysis_error(m))
         finally:
             self.set_busy(False, "Gotowy")
             self.after(0, lambda: self.analyze_btn.configure(
                 text="▶  Uruchom Analizę"))
+
+    def _show_analysis_error(self, message):
+        """Display a fatal analysis error in the analysis text area."""
+        self.analysis_text.configure(state="normal")
+        self.analysis_text.delete("1.0", "end")
+        self.analysis_text.insert("end", f"Błąd generowania analizy:\n\n{message}")
+        self.analysis_text.configure(state="disabled")
+        self._set_status(f"Błąd: {message[:80]}")
 
     def _update_dashboard(self, analysis, risk, market_data, usage_info=None,
                           report_date=None):
