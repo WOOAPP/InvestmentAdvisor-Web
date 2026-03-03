@@ -71,6 +71,8 @@ class InvestmentAdvisor(tk.Tk):
         self._analysis_overlay_step = 0
         self._busy_buttons = []   # buttons to lock during analysis/fetch
         self._spinner = None      # BusySpinner instance (created after UI build)
+        self._chat_extra_displays = []   # extra chat display widgets (popups)
+        self._market_popup_tile_widgets = {}  # tile widgets in market popup
         self._build_ui()
         threading.Thread(target=refresh_pricing, daemon=True).start()
         self._autoload_last_report()
@@ -175,6 +177,7 @@ class InvestmentAdvisor(tk.Tk):
             highlightbackground=GRAY, highlightthickness=1)
         tiles_lf.pack(fill="both", expand=True)
         self._build_price_tiles(tiles_lf)
+        tiles_lf.bind("<Double-Button-1>", lambda e: self._open_market_popup())
 
         right = tk.Frame(self.tab_dashboard, bg=BG)
         right.pack(side="right", fill="both", expand=True, padx=(4, 8), pady=8)
@@ -232,6 +235,8 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
         paned.add(analysis_frame, minsize=120)
+        analysis_frame.bind("<Double-Button-1>",
+                            lambda e: self._open_analysis_popup())
         # Container with overlay support
         self._analysis_container = tk.Frame(analysis_frame, bg=BG2)
         self._analysis_container.pack(fill="both", expand=True, padx=4, pady=4)
@@ -240,6 +245,8 @@ class InvestmentAdvisor(tk.Tk):
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT)
         self.analysis_text.pack(fill="both", expand=True)
+        self.analysis_text.bind("<Double-Button-1>",
+                                lambda e: self._open_analysis_popup())
         setup_markdown_tags(self.analysis_text)
         # Loading overlay (hidden by default)
         self._analysis_overlay = tk.Label(
@@ -260,12 +267,16 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 10, "bold"), relief="flat",
             highlightbackground=GRAY, highlightthickness=1)
         paned.add(self.chat_frame, minsize=120)
+        self.chat_frame.bind("<Double-Button-1>",
+                             lambda e: self._open_chat_popup())
 
         self.chat_display = scrolledtext.ScrolledText(
             self.chat_frame, bg=BG2, fg=FG, font=("Segoe UI", 10),
             relief="flat", wrap="word", state="disabled",
             insertbackground=FG, selectbackground=ACCENT, height=8)
         self.chat_display.pack(fill="both", expand=True, padx=4, pady=(4, 2))
+        self.chat_display.bind("<Double-Button-1>",
+                               lambda e: self._open_chat_popup())
         self.chat_display.tag_configure("user", foreground=ACCENT)
         self.chat_display.tag_configure("assistant", foreground=GREEN)
         self.chat_display.tag_configure("label", foreground=YELLOW,
@@ -376,38 +387,43 @@ class InvestmentAdvisor(tk.Tk):
             self._bind_tile_events(tile, symbol)
 
     def _update_price_tiles(self, market_data):
-        for symbol, w in self._tile_widgets.items():
-            d = market_data.get(symbol, {})
-            if "error" in d:
-                w["price_lbl"].configure(text="N/A", fg=GRAY)
-                w["change_lbl"].configure(text=d["error"][:22], fg=GRAY)
-                w["frame"].configure(highlightbackground=GRAY)
-                continue
+        all_tile_dicts = [self._tile_widgets]
+        if self._market_popup_tile_widgets:
+            all_tile_dicts.append(self._market_popup_tile_widgets)
 
-            price      = d.get("price", 0)
-            change_pct = d.get("change_pct", 0)
-            sparkline  = d.get("sparkline", [])
-            is_up      = change_pct >= 0
-            color      = GREEN if is_up else RED
-            arrow      = "▲" if is_up else "▼"
+        for tile_dict in all_tile_dicts:
+            for symbol, w in tile_dict.items():
+                d = market_data.get(symbol, {})
+                if "error" in d:
+                    w["price_lbl"].configure(text="N/A", fg=GRAY)
+                    w["change_lbl"].configure(text=d["error"][:22], fg=GRAY)
+                    w["frame"].configure(highlightbackground=GRAY)
+                    continue
 
-            if price >= 10000:
-                price_str = f"{price:,.0f}"
-            elif price >= 100:
-                price_str = f"{price:,.2f}"
-            elif price >= 1:
-                price_str = f"{price:.4f}"
-            else:
-                price_str = f"{price:.6f}"
+                price      = d.get("price", 0)
+                change_pct = d.get("change_pct", 0)
+                sparkline  = d.get("sparkline", [])
+                is_up      = change_pct >= 0
+                color      = GREEN if is_up else RED
+                arrow      = "▲" if is_up else "▼"
 
-            w["price_lbl"].configure(text=price_str, fg=FG)
-            w["change_lbl"].configure(
-                text=f"{arrow} {change_pct:+.2f}%", fg=color)
-            w["frame"].configure(
-                highlightbackground=color if abs(change_pct) > 0.3 else GRAY)
+                if price >= 10000:
+                    price_str = f"{price:,.0f}"
+                elif price >= 100:
+                    price_str = f"{price:,.2f}"
+                elif price >= 1:
+                    price_str = f"{price:.4f}"
+                else:
+                    price_str = f"{price:.6f}"
 
-            if sparkline:
-                self._draw_sparkline(w["spark"], sparkline, color)
+                w["price_lbl"].configure(text=price_str, fg=FG)
+                w["change_lbl"].configure(
+                    text=f"{arrow} {change_pct:+.2f}%", fg=color)
+                w["frame"].configure(
+                    highlightbackground=color if abs(change_pct) > 0.3 else GRAY)
+
+                if sparkline:
+                    self._draw_sparkline(w["spark"], sparkline, color)
 
     def _draw_sparkline(self, canvas_w, data, color):
         canvas_w.update_idletasks()
@@ -2377,32 +2393,38 @@ class InvestmentAdvisor(tk.Tk):
     # CHAT
     # ═══════════════════════════════════════
     def _append_chat(self, label, text, tag):
-        """Append a message to the chat display widget (markdown for assistant)."""
-        self.chat_display.configure(state="normal")
-        self.chat_display.insert("end", f"{label}\n", "label")
-        if tag == "assistant":
-            insert_markdown(self.chat_display, text, base_tag=tag)
-        else:
-            self.chat_display.insert("end", text, tag)
-        self.chat_display.insert("end", "\n\n", tag)
-        self.chat_display.configure(state="disabled")
-        self.chat_display.see("end")
+        """Append a message to the chat display widget and any open popup displays."""
+        for w in [self.chat_display] + self._chat_extra_displays:
+            w.configure(state="normal")
+            w.insert("end", f"{label}\n", "label")
+            if tag == "assistant":
+                insert_markdown(w, text, base_tag=tag)
+            else:
+                w.insert("end", text, tag)
+            w.insert("end", "\n\n", tag)
+            w.configure(state="disabled")
+            w.see("end")
 
     def _clear_chat(self):
         self._chat_history.clear()
-        self.chat_display.configure(state="normal")
-        self.chat_display.delete("1.0", "end")
-        self.chat_display.configure(state="disabled")
+        for w in [self.chat_display] + self._chat_extra_displays:
+            w.configure(state="normal")
+            w.delete("1.0", "end")
+            w.configure(state="disabled")
 
     def _send_chat_message(self):
-        msg = self.chat_entry.get().strip()
+        self._send_chat_message_from(self.chat_entry, self.chat_send_btn)
+
+    def _send_chat_message_from(self, entry_widget, send_btn):
+        """Send a chat message from any entry/button pair (main window or popup)."""
+        msg = entry_widget.get().strip()
         if not msg:
             return
-        self.chat_entry.delete(0, "end")
+        entry_widget.delete(0, "end")
         self._append_chat("Ty:", msg, "user")
 
         self._chat_history.append({"role": "user", "content": msg})
-        self.chat_send_btn.configure(state="disabled", text="…")
+        send_btn.configure(state="disabled", text="…")
 
         def _worker():
             system = self.config_data.get("chat_prompt", "")
@@ -2432,9 +2454,8 @@ class InvestmentAdvisor(tk.Tk):
             self._chat_history.append({"role": "assistant", "content": reply})
 
             self.after(0, lambda: self._append_chat("AI:", reply, "assistant"))
-            self.after(0, lambda: self.chat_send_btn.configure(
-                state="normal", text="Wyślij"))
-            self.after(0, lambda: self.chat_entry.focus_set())
+            self.after(0, lambda: send_btn.configure(state="normal", text="Wyślij"))
+            self.after(0, lambda: entry_widget.focus_set())
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -3011,6 +3032,248 @@ class InvestmentAdvisor(tk.Tk):
             self.after(0, _apply)
         except RuntimeError:
             pass
+
+    # ═══════════════════════════════════════
+    # POPUP WINDOWS (double-click)
+    # ═══════════════════════════════════════
+
+    def _open_analysis_popup(self):
+        """Open a large, article-style readable view of the current analysis report."""
+        win = tk.Toplevel(self)
+        win.title("Raport Analizy AI")
+        win.configure(bg=BG)
+        win.geometry("1050x780")
+        win.minsize(700, 500)
+        win.resizable(True, True)
+
+        # Header bar
+        header = tk.Frame(win, bg=BG2, padx=16, pady=10)
+        header.pack(fill="x")
+        tk.Label(header, text="Raport Analizy AI", bg=BG2, fg=ACCENT,
+                 font=("Segoe UI", 14, "bold")).pack(side="left")
+        date_text = self.report_date_label.cget("text")
+        if date_text:
+            tk.Label(header, text=date_text, bg=BG2, fg=GREEN,
+                     font=("Segoe UI", 9)).pack(side="right")
+
+        # Scrollable article text
+        txt = scrolledtext.ScrolledText(
+            win, bg=BG2, fg=FG,
+            font=("Segoe UI", 12),
+            relief="flat", wrap="word", state="normal",
+            insertbackground=FG, selectbackground=ACCENT,
+            padx=28, pady=18, spacing1=2, spacing3=4)
+        txt.pack(fill="both", expand=True, padx=12, pady=(8, 0))
+        setup_markdown_tags(txt)
+
+        if self.current_analysis:
+            insert_markdown(txt, self.current_analysis)
+        else:
+            txt.insert("1.0",
+                       "Brak raportu do wyświetlenia.\n"
+                       "Wygeneruj pierwszą analizę klikając '▶ Uruchom Analizę'.")
+        txt.configure(state="disabled")
+
+        # Bottom bar
+        bar = tk.Frame(win, bg=BG, pady=8)
+        bar.pack(fill="x")
+        tk.Button(bar, text="Zamknij", bg=BTN_BG, fg=FG, font=("Segoe UI", 10),
+                  relief="flat", cursor="hand2", padx=16,
+                  command=win.destroy).pack(side="right", padx=12)
+
+    def _open_chat_popup(self):
+        """Open a large resizable chat window that syncs with the main chat."""
+        win = tk.Toplevel(self)
+        win.title("Czat z AI")
+        win.configure(bg=BG)
+        win.geometry("950x680")
+        win.minsize(600, 400)
+        win.resizable(True, True)
+
+        # Header bar
+        header = tk.Frame(win, bg=BG2, padx=16, pady=8)
+        header.pack(fill="x")
+        tk.Label(header, text="Czat z AI", bg=BG2, fg=ACCENT,
+                 font=("Segoe UI", 13, "bold")).pack(side="left")
+
+        # Chat display
+        popup_display = scrolledtext.ScrolledText(
+            win, bg=BG2, fg=FG, font=("Segoe UI", 11),
+            relief="flat", wrap="word", state="normal",
+            insertbackground=FG, selectbackground=ACCENT,
+            padx=12, pady=8)
+        popup_display.pack(fill="both", expand=True, padx=8, pady=(8, 0))
+        popup_display.tag_configure("user", foreground=ACCENT)
+        popup_display.tag_configure("assistant", foreground=GREEN)
+        popup_display.tag_configure("label", foreground=YELLOW,
+                                    font=("Segoe UI", 10, "bold"))
+        popup_display.tag_configure("error", foreground=RED)
+        setup_markdown_tags(popup_display)
+
+        # Replay existing chat history into the popup display
+        for msg in self._chat_history:
+            if msg["role"] == "user":
+                popup_display.insert("end", "Ty:\n", "label")
+                popup_display.insert("end", msg["content"], "user")
+                popup_display.insert("end", "\n\n", "user")
+            else:
+                popup_display.insert("end", "AI:\n", "label")
+                insert_markdown(popup_display, msg["content"], base_tag="assistant")
+                popup_display.insert("end", "\n\n", "assistant")
+        popup_display.configure(state="disabled")
+        popup_display.see("end")
+
+        # Register popup as extra display so new messages appear here too
+        self._chat_extra_displays.append(popup_display)
+
+        # Input bar
+        input_bar = tk.Frame(win, bg=BG)
+        input_bar.pack(fill="x", padx=8, pady=8)
+
+        popup_send_btn = tk.Button(
+            input_bar, text="Wyślij", bg=ACCENT, fg=BG,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            cursor="hand2", padx=12)
+        popup_send_btn.pack(side="right", padx=(4, 0))
+
+        tk.Button(
+            input_bar, text="Wyczyść", bg=BTN_BG, fg=SUBTEXT,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=8, command=self._clear_chat
+        ).pack(side="right", padx=(4, 0))
+
+        popup_entry = tk.Entry(
+            input_bar, bg=BG2, fg=FG, insertbackground=FG,
+            relief="flat", font=("Segoe UI", 11),
+            highlightbackground=GRAY, highlightthickness=1)
+        popup_entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+        popup_send_btn.configure(
+            command=lambda: self._send_chat_message_from(popup_entry, popup_send_btn))
+        popup_entry.bind(
+            "<Return>",
+            lambda e: self._send_chat_message_from(popup_entry, popup_send_btn))
+        popup_entry.focus_set()
+
+        def _on_popup_close():
+            if popup_display in self._chat_extra_displays:
+                self._chat_extra_displays.remove(popup_display)
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_popup_close)
+
+    def _open_market_popup(self):
+        """Open a large resizable window showing all market instruments."""
+        win = tk.Toplevel(self)
+        win.title("Kursy Rynkowe")
+        win.configure(bg=BG)
+        win.geometry("1150x720")
+        win.minsize(700, 400)
+        win.resizable(True, True)
+
+        # Header bar
+        header = tk.Frame(win, bg=BG2, padx=16, pady=8)
+        header.pack(fill="x")
+        tk.Label(header, text="Kursy Rynkowe", bg=BG2, fg=ACCENT,
+                 font=("Segoe UI", 13, "bold")).pack(side="left")
+        tk.Label(header,
+                 text="Dwuklik na kafelku → wykres  |  Pojedynczy klik → profil",
+                 bg=BG2, fg=SUBTEXT, font=("Segoe UI", 8)).pack(side="right")
+
+        # Canvas + scrollbar for tiles
+        container = tk.Frame(win, bg=BG)
+        container.pack(fill="both", expand=True, padx=8, pady=8)
+
+        canvas = tk.Canvas(container, bg=BG, highlightthickness=0)
+        sb = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        tiles_frame = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=tiles_frame, anchor="nw")
+
+        tiles_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(win_id, width=e.width))
+
+        self._bind_mousewheel(canvas, canvas)
+
+        # Build tiles — 4 columns, larger font
+        COLS = 4
+        for col in range(COLS):
+            tiles_frame.columnconfigure(col, weight=1)
+
+        popup_tiles = {}
+        instruments = self.config_data.get("instruments", [])
+        for idx, inst in enumerate(instruments):
+            symbol = inst["symbol"]
+            name   = inst.get("name", symbol)
+            row    = idx // COLS
+            col    = idx % COLS
+
+            # Read current price/change/color from main tile widgets
+            price_text  = "—"
+            change_text = "—"
+            change_color = GRAY
+            frame_color  = GRAY
+            if symbol in self._tile_widgets:
+                mt = self._tile_widgets[symbol]
+                price_text   = mt["price_lbl"].cget("text")
+                change_text  = mt["change_lbl"].cget("text")
+                change_color = mt["change_lbl"].cget("fg")
+                frame_color  = mt["frame"].cget("highlightbackground")
+
+            tile = tk.Frame(tiles_frame, bg=BG2,
+                            highlightbackground=frame_color, highlightthickness=1,
+                            padx=10, pady=8)
+            tile.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+
+            tk.Label(tile, text=name, bg=BG2, fg=FG,
+                     font=("Segoe UI", 10, "bold"),
+                     anchor="w", wraplength=200).pack(fill="x")
+            tk.Label(tile, text=symbol, bg=BG2, fg=GRAY,
+                     font=("Segoe UI", 8), anchor="w").pack(fill="x")
+
+            price_lbl = tk.Label(tile, text=price_text, bg=BG2, fg=FG,
+                                  font=("Segoe UI", 14, "bold"), anchor="w")
+            price_lbl.pack(fill="x")
+
+            change_lbl = tk.Label(tile, text=change_text, bg=BG2, fg=change_color,
+                                   font=("Segoe UI", 10), anchor="w")
+            change_lbl.pack(fill="x")
+
+            spark = tk.Canvas(tile, bg=BG2, height=32, highlightthickness=0)
+            spark.pack(fill="x", pady=(4, 0))
+
+            popup_tiles[symbol] = {
+                "frame":      tile,
+                "price_lbl":  price_lbl,
+                "change_lbl": change_lbl,
+                "spark":      spark,
+            }
+            self._bind_tile_events(tile, symbol)
+
+        self._market_popup_tile_widgets = popup_tiles
+
+        # Draw sparklines for instruments with current data
+        if self.current_market_data:
+            for symbol, tw in popup_tiles.items():
+                d = self.current_market_data.get(symbol, {})
+                sparkline = d.get("sparkline", [])
+                if sparkline:
+                    change_pct = d.get("change_pct", 0)
+                    color = GREEN if change_pct >= 0 else RED
+                    self._draw_sparkline(tw["spark"], sparkline, color)
+
+        def _on_popup_close():
+            self._market_popup_tile_widgets = {}
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_popup_close)
 
     def _on_close(self):
         """Clean shutdown: close all matplotlib figures before destroying Tk."""
