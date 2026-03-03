@@ -147,6 +147,10 @@ class InvestmentAdvisor(tk.Tk):
         threading.Thread(target=refresh_pricing, daemon=True).start()
         self._autoload_last_report()
         self._start_scheduler()
+        # Catch-up: jeśli zaplanowana analiza minęła gdy komputer był wyłączony – uruchom od razu
+        # (pomijamy gdy app uruchomiona przez cron z --auto-analysis – tam analiza już zaplanowana)
+        if "--auto-analysis" not in sys.argv and self._should_run_missed_analysis():
+            self.after(5000, self._run_analysis_thread)
         self._check_alerts()
         self._start_price_autorefresh()
         self._refresh_sparklines_async()
@@ -3579,6 +3583,11 @@ class InvestmentAdvisor(tk.Tk):
                 import logging as _log
                 _log.getLogger(__name__).warning("Błąd zapisu do bazy: %s", db_exc)
 
+            # Zapisz czas zakończenia analizy – używany do catch-up przy kolejnym starcie
+            from datetime import datetime as _dt2
+            self.config_data["schedule"]["last_analysis"] = _dt2.now().isoformat()
+            save_config(self.config_data)
+
         except Exception as exc:
             import traceback
             traceback.print_exc()
@@ -3927,6 +3936,32 @@ class InvestmentAdvisor(tk.Tk):
     # ═══════════════════════════════════════
     # SCHEDULER
     # ═══════════════════════════════════════
+    def _should_run_missed_analysis(self) -> bool:
+        """
+        Zwraca True jeśli zaplanowana analiza nie odbyła się (komputer był wyłączony).
+        Porównuje czas ostatniej analizy z ostatnią zaplanowaną godziną w przeszłości.
+        """
+        from datetime import datetime, timedelta
+        sched = self.config_data.get("schedule", {})
+        if not sched.get("enabled"):
+            return False
+        times = sched.get("times", [])
+        last_str = sched.get("last_analysis")
+        last_dt = datetime.fromisoformat(last_str) if last_str else None
+        now = datetime.now()
+        for t in times:
+            try:
+                h, m = map(int, t.strip().split(":"))
+            except (ValueError, AttributeError):
+                continue
+            # Ostatnia zaplanowana godzina (dziś jeśli już minęła, wczoraj jeśli nie)
+            scheduled = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if scheduled > now:
+                scheduled -= timedelta(days=1)
+            if last_dt is None or last_dt < scheduled:
+                return True
+        return False
+
     def _start_scheduler(self):
         schedule.clear()
         if self.config_data["schedule"].get("enabled"):

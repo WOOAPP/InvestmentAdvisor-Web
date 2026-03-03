@@ -49,9 +49,9 @@ DEFAULT_CONFIG = {
         "openrouter": "",
     },
     "ai_provider": "openai",
-    "ai_model": "o3-mini",
+    "ai_model": "gpt-4.1-mini",
     "chat_provider": "openai",
-    "chat_model": "gpt-4o",
+    "chat_model": "gpt-4.1-mini",
     "chat_prompt": (
         "Jesteś strategicznym asystentem inwestycyjnym.\n"
         "Twoim zadaniem jest prowadzenie merytorycznej, pogłębionej dyskusji na temat wygenerowanego raportu makroekonomiczno-geopolitycznego.\n"
