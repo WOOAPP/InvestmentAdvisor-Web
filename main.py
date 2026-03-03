@@ -476,6 +476,41 @@ class InvestmentAdvisor(tk.Tk):
         )
         menu.tk_popup(event.x_root, event.y_root)
 
+    def _show_toast(self, message, color=None, duration=2500):
+        """Show a subtle auto-disappearing notification in the bottom-right corner."""
+        if color is None:
+            color = GREEN
+
+        # Destroy previous toast if still visible
+        existing = getattr(self, "_toast_frame", None)
+        if existing:
+            try:
+                existing.destroy()
+            except tk.TclError:
+                pass
+
+        toast = tk.Frame(self, bg=BG2,
+                         highlightbackground=color, highlightthickness=1,
+                         padx=14, pady=10)
+
+        inner = tk.Frame(toast, bg=BG2)
+        inner.pack()
+        tk.Label(inner, text="✓", bg=BG2, fg=color,
+                 font=("Segoe UI", 13, "bold")).pack(side="left", padx=(0, 10))
+        tk.Label(inner, text=message, bg=BG2, fg=FG,
+                 font=("Segoe UI", 10), wraplength=300,
+                 justify="left").pack(side="left")
+
+        toast.place(relx=1.0, rely=1.0, anchor="se", x=-20, y=-20)
+        self._toast_frame = toast
+
+        def _hide():
+            try:
+                toast.destroy()
+            except tk.TclError:
+                pass
+        self.after(duration, _hide)
+
     def _on_tile_click(self, symbol):
         """Differentiate single-click (profile) from double-click (chart)."""
         if self._click_pending and self._click_symbol == symbol:
@@ -1565,8 +1600,7 @@ class InvestmentAdvisor(tk.Tk):
                                    tab_type=tab_type)
             self._refresh_portfolio(tab_type)
             popup.destroy()
-            messagebox.showinfo("Dodano",
-                                f"{name} ({symbol}) dodano do zakładki '{v_tab.get()}'.")
+            self._show_toast(f"{name} ({symbol})\ndodano do zakładki '{v_tab.get()}'.")
 
         tk.Button(btn_bar, text="✅ Dodaj", bg=GREEN, fg=BG,
                   font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
