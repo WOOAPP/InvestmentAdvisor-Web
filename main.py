@@ -705,20 +705,29 @@ class InvestmentAdvisor(tk.Tk):
 
         port_nb = ttk.Notebook(self.tab_portfolio)
         port_nb.pack(fill="both", expand=True, padx=8, pady=8)
+        self._port_sub_nb = port_nb   # used by _get_active_port_type()
 
+        # (tab_type, label, add_btn_label, price_field_label, is_sell)
+        # is_sell=True → "Cena sprzedaży" label; P&L shows locked gain (buy→sell)
         tabs = [
-            ("obserwowane", "  👁 Obserwowane  "),
-            ("zakupione",   "  📈 Zakupione  "),
-            ("sprzedane",   "  📉 Sprzedane  "),
+            ("obserwowane", "  👁 Obserwowane  ", "➕ Obserwuj",     "Cena zakupu:", False),
+            ("zakupione",   "  📈 Zakupione  ",  "➕ Dodaj zakup",  "Cena zakupu:", False),
+            ("sprzedane",   "  📉 Sprzedane  ",  "➕ Dodaj sprzedaż", "Cena sprzedaży:", True),
         ]
-        for tab_type, label in tabs:
+        self._port_tab_types = [t[0] for t in tabs]
+        for tab_type, label, btn_lbl, price_lbl, is_sell in tabs:
             frame = tk.Frame(port_nb, bg=BG)
             port_nb.add(frame, text=label)
-            self._build_portfolio_subtab(frame, tab_type)
+            self._build_portfolio_subtab(frame, tab_type, btn_lbl, price_lbl, is_sell)
 
-    def _build_portfolio_subtab(self, parent, tab_type):
+    def _get_active_port_type(self):
+        """Returns tab_type of the currently visible portfolio sub-tab."""
+        idx = self._port_sub_nb.index(self._port_sub_nb.select())
+        return self._port_tab_types[idx]
+
+    def _build_portfolio_subtab(self, parent, tab_type, btn_label, price_field_lbl, is_sell):
         """Builds one portfolio sub-tab (form + treeview + bottom bar)."""
-        w = {}
+        w = {"is_sell": is_sell}
         self._port_widgets[tab_type] = w
 
         # ── Add form ──
@@ -752,7 +761,7 @@ class InvestmentAdvisor(tk.Tk):
                  highlightbackground=GRAY, highlightthickness=1
                  ).pack(side="left", padx=(0, 8))
 
-        lbl("Cena zakupu:")
+        lbl(price_field_lbl)
         w["v_price"] = tk.StringVar()
         tk.Entry(inner, textvariable=w["v_price"], bg=BG2, fg=FG,
                  insertbackground=FG, relief="flat", width=12,
@@ -774,7 +783,7 @@ class InvestmentAdvisor(tk.Tk):
         w["btn_price"].pack(side="left", padx=(0, 8))
 
         tk.Button(
-            inner, text="➕ Dodaj", bg=GREEN, fg=BG,
+            inner, text=btn_label, bg=GREEN, fg=BG,
             font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
             padx=10, pady=3,
             command=lambda t=tab_type: self._add_portfolio_position(t)
@@ -784,8 +793,9 @@ class InvestmentAdvisor(tk.Tk):
         tree_frame = tk.Frame(parent, bg=BG)
         tree_frame.pack(fill="both", expand=True, padx=12, pady=4)
 
+        entry_col = "Sprzed." if is_sell else "Kup."
         cols = ("Instrument", "Symbol", "Ilość", "Waluta",
-                "Kup.", "Kup. ($)", "Akt.",
+                entry_col, f"{entry_col} ($)", "Akt.",
                 "Wartość", "Zysk", "Zysk %")
         w["tree"] = ttk.Treeview(
             tree_frame, columns=cols, show="headings", height=16)
@@ -962,7 +972,8 @@ class InvestmentAdvisor(tk.Tk):
         pw = self._port_widgets.get(tab_type)
         if not pw:
             return
-        tree = pw["tree"]
+        tree     = pw["tree"]
+        is_sell  = pw.get("is_sell", False)   # Sprzedane: P&L locked (sell-buy)
 
         for row in tree.get_children():
             tree.delete(row)
@@ -1015,8 +1026,11 @@ class InvestmentAdvisor(tk.Tk):
 
             if current_price is not None:
                 current_val = qty * current_price
-                pnl_usd     = current_val - invested_usd
-                pnl_pct     = (pnl_usd / invested_usd * 100) if invested_usd else 0
+                # Sprzedane: P&L = sell_price - current (zysk gdy cena spada)
+                # Pozostałe: P&L = current - buy_price (zysk gdy cena rośnie)
+                pnl_usd = (invested_usd - current_val) if is_sell \
+                          else (current_val - invested_usd)
+                pnl_pct = (pnl_usd / invested_usd * 100) if invested_usd else 0
                 total_current += current_val
                 tag = "profit" if pnl_usd >= 0 else "loss"
 
@@ -1029,8 +1043,9 @@ class InvestmentAdvisor(tk.Tk):
                 # Format Akt., Wartość, Zysk — dual if non-USD
                 if currency != "USD" and cur_fx and cur_fx > 0:
                     price_local = current_price / cur_fx
-                    val_local = current_val / cur_fx
-                    pnl_local = val_local - qty * buy_price
+                    val_local   = current_val / cur_fx
+                    pnl_local   = (qty * buy_price - val_local) if is_sell \
+                                  else (val_local - qty * buy_price)
                     akt_display = (f"$ {current_price:,.2f} | "
                                    f"{currency} {price_local:,.2f}")
                     val_display = (f"$ {current_val:,.2f} | "
@@ -1038,13 +1053,10 @@ class InvestmentAdvisor(tk.Tk):
                     pnl_display = (f"$ {pnl_usd:+,.2f} | "
                                    f"{currency} {pnl_local:+,.2f}")
                 elif currency != "USD":
-                    # FX unavailable — show USD only, mark local as N/A
-                    akt_display = (f"$ {current_price:,.2f} | "
-                                   f"{currency} —")
-                    val_display = (f"$ {current_val:,.2f} | "
-                                   f"{currency} —")
-                    pnl_display = (f"$ {pnl_usd:+,.2f} | "
-                                   f"{currency} —")
+                    # FX unavailable — show USD only
+                    akt_display = f"$ {current_price:,.2f} | {currency} —"
+                    val_display = f"$ {current_val:,.2f} | {currency} —"
+                    pnl_display = f"$ {pnl_usd:+,.2f} | {currency} —"
                 else:
                     akt_display = f"$ {current_price:,.2f}"
                     val_display = f"$ {current_val:,.2f}"
@@ -1072,10 +1084,13 @@ class InvestmentAdvisor(tk.Tk):
                             buy_display, f"{price_usd:,.4f}",
                             "N/A", "—", "—", "—"))
 
-        total_pnl = total_current - total_invested
+        # P&L w podsumowaniu też odwrócony dla Sprzedane
+        total_pnl = (total_invested - total_current) if is_sell \
+                    else (total_current - total_invested)
         total_pct = (total_pnl / total_invested * 100) if total_invested else 0
         clr = GREEN if total_pnl >= 0 else RED
 
+        entry_lbl = "Sprzedano" if is_sell else "Zainwestowano"
         inv_parts = f"$ {total_invested:,.2f}"
         val_parts = f"$ {total_current:,.2f}"
         pnl_parts = f"{total_pnl:+,.2f} $"
@@ -1084,20 +1099,20 @@ class InvestmentAdvisor(tk.Tk):
             inv_parts += f" ({cur} {inv_local:,.2f})"
             if cur in currency_current:
                 cur_val = currency_current[cur]
-                cur_pnl = cur_val - inv_local
+                cur_pnl = (inv_local - cur_val) if is_sell else (cur_val - inv_local)
                 val_parts += f" ({cur} {cur_val:,.2f})"
                 pnl_parts += f" ({cur} {cur_pnl:+,.2f})"
 
         pw["summary"].configure(fg=clr, text=(
-            f"Zainwestowano: {inv_parts}  |  "
+            f"{entry_lbl}: {inv_parts}  |  "
             f"Wartość: {val_parts}  |  "
             f"P&L: {pnl_parts} ({total_pct:+.2f}%)"
         ))
 
     def _quick_fetch_prices(self, tab_type=None):
-        status_lbl = None
-        if tab_type and tab_type in self._port_widgets:
-            status_lbl = self._port_widgets[tab_type]["status"]
+        # Use passed tab_type or detect active sub-tab
+        active = tab_type or self._get_active_port_type()
+        status_lbl = self._port_widgets.get(active, {}).get("status")
         if status_lbl:
             status_lbl.configure(text="Pobieranie cen…")
         self.set_busy(True, "Pobieranie cen…")

@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 
@@ -411,14 +412,19 @@ def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+        # Dodaj brakujące klucze najwyższego poziomu
         for key, val in DEFAULT_CONFIG.items():
             if key not in data:
-                data[key] = val
+                data[key] = copy.deepcopy(val)
+        # Migracja zagnieżdżonego api_keys – dodaj nowe klucze których brakuje
+        default_keys = DEFAULT_CONFIG.get("api_keys", {})
+        for kn, default_val in default_keys.items():
+            data["api_keys"].setdefault(kn, default_val)
         # Migracja starego formatu instrumentów
         if isinstance(data.get("instruments"), dict):
-            data["instruments"] = DEFAULT_INSTRUMENTS
+            data["instruments"] = copy.deepcopy(DEFAULT_INSTRUMENTS)
     else:
-        data = DEFAULT_CONFIG.copy()
+        data = copy.deepcopy(DEFAULT_CONFIG)
     return _apply_env_overrides(data)
 
 
