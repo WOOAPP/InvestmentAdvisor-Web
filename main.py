@@ -213,6 +213,8 @@ class InvestmentAdvisor(tk.Tk):
         paned = tk.PanedWindow(right, orient="vertical", bg=BG,
                                 sashwidth=5, sashrelief="flat")
         paned.pack(fill="both", expand=True)
+        self._dash_paned = paned
+        paned.bind("<Map>", self._set_dash_sash, add="+")
 
         # — Analysis panel —
         analysis_frame = tk.LabelFrame(
@@ -1290,6 +1292,15 @@ class InvestmentAdvisor(tk.Tk):
         # Task 1 + 3: markdown tags + click-to-focus for chart chat
         setup_markdown_tags(self.chart_chat_display)
         bind_chat_focus(self.chart_chat_frame, self.chart_chat_entry)
+
+    def _set_dash_sash(self, event=None):
+        """Set dashboard PanedWindow sash: analysis ~70%, chat ~30% (min 220px)."""
+        self._dash_paned.unbind("<Map>")
+        self._dash_paned.update_idletasks()
+        h = self._dash_paned.winfo_height()
+        if h > 50:
+            chat_h = max(220, int(h * 0.30))
+            self._dash_paned.sash_place(0, 0, h - chat_h)
 
     def _set_chart_sash(self, event=None):
         """Set PanedWindow sash so chart gets ~2/3, chat ~1/3."""
