@@ -3,6 +3,8 @@ import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import logging
+import threading as _threading
+import time as _time
 import pandas as pd
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -13,6 +15,13 @@ from constants import (
     PRICE_ROUND_DECIMALS, CHANGE_PCT_ROUND_DECIMALS,
     NEWS_DEFAULT_PAGE_SIZE,
 )
+
+# ── COINGECKO CACHE ──
+_CG_PRICE_TTL      = 300   # 5 min — odświeżaj ceny co najwyżej co 5 min
+_CG_SPARKLINE_TTL  = 3600  # 1 h  — sparkline zmienia się wolno (interwał dzienny)
+_cg_price_cache     = {}   # {coin_id: (data_dict, ts)}
+_cg_sparkline_cache = {}   # {coin_id: (list,      ts)}
+_cg_lock            = _threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -68,52 +77,86 @@ def get_yfinance_data(symbol, name=""):
         return {"name": name or symbol, "error": str(e)}
 
 # ── COINGECKO ──
-def get_coingecko_data(coin_id, name=""):
+def _cg_fetch_prices_batch(coin_ids):
+    """Pobiera ceny wielu monet jednym żądaniem do CoinGecko.
+
+    Zwraca dict {coin_id: {usd, usd_24h_change, usd_24h_vol}} lub {} przy błędzie.
+    Wyniki trafiają do _cg_price_cache.
+    """
+    ids_str = ",".join(coin_ids)
+    url = (f"https://api.coingecko.com/api/v3/simple/price"
+           f"?ids={ids_str}&vs_currencies=usd"
+           f"&include_24hr_change=true&include_24hr_vol=true")
+    r = safe_get(url)
+    batch = r.json()
+    ts = _time.time()
+    with _cg_lock:
+        for cid, data in batch.items():
+            _cg_price_cache[cid] = (data, ts)
+    return batch
+
+
+def _cg_get_sparkline(coin_id):
+    """Zwraca sparkline z cache lub pobiera (TTL 1 h)."""
+    with _cg_lock:
+        cached = _cg_sparkline_cache.get(coin_id)
+    if cached and (_time.time() - cached[1]) < _CG_SPARKLINE_TTL:
+        return cached[0]
     try:
-        url = (f"https://api.coingecko.com/api/v3/simple/price"
-               f"?ids={coin_id}&vs_currencies=usd"
-               f"&include_24hr_change=true&include_24hr_vol=true")
-        r = safe_get(url)
-        data = r.json().get(coin_id, {})
-        if not data:
-            return {"name": name or coin_id, "error": "brak danych CoinGecko"}
+        chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+                     f"/market_chart?vs_currency=usd&days=5&interval=daily")
+        cr = safe_get(chart_url)
+        sparkline = [round(p[1], PRICE_ROUND_DECIMALS)
+                     for p in cr.json().get("prices", [])]
+    except (requests.RequestException, KeyError, ValueError) as e:
+        logger.debug("CoinGecko sparkline for %s unavailable: %s", coin_id, e)
         sparkline = []
+    with _cg_lock:
+        _cg_sparkline_cache[coin_id] = (sparkline, _time.time())
+    return sparkline
+
+
+def _cg_build_result(coin_id, name, data, sparkline):
+    """Buduje dict wyniku z surowych danych CoinGecko."""
+    price = data.get("usd", 0)
+    change_pct = round(data.get("usd_24h_change", 0), CHANGE_PCT_ROUND_DECIMALS)
+    change = high_5d = low_5d = 0
+    if sparkline:
+        high_5d = max(sparkline)
+        low_5d = min(sparkline)
+        if len(sparkline) >= 2:
+            change = round(sparkline[-1] - sparkline[-2], PRICE_ROUND_DECIMALS)
+    return {
+        "name": name or coin_id,
+        "price": price,
+        "change_pct": change_pct,
+        "volume": data.get("usd_24h_vol", 0),
+        "change": change,
+        "high_5d": high_5d,
+        "low_5d": low_5d,
+        "sparkline": sparkline,
+        "source": "coingecko",
+        "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+def get_coingecko_data(coin_id, name=""):
+    """Pobiera dane jednej monety (z cache lub przez batch-fetch)."""
+    with _cg_lock:
+        cached = _cg_price_cache.get(coin_id)
+    if cached and (_time.time() - cached[1]) < _CG_PRICE_TTL:
+        data = cached[0]
+    else:
         try:
-            chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
-                         f"/market_chart?vs_currency=usd&days=5&interval=daily")
-            cr = safe_get(chart_url)
-            sparkline = [round(p[1], PRICE_ROUND_DECIMALS) for p in cr.json().get("prices", [])]
-        except (requests.RequestException, KeyError, ValueError) as e:
-            logger.debug("CoinGecko sparkline for %s unavailable: %s", coin_id, e)
-
-        price = data.get("usd", 0)
-        change_pct = round(data.get("usd_24h_change", 0), CHANGE_PCT_ROUND_DECIMALS)
-
-        # Calculate change, high_5d, low_5d from sparkline data
-        change = 0
-        high_5d = 0
-        low_5d = 0
-        if sparkline:
-            high_5d = max(sparkline)
-            low_5d = min(sparkline)
-            if len(sparkline) >= 2:
-                change = round(sparkline[-1] - sparkline[-2], PRICE_ROUND_DECIMALS)
-
-        return {
-            "name": name or coin_id,
-            "price": price,
-            "change_pct": change_pct,
-            "volume": data.get("usd_24h_vol", 0),
-            "change": change,
-            "high_5d": high_5d,
-            "low_5d": low_5d,
-            "sparkline": sparkline,
-            "source": "coingecko",
-            "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
-        }
-    except (requests.RequestException, KeyError, ValueError, TypeError) as e:
-        logger.warning("CoinGecko %s failed: %s", coin_id, e)
-        return {"name": name or coin_id, "error": str(e)}
+            batch = _cg_fetch_prices_batch([coin_id])
+            data = batch.get(coin_id, {})
+        except (requests.RequestException, KeyError, ValueError, TypeError) as e:
+            logger.warning("CoinGecko %s failed: %s", coin_id, e)
+            return {"name": name or coin_id, "error": str(e)}
+    if not data:
+        return {"name": name or coin_id, "error": "brak danych CoinGecko"}
+    sparkline = _cg_get_sparkline(coin_id)
+    return _cg_build_result(coin_id, name, data, sparkline)
 
 # ── STOOQ ──
 def get_stooq_data(symbol, name=""):
@@ -146,9 +189,6 @@ def get_stooq_data(symbol, name=""):
         return {"name": name or symbol, "error": str(e)}
 
 # ── FX RATES CACHE ──
-import threading as _threading
-import time as _time
-
 _fx_cache = {}       # {"PLNUSD": (rate, timestamp), ...}
 _fx_lock = _threading.Lock()
 _FX_CACHE_TTL = FX_CACHE_TTL
@@ -193,8 +233,13 @@ def get_all_instruments(instruments_config):
     """
     instruments_config to lista słowników:
     [{"symbol": "BTC-USD", "name": "Bitcoin", "category": "crypto", "source": "coingecko"}, ...]
+
+    Instrumenty CoinGecko są pobierane jednym zbiorczym żądaniem (batch),
+    co drastycznie redukuje liczbę requestów i ryzyko 429.
     """
     results = {}
+    cg_pending = []   # [(symbol, coin_id, name), ...]
+
     for inst in instruments_config:
         symbol = inst.get("symbol", "")
         name = inst.get("name", symbol)
@@ -202,11 +247,39 @@ def get_all_instruments(instruments_config):
         if not symbol:
             continue
         if source == "coingecko":
-            results[symbol] = get_coingecko_data(symbol.lower(), name)
+            cg_pending.append((symbol, symbol.lower(), name))
         elif source == "stooq":
             results[symbol] = get_stooq_data(symbol, name)
         else:
             results[symbol] = get_yfinance_data(symbol, name)
+
+    # ── Batch-fetch wszystkich CoinGecko monet jednym requestem ──
+    if cg_pending:
+        # Pomiń monety, których cache jest aktualny
+        to_fetch = []
+        now = _time.time()
+        with _cg_lock:
+            for _, coin_id, _ in cg_pending:
+                cached = _cg_price_cache.get(coin_id)
+                if not (cached and (now - cached[1]) < _CG_PRICE_TTL):
+                    to_fetch.append(coin_id)
+
+        if to_fetch:
+            try:
+                _cg_fetch_prices_batch(to_fetch)
+            except (requests.RequestException, KeyError, ValueError, TypeError) as e:
+                logger.warning("CoinGecko batch failed: %s", e)
+
+        # Zbuduj wyniki z cache (wypełnionego przez batch lub wcześniej)
+        for symbol, coin_id, name in cg_pending:
+            with _cg_lock:
+                cached = _cg_price_cache.get(coin_id)
+            if cached:
+                sparkline = _cg_get_sparkline(coin_id)
+                results[symbol] = _cg_build_result(coin_id, name, cached[0], sparkline)
+            else:
+                results[symbol] = {"name": name, "error": "brak danych CoinGecko"}
+
     return results
 
 # ── LEGACY (zachowane dla kompatybilności) ──
