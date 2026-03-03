@@ -76,6 +76,7 @@ class InvestmentAdvisor(tk.Tk):
         self._spinner = None      # BusySpinner instance (created after UI build)
         self._chat_extra_displays = []   # extra chat display widgets (popups)
         self._market_popup_tile_widgets = {}  # tile widgets in market popup
+        self._prev_prices = {}               # {symbol: last_known_price} dla efektu flash
         self._build_ui()
         threading.Thread(target=refresh_pricing, daemon=True).start()
         self._autoload_last_report()
@@ -426,9 +427,10 @@ class InvestmentAdvisor(tk.Tk):
                             padx=6, pady=5)
             tile.grid(row=row, column=col, padx=3, pady=3, sticky="nsew")
 
-            tk.Label(tile, text=name, bg=BG2, fg=FG,
-                     font=("Segoe UI", 8, "bold"),
-                     anchor="w", wraplength=130).pack(fill="x")
+            name_lbl = tk.Label(tile, text=name, bg=BG2, fg=FG,
+                                font=("Segoe UI", 8, "bold"),
+                                anchor="w", wraplength=130)
+            name_lbl.pack(fill="x")
             tk.Label(tile, text=symbol, bg=BG2, fg=GRAY,
                      font=("Segoe UI", 7), anchor="w").pack(fill="x")
 
@@ -446,6 +448,7 @@ class InvestmentAdvisor(tk.Tk):
 
             self._tile_widgets[symbol] = {
                 "frame":      tile,
+                "name_lbl":   name_lbl,
                 "price_lbl":  price_lbl,
                 "change_lbl": change_lbl,
                 "spark":      spark,
@@ -488,8 +491,23 @@ class InvestmentAdvisor(tk.Tk):
                 w["frame"].configure(
                     highlightbackground=color if abs(change_pct) > 0.3 else GRAY)
 
+                # Efekt flash na nazwie gdy cena się zmieniła
+                prev = self._prev_prices.get(symbol)
+                if prev is not None and prev != price and "name_lbl" in w:
+                    flash_col = "#1e3028" if price > prev else "#30181e"
+                    self._flash_name_lbl(w["name_lbl"], flash_col)
+                self._prev_prices[symbol] = price
+
                 if sparkline:
                     self._draw_sparkline(w["spark"], sparkline, color)
+
+    def _flash_name_lbl(self, lbl, color):
+        """Podświetla etykietę nazwy na chwilę, potem przywraca tło BG2."""
+        try:
+            lbl.configure(bg=color)
+            lbl.after(500, lambda: lbl.configure(bg=BG2))
+        except tk.TclError:
+            pass
 
     def _draw_sparkline(self, canvas_w, data, color):
         canvas_w.update_idletasks()
@@ -3839,9 +3857,10 @@ class InvestmentAdvisor(tk.Tk):
                             padx=10, pady=8)
             tile.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
 
-            tk.Label(tile, text=name, bg=BG2, fg=FG,
-                     font=("Segoe UI", 10, "bold"),
-                     anchor="w", wraplength=200).pack(fill="x")
+            popup_name_lbl = tk.Label(tile, text=name, bg=BG2, fg=FG,
+                                      font=("Segoe UI", 10, "bold"),
+                                      anchor="w", wraplength=200)
+            popup_name_lbl.pack(fill="x")
             tk.Label(tile, text=symbol, bg=BG2, fg=GRAY,
                      font=("Segoe UI", 8), anchor="w").pack(fill="x")
 
@@ -3858,6 +3877,7 @@ class InvestmentAdvisor(tk.Tk):
 
             popup_tiles[symbol] = {
                 "frame":      tile,
+                "name_lbl":   popup_name_lbl,
                 "price_lbl":  price_lbl,
                 "change_lbl": change_lbl,
                 "spark":      spark,
