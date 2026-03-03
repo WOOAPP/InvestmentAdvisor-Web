@@ -48,6 +48,15 @@ def _migrate_reports_usage(conn):
     conn.commit()
 
 
+def _migrate_portfolio_tab_type(conn):
+    """Add tab_type column to portfolio if missing. Existing rows → 'zakupione'."""
+    c = conn.cursor()
+    existing = {row[1] for row in c.execute("PRAGMA table_info(portfolio)").fetchall()}
+    if "tab_type" not in existing:
+        c.execute("ALTER TABLE portfolio ADD COLUMN tab_type TEXT DEFAULT 'zakupione'")
+    conn.commit()
+
+
 def _migrate_portfolio_currency(conn):
     """Add currency columns to portfolio table if missing (backward-compat)."""
     c = conn.cursor()
@@ -125,6 +134,7 @@ def init_db():
         conn.commit()
         _migrate_reports_usage(conn)
         _migrate_portfolio_currency(conn)
+        _migrate_portfolio_tab_type(conn)
 
 def save_report(provider, model, market_summary, analysis, risk_level=0,
                 input_tokens=0, output_tokens=0):
@@ -226,21 +236,22 @@ def delete_report(report_id):
 # ── PORTFOLIO ──
 
 def add_portfolio_position(symbol, name, quantity, buy_price,
-                           buy_currency="USD", buy_fx_to_usd=1.0):
+                           buy_currency="USD", buy_fx_to_usd=1.0,
+                           tab_type="zakupione"):
     buy_price_usd = float(buy_price) * float(buy_fx_to_usd)
     with _connect() as conn:
         c = conn.cursor()
         c.execute("""
             INSERT INTO portfolio
                 (symbol, name, quantity, buy_price, created_at,
-                 buy_currency, buy_fx_to_usd, buy_price_usd)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 buy_currency, buy_fx_to_usd, buy_price_usd, tab_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (symbol, name or symbol, float(quantity), float(buy_price),
               _now_warsaw().strftime("%Y-%m-%d %H:%M:%S"),
-              buy_currency, float(buy_fx_to_usd), buy_price_usd))
+              buy_currency, float(buy_fx_to_usd), buy_price_usd, tab_type))
         conn.commit()
 
-def get_portfolio_positions():
+def get_portfolio_positions(tab_type="zakupione"):
     """Returns tuples: (id, symbol, name, qty, buy_price, created_at,
                         buy_currency, buy_fx_to_usd, buy_price_usd)"""
     with _connect() as conn:
@@ -248,8 +259,8 @@ def get_portfolio_positions():
         c.execute("""
             SELECT id, symbol, name, quantity, buy_price, created_at,
                    buy_currency, buy_fx_to_usd, buy_price_usd
-            FROM portfolio ORDER BY created_at
-        """)
+            FROM portfolio WHERE tab_type = ? ORDER BY created_at
+        """, (tab_type,))
         return c.fetchall()
 
 def delete_portfolio_position(position_id):
