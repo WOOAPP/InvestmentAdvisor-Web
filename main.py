@@ -39,8 +39,9 @@ ACCENT = "#89b4fa"
 GREEN  = "#a6e3a1"
 RED    = "#f38ba8"
 YELLOW = "#f9e2af"
-GRAY   = "#313244"
-BTN_BG = "#313244"
+GRAY    = "#313244"
+BTN_BG  = "#313244"
+SUBTEXT = "#7f849c"   # Catppuccin overlay1 – czytelny tekst pomocniczy
 
 
 class InvestmentAdvisor(tk.Tk):
@@ -200,7 +201,7 @@ class InvestmentAdvisor(tk.Tk):
         self.export_btn.pack(side="left", padx=8)
 
         self.status_label = tk.Label(
-            btn_bar, text="Gotowy", bg=BG, fg=GRAY, font=("Segoe UI", 9))
+            btn_bar, text="Gotowy", bg=BG, fg=SUBTEXT, font=("Segoe UI", 9))
         self.status_label.pack(side="right", padx=8)
 
         # Task 2: register buttons for busy-lock
@@ -273,7 +274,7 @@ class InvestmentAdvisor(tk.Tk):
 
         # Pack buttons right-to-left first so they always stay visible
         tk.Button(
-            input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
+            input_bar, text="Wyczyść", bg=BTN_BG, fg=SUBTEXT,
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             padx=8, command=self._clear_chat
         ).pack(side="right", padx=(4, 0))
@@ -494,7 +495,7 @@ class InvestmentAdvisor(tk.Tk):
                  font=("Segoe UI", 14, "bold")
                  ).pack(padx=16, pady=(12, 0), anchor="w")
         tk.Label(win, text=f"{symbol}  •  {category}  •  {source}",
-                 bg=BG, fg=GRAY, font=("Segoe UI", 9)
+                 bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
                  ).pack(padx=16, pady=(0, 8), anchor="w")
 
         # ── PanedWindow: resizable split between profile and trend ──
@@ -774,7 +775,7 @@ class InvestmentAdvisor(tk.Tk):
         ).pack(side="left", padx=4, pady=6)
 
         self._portfolio_status = tk.Label(
-            bot, text="", bg=BG2, fg=GRAY, font=("Segoe UI", 9))
+            bot, text="", bg=BG2, fg=SUBTEXT, font=("Segoe UI", 9))
         self._portfolio_status.pack(side="left", padx=12)
 
         self.port_summary_lbl = tk.Label(
@@ -1089,7 +1090,7 @@ class InvestmentAdvisor(tk.Tk):
         filter_cb.bind("<<ComboboxSelected>>",
                        lambda e: self._apply_cal_filter())
 
-        self.cal_status = tk.Label(ctrl, text="", bg=BG, fg=GRAY,
+        self.cal_status = tk.Label(ctrl, text="", bg=BG, fg=SUBTEXT,
                                    font=("Segoe UI", 9))
         self.cal_status.pack(side="right", padx=8)
 
@@ -1265,7 +1266,7 @@ class InvestmentAdvisor(tk.Tk):
 
         # Pack buttons right-to-left first so they always stay visible
         tk.Button(
-            chart_input_bar, text="Wyczyść", bg=BTN_BG, fg=GRAY,
+            chart_input_bar, text="Wyczyść", bg=BTN_BG, fg=SUBTEXT,
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             padx=8, command=self._clear_chart_chat
         ).pack(side="right", padx=(4, 0))
@@ -1591,38 +1592,55 @@ class InvestmentAdvisor(tk.Tk):
     # ═══════════════════════════════════════
     # SETTINGS TAB
     # ═══════════════════════════════════════
-    def _build_settings_tab(self):
-        self._settings_canvas = tk.Canvas(
-            self.tab_settings, bg=BG, highlightthickness=0)
-        scroll = ttk.Scrollbar(self.tab_settings, orient="vertical",
-                                command=self._settings_canvas.yview)
-        self._settings_canvas.configure(yscrollcommand=scroll.set)
+    def _make_scrollable_inner(self, parent):
+        """Tworzy przewijalny canvas wewnątrz parent i zwraca ramkę inner."""
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
-        self._settings_canvas.pack(side="left", fill="both", expand=True)
-
-        inner = tk.Frame(self._settings_canvas, bg=BG)
-        self._settings_canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = tk.Frame(canvas, bg=BG)
+        canvas.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>",
-                   lambda e: self._settings_canvas.configure(
-                       scrollregion=self._settings_canvas.bbox("all")))
+                   lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
+        self._bind_mousewheel(canvas, canvas)
+        return inner
 
-        # Mousewheel scrolling for settings
-        self._bind_mousewheel(self._settings_canvas, self._settings_canvas)
-
-        self._settings_inner = inner
-        self._build_settings_api_keys(inner)
-        self._build_settings_ai_model(inner)
-        self._build_settings_chat_model(inner)
-        self._build_settings_schedule(inner)
-        self._build_settings_instruments(inner)
-        self._build_settings_sources(inner)
-        self._build_settings_prompts(inner)
-
+    def _build_settings_tab(self):
+        # Przycisk zapisu na dole (poza notebookiem, zawsze widoczny)
         tk.Button(
-            inner, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
+            self.tab_settings, text="💾 Zapisz ustawienia", bg=GREEN, fg=BG,
             font=("Segoe UI", 11, "bold"), relief="flat", cursor="hand2",
             padx=20, pady=8, command=self._save_settings
-        ).pack(pady=16)
+        ).pack(side="bottom", pady=8)
+
+        # Wewnętrzny notebook z podzakładkami
+        settings_nb = ttk.Notebook(self.tab_settings)
+        settings_nb.pack(fill="both", expand=True, padx=2, pady=(4, 0))
+
+        tab_general     = tk.Frame(settings_nb, bg=BG)
+        tab_instruments = tk.Frame(settings_nb, bg=BG)
+        tab_prompts     = tk.Frame(settings_nb, bg=BG)
+
+        settings_nb.add(tab_general,     text="  ⚙  Ogólne  ")
+        settings_nb.add(tab_instruments, text="  📊  Instrumenty  ")
+        settings_nb.add(tab_prompts,     text="  📝  Prompty  ")
+
+        inner_general     = self._make_scrollable_inner(tab_general)
+        inner_instruments = self._make_scrollable_inner(tab_instruments)
+        inner_prompts     = self._make_scrollable_inner(tab_prompts)
+
+        self._settings_inner = inner_general  # compat
+
+        self._build_settings_api_keys(inner_general)
+        self._build_settings_ai_model(inner_general)
+        self._build_settings_chat_model(inner_general)
+        self._build_settings_schedule(inner_general)
+
+        self._build_settings_instruments(inner_instruments)
+        self._build_settings_sources(inner_instruments)
+
+        self._build_settings_prompts(inner_prompts)
 
     # ── Settings sub-builders ─────────────────────────────────────
     @staticmethod
@@ -1702,7 +1720,7 @@ class InvestmentAdvisor(tk.Tk):
             width=30)
         self.model_cb.pack(side="left", padx=4)
 
-        tk.Label(model_frame, text="lub wpisz:", bg=BG, fg=GRAY,
+        tk.Label(model_frame, text="lub wpisz:", bg=BG, fg=SUBTEXT,
                  font=("Segoe UI", 9)).pack(side="left", padx=(8, 4))
         self.v_custom_model = tk.StringVar()
         self._custom_model_entry = tk.Entry(
@@ -1721,7 +1739,7 @@ class InvestmentAdvisor(tk.Tk):
         tk.Label(
             inner,
             text="Model używany do dyskusji o raporcie (używa tych samych kluczy API).",
-            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
         ).pack(anchor="w", padx=16, pady=(0, 4))
 
         chat_prov_frame = tk.Frame(inner, bg=BG)
@@ -1755,7 +1773,7 @@ class InvestmentAdvisor(tk.Tk):
             width=30)
         self.chat_model_cb.pack(side="left", padx=4)
 
-        tk.Label(chat_model_frame, text="lub wpisz:", bg=BG, fg=GRAY,
+        tk.Label(chat_model_frame, text="lub wpisz:", bg=BG, fg=SUBTEXT,
                  font=("Segoe UI", 9)).pack(side="left", padx=(8, 4))
         self.v_chat_custom_model = tk.StringVar()
         self._chat_custom_model_entry = tk.Entry(
@@ -1801,7 +1819,7 @@ class InvestmentAdvisor(tk.Tk):
             inner,
             text="Symbol: ticker (np. AAPL) lub ID CoinGecko (np. bitcoin). "
                  "Źródło: yfinance / coingecko / stooq",
-            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
         ).pack(anchor="w", padx=16, pady=(0, 6))
 
         hdr = tk.Frame(inner, bg=BG)
@@ -1844,7 +1862,7 @@ class InvestmentAdvisor(tk.Tk):
         self._refresh_profiles_btn.pack(side="left", padx=(8, 0))
 
         self._gen_profiles_status = tk.Label(
-            inst_btn_frame, text="", bg=BG, fg=GRAY,
+            inst_btn_frame, text="", bg=BG, fg=SUBTEXT,
             font=("Segoe UI", 9))
         self._gen_profiles_status.pack(side="left", padx=(8, 0))
 
@@ -1853,7 +1871,7 @@ class InvestmentAdvisor(tk.Tk):
         tk.Label(
             inner,
             text="Aplikacja pobierze treść z tych stron przed każdą analizą.",
-            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
         ).pack(anchor="w", padx=16, pady=(0, 6))
 
         self.sources_frame = tk.Frame(inner, bg=BG)
@@ -1896,7 +1914,7 @@ class InvestmentAdvisor(tk.Tk):
             _pf2,
             text="Instrukcja systemowa dla czatu. Raport z analizy jest "
                  "dołączany automatycznie.",
-            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
         ).pack(side="left")
         tk.Button(
             _pf2, text="⛶", bg=BTN_BG, fg=ACCENT,
@@ -1925,7 +1943,7 @@ class InvestmentAdvisor(tk.Tk):
             _pf3,
             text="Instrukcja systemowa dla czatu na zakładce Wykresy. "
                  "Dane wykresu (symbol, okres, ceny) są dołączane automatycznie.",
-            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
         ).pack(side="left")
         tk.Button(
             _pf3, text="⛶", bg=BTN_BG, fg=ACCENT,
@@ -1954,7 +1972,7 @@ class InvestmentAdvisor(tk.Tk):
             _pf4,
             text="Instrukcja dla AI przy generowaniu opisu instrumentu. "
                  "Nazwa, symbol i kategoria są dołączane automatycznie.",
-            bg=BG, fg=GRAY, font=("Segoe UI", 9)
+            bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
         ).pack(side="left")
         tk.Button(
             _pf4, text="⛶", bg=BTN_BG, fg=ACCENT,
