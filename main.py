@@ -189,8 +189,12 @@ class InvestmentAdvisor(tk.Tk):
     def _build_ui(self):
         top = tk.Frame(self, bg=BG2, height=50)
         top.pack(fill="x")
-        tk.Label(top, text="📈 Investment Advisor", bg=BG2, fg=ACCENT,
-                 font=("Segoe UI", 16, "bold")).pack(side="left", padx=16, pady=8)
+        _banner_frame = tk.Frame(top, bg=BG2)
+        _banner_frame.pack(side="left", padx=16, pady=6)
+        tk.Label(_banner_frame, text="📈 Investment Advisor", bg=BG2, fg=ACCENT,
+                 font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        tk.Label(_banner_frame, text="by R.Debski Inc.", bg=BG2, fg=SUBTEXT,
+                 font=("Segoe UI", 8, "italic")).pack(anchor="e")
         self.alert_btn = tk.Button(
             top, text="🔔 Alerty", bg=BTN_BG, fg=YELLOW,
             font=("Segoe UI", 10), relief="flat", cursor="hand2",
@@ -253,7 +257,41 @@ class InvestmentAdvisor(tk.Tk):
                 nb.select(self._prompts_prev_idx)
                 self._prompts_tab_locked = False
                 return
+            # Hasło prawidłowe – ujawnij zawartość
+            if hasattr(self, "_prompts_overlay"):
+                self._prompts_overlay.place_forget()
+        else:
+            # Opuszczenie zakładki Prompty – zablokuj ponownie
+            if hasattr(self, "_prompts_overlay"):
+                self._prompts_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+                self._prompts_overlay.lift()
         self._prompts_prev_idx = selected
+
+    def _draw_prompts_blur(self, canvas):
+        """Rysuje wizualny efekt rozmycia na nakładce blokującej prompty."""
+        import random
+        canvas.delete("all")
+        w, h = canvas.winfo_width(), canvas.winfo_height()
+        if w < 4 or h < 4:
+            return
+        canvas.create_rectangle(0, 0, w, h, fill=BG2, outline="")
+        rng = random.Random(42)
+        y = 24
+        while y < h - 24:
+            lw = rng.randint(int(w * 0.22), int(w * 0.80))
+            lx = rng.randint(18, max(20, w - lw - 18))
+            gv = rng.randint(44, 82)
+            canvas.create_rectangle(lx, y, lx + lw, y + 7,
+                                     fill=f"#{gv:02x}{gv:02x}{gv:02x}", outline="")
+            y += rng.randint(13, 22)
+        mx, my = w // 2, h // 2
+        canvas.create_text(mx, my - 32, text="🔒", fill=YELLOW,
+                            font=("Segoe UI", 32), anchor="center")
+        canvas.create_text(mx, my + 10,
+                            text="Treść promptów jest zabezpieczona hasłem",
+                            fill=FG, font=("Segoe UI", 12, "bold"), anchor="center")
+        canvas.create_text(mx, my + 36, text="Kliknij aby odblokować",
+                            fill=SUBTEXT, font=("Segoe UI", 10), anchor="center")
 
     def _verify_settings_password(self):
         dlg = tk.Toplevel(self)
@@ -2356,6 +2394,76 @@ class InvestmentAdvisor(tk.Tk):
         self._bind_mousewheel(canvas, canvas)
         return inner
 
+    # ── Autostart systemu ────────────────────────────────────────
+    _AUTOSTART_DIR  = os.path.expanduser("~/.config/autostart")
+    _AUTOSTART_FILE = os.path.join(
+        os.path.expanduser("~/.config/autostart"), "investment-advisor.desktop")
+
+    def _is_autostart_enabled(self) -> bool:
+        return os.path.exists(self._AUTOSTART_FILE)
+
+    def _set_autostart(self, enable: bool):
+        if enable:
+            os.makedirs(self._AUTOSTART_DIR, exist_ok=True)
+            main_py = os.path.abspath(__file__)
+            content = (
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=Investment Advisor\n"
+                f"Exec={sys.executable} {main_py}\n"
+                "Hidden=false\n"
+                "NoDisplay=false\n"
+                "X-GNOME-Autostart-enabled=true\n"
+                "Comment=Investment Advisor – analiza rynków finansowych\n"
+            )
+            with open(self._AUTOSTART_FILE, "w") as f:
+                f.write(content)
+        else:
+            try:
+                os.remove(self._AUTOSTART_FILE)
+            except FileNotFoundError:
+                pass
+
+    # ── Cron – harmonogram uruchamiania aplikacji ────────────────
+    _CRON_MARKER = "# InvestmentAdvisor-schedule"
+
+    def _update_cron_schedule(self, enabled: bool, times: list):
+        """Rejestruje / usuwa wpisy crontab do automatycznego uruchamiania aplikacji."""
+        import subprocess
+        try:
+            result = subprocess.run(["crontab", "-l"],
+                                    capture_output=True, text=True)
+            current = result.stdout if result.returncode == 0 else ""
+        except Exception as e:
+            logging.getLogger(__name__).warning("crontab -l failed: %s", e)
+            return
+
+        # Usuń poprzednie wpisy tej aplikacji
+        lines = [l for l in current.splitlines()
+                 if self._CRON_MARKER not in l]
+
+        if enabled:
+            main_py = os.path.abspath(__file__)
+            for t in times:
+                try:
+                    hh, mm = t.strip().split(":")
+                    h, m = int(hh), int(mm)
+                except (ValueError, AttributeError):
+                    continue
+                lines.append(
+                    f"{m} {h} * * * {sys.executable} {main_py}"
+                    f" --auto-analysis  {self._CRON_MARKER}"
+                )
+
+        new_cron = "\n".join(lines)
+        if new_cron and not new_cron.endswith("\n"):
+            new_cron += "\n"
+        try:
+            subprocess.run(["crontab", "-"], input=new_cron,
+                           text=True, check=True)
+        except Exception as e:
+            logging.getLogger(__name__).warning("crontab update failed: %s", e)
+
     def _build_settings_tab(self):
         # Przycisk zapisu na dole (poza notebookiem, zawsze widoczny)
         tk.Button(
@@ -2569,6 +2677,23 @@ class InvestmentAdvisor(tk.Tk):
                  highlightbackground=GRAY, highlightthickness=1
                  ).pack(side="left", fill="x", expand=True, padx=4)
 
+        tk.Label(inner, text="Aplikacja uruchomi się automatycznie o podanych godzinach, "
+                             "nawet jeśli nie jest włączona.",
+                 bg=BG, fg=SUBTEXT, font=("Segoe UI", 9)
+                 ).pack(anchor="w", padx=16, pady=(0, 4))
+
+        self._settings_section(inner, "🚀 Autostart systemu")
+        autostart_frame = tk.Frame(inner, bg=BG)
+        autostart_frame.pack(fill="x", padx=16, pady=3)
+        self.v_autostart = tk.BooleanVar(value=self._is_autostart_enabled())
+        tk.Checkbutton(
+            autostart_frame,
+            text="Uruchamiaj aplikację automatycznie przy włączaniu komputera",
+            variable=self.v_autostart, bg=BG, fg=FG,
+            selectcolor=ACCENT, activebackground=BG,
+            font=("Segoe UI", 10)
+        ).pack(side="left")
+
     def _build_settings_instruments(self, inner):
         self._settings_section(inner, "📊 Instrumenty finansowe")
         tk.Label(
@@ -2779,6 +2904,18 @@ class InvestmentAdvisor(tk.Tk):
             font=("Segoe UI", 9), relief="flat", cursor="hand2",
             command=self._reset_calendar_event_prompt
         ).pack(anchor="w", padx=16, pady=2)
+
+        # ── Nakładka blurująca prompty (zakrywa całą zakładkę aż do odblokowania) ──
+        overlay = tk.Canvas(self._tab_prompts, highlightthickness=0, cursor="hand2")
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.bind("<Configure>", lambda e: self._draw_prompts_blur(overlay))
+        overlay.bind("<Button-1>", lambda e: self._try_unlock_prompts())
+        self._prompts_overlay = overlay
+
+    def _try_unlock_prompts(self):
+        """Próba odblokowania zakładki Prompty przez kliknięcie nakładki."""
+        if self._verify_settings_password():
+            self._prompts_overlay.place_forget()
 
     def _add_instrument_row(self, inst=None):
         if inst is None:
@@ -3145,6 +3282,13 @@ class InvestmentAdvisor(tk.Tk):
         self._refresh_chart_symbols()
         self._start_scheduler()
         self._populate_tile_placeholders(instruments)
+
+        # Autostart systemu
+        self._set_autostart(self.v_autostart.get())
+
+        # Cron – harmonogram uruchamiania aplikacji
+        times = self.config_data["schedule"]["times"]
+        self._update_cron_schedule(self.v_sched_enabled.get(), times)
 
         inst_names = [f"{i['name']} ({i['symbol']})" for i in instruments]
         for pw in self._port_widgets.values():
@@ -4076,10 +4220,14 @@ class InvestmentAdvisor(tk.Tk):
 
 
 if __name__ == "__main__":
+    _auto_analysis = "--auto-analysis" in sys.argv
     print("Start…")
     try:
         app = InvestmentAdvisor()
         print("Okno utworzone!")
+        if _auto_analysis:
+            # Uruchomiona przez cron – poczekaj na załadowanie UI, następnie uruchom analizę
+            app.after(4000, app._run_analysis_thread)
         app.mainloop()
     except Exception as exc:
         import traceback
