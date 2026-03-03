@@ -504,8 +504,8 @@ class InvestmentAdvisor(tk.Tk):
 
         win = tk.Toplevel(self)
         win.title(f"Profil: {name} ({symbol})")
-        win.geometry("620x580")
-        win.minsize(400, 350)
+        win.geometry("760x720")
+        win.minsize(520, 480)
         win.configure(bg=BG)
         win.transient(self)
 
@@ -525,7 +525,7 @@ class InvestmentAdvisor(tk.Tk):
 
         # ── Section A: AI Profile (persistent cache) ──
         profile_section = tk.Frame(profile_paned, bg=BG)
-        profile_paned.add(profile_section, minsize=80)
+        profile_paned.add(profile_section, minsize=120)
 
         tk.Label(profile_section, text="Profil instrumentu (AI)", bg=BG,
                  fg=ACCENT, font=("Segoe UI", 11, "bold")
@@ -533,14 +533,10 @@ class InvestmentAdvisor(tk.Tk):
         tk.Frame(profile_section, bg=GRAY, height=1
                  ).pack(fill="x", pady=(0, 4))
 
-        profile_display = scrolledtext.ScrolledText(
-            profile_section, bg=BG2, fg=FG, font=("Segoe UI", 10),
-            relief="flat", wrap="word", state="disabled")
-        profile_display.pack(fill="both", expand=True, pady=(0, 4))
-        setup_markdown_tags(profile_display)
-
+        # btn_frame PRZED display — dzięki temu expand=True na display
+        # nie wyciska przycisku poza widoczny obszar
         btn_frame = tk.Frame(profile_section, bg=BG)
-        btn_frame.pack(fill="x", pady=(0, 4))
+        btn_frame.pack(side="bottom", fill="x", pady=(4, 0))
 
         profile_status = tk.Label(btn_frame, text="", bg=BG, fg=YELLOW,
                                   font=("Segoe UI", 8))
@@ -552,9 +548,15 @@ class InvestmentAdvisor(tk.Tk):
             padx=8, pady=2)
         refresh_btn.pack(side="left")
 
+        profile_display = scrolledtext.ScrolledText(
+            profile_section, bg=BG2, fg=FG, font=("Segoe UI", 10),
+            relief="flat", wrap="word", state="disabled")
+        profile_display.pack(fill="both", expand=True)
+        setup_markdown_tags(profile_display)
+
         # ── Section B: Dynamic trend (no AI) ──
         trend_section = tk.Frame(profile_paned, bg=BG)
-        profile_paned.add(trend_section, minsize=80)
+        profile_paned.add(trend_section, minsize=120)
 
         tk.Label(trend_section, text="Aktualna sytuacja", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 11, "bold")
@@ -566,6 +568,13 @@ class InvestmentAdvisor(tk.Tk):
             trend_section, bg=BG2, fg=FG, font=("Segoe UI", 10),
             relief="flat", wrap="word", state="disabled")
         trend_display.pack(fill="both", expand=True)
+
+        # Ustaw sash po wyrenderowaniu: profil ~65%, trend ~35%
+        def _set_sash():
+            h = profile_paned.winfo_height()
+            if h > 10:
+                profile_paned.sash_place(0, 0, int(h * 0.62))
+        win.after(80, _set_sash)
 
         # ── Helpers ──
         def _set_text(widget, text, use_markdown=False):
