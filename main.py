@@ -1662,7 +1662,7 @@ class InvestmentAdvisor(tk.Tk):
         popup = tk.Toplevel(self)
         popup.title(f"Dodaj do portfela – {symbol}")
         popup.configure(bg=BG)
-        popup.geometry("420x280")
+        popup.geometry("420x310")
         popup.resizable(False, False)
         popup.transient(self)
         popup.grab_set()
@@ -1705,6 +1705,11 @@ class InvestmentAdvisor(tk.Tk):
                  font=("Segoe UI", 10),
                  highlightbackground=GRAY, highlightthickness=1)
         price_entry.grid(row=2, column=1, padx=(8, 0), pady=4, sticky="w")
+        btn_price = tk.Button(
+            form, text="Aktualna", bg=BTN_BG, fg=ACCENT,
+            font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            padx=6, pady=2)
+        btn_price.grid(row=2, column=2, padx=(6, 0), pady=4, sticky="w")
 
         # Currency
         tk.Label(form, text="Waluta:", bg=BG, fg=FG,
@@ -1721,6 +1726,61 @@ class InvestmentAdvisor(tk.Tk):
 
         btn_bar = tk.Frame(popup, bg=BG)
         btn_bar.pack(fill="x", padx=24, pady=(16, 12))
+
+        def _apply_price(price_usd):
+            currency = v_currency.get()
+            if currency == "USD":
+                v_price.set(f"{price_usd:.4f}")
+                return
+            fx = get_fx_to_usd(currency)
+            if fx is None or fx == 0:
+                messagebox.showwarning(
+                    "Brak kursu FX",
+                    f"Brak kursu FX, nie można przeliczyć na {currency}.",
+                    parent=popup)
+                return
+            v_price.set(f"{price_usd / fx:.4f}")
+
+        def _fetch_price():
+            d = self.current_market_data.get(symbol, {})
+            price_usd = d.get("price") if d and "error" not in d else None
+            if price_usd is not None:
+                _apply_price(price_usd)
+                return
+            btn_price.configure(state="disabled", text="…")
+
+            def _fetch():
+                try:
+                    if inst_cfg:
+                        source = inst_cfg.get("source", "yfinance")
+                        iname  = inst_cfg.get("name", symbol)
+                        from modules.market_data import (
+                            get_yfinance_data, get_coingecko_data, get_stooq_data)
+                        if source == "coingecko":
+                            result = get_coingecko_data(symbol.lower(), iname)
+                        elif source == "stooq":
+                            result = get_stooq_data(symbol, iname)
+                        else:
+                            result = get_yfinance_data(symbol, iname)
+                        if "error" not in result and result.get("price"):
+                            self.current_market_data[symbol] = result
+                            self.after(0, lambda: _apply_price(result["price"]))
+                            return
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Brak ceny", "Brak aktualnej ceny dla instrumentu.",
+                        parent=popup))
+                except (KeyError, ValueError, TypeError, ConnectionError) as e:
+                    logging.getLogger(__name__).debug("Price fetch failed: %s", e)
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Brak ceny", "Brak aktualnej ceny dla instrumentu.",
+                        parent=popup))
+                finally:
+                    self.after(0, lambda: btn_price.configure(
+                        state="normal", text="Aktualna"))
+
+            threading.Thread(target=_fetch, daemon=True).start()
+
+        btn_price.configure(command=_fetch_price)
 
         def _do_add():
             tab_type = _tab_label_to_type[v_tab.get()]
