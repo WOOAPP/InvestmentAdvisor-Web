@@ -233,18 +233,10 @@ def get_available_models(provider):
             "claude-haiku-4-5-20251001"
         ],
         "openai": [
-            "gpt-5.2",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-4.1-nano",
-            "gpt-4-turbo",
-            "o4-mini",
-            "o3",
             "o3-mini",
-            "o1",
-            "o1-mini",
+            "gpt-4.1",
+            "gpt-4o",
+            "gpt-4.1-mini",
         ],
         "openrouter": [
             "anthropic/claude-sonnet-4",
