@@ -81,6 +81,7 @@ class InvestmentAdvisor(tk.Tk):
         self._autoload_last_report()
         self._start_scheduler()
         self._check_alerts()
+        self._start_price_autorefresh()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── Mousewheel scrolling helper ───────────────────────────
@@ -1251,6 +1252,31 @@ class InvestmentAdvisor(tk.Tk):
                 self.set_busy(False, "Gotowy")
 
         threading.Thread(target=_fetch, daemon=True).start()
+
+    # ── Auto-odświeżanie cen co 5 sekund ──────────────────────
+    def _start_price_autorefresh(self):
+        self._price_fetch_in_progress = False
+        self._autorefresh_prices()
+
+    def _autorefresh_prices(self):
+        if self._shutting_down:
+            return
+        if not self._price_fetch_in_progress:
+            self._price_fetch_in_progress = True
+            threading.Thread(target=self._autorefresh_worker, daemon=True).start()
+        self.after(5000, self._autorefresh_prices)
+
+    def _autorefresh_worker(self):
+        try:
+            data = get_all_instruments(self.config_data.get("instruments", []))
+            self.current_market_data.update(data)
+            if not self._shutting_down:
+                self.after(0, lambda: self._update_price_tiles(data))
+                self.after(0, self._refresh_portfolio)
+        except Exception:
+            pass
+        finally:
+            self._price_fetch_in_progress = False
 
     # ═══════════════════════════════════════
     # CALENDAR TAB
