@@ -711,8 +711,8 @@ class InvestmentAdvisor(tk.Tk):
         # is_sell=True → "Cena sprzedaży" label; P&L shows locked gain (buy→sell)
         tabs = [
             ("obserwowane", "  👁  Obserwowane  ", "➕ Obserwuj",     "Cena zakupu:", False),
-            ("zakupione",   "  🟢 Gra na wzrosty  ",  "➕ Dodaj zakup",  "Cena zakupu:", False),
-            ("sprzedane",   "  🔴 Gra na spadki  ",  "➕ Dodaj sprzedaż", "Cena sprzedaży:", True),
+            ("zakupione",   "  📈 Gra na wzrosty  ",  "➕ Dodaj zakup",  "Cena zakupu:", False),
+            ("sprzedane",   "  📉 Gra na spadki  ",  "➕ Dodaj sprzedaż", "Cena sprzedaży:", True),
         ]
         self._port_tab_types = [t[0] for t in tabs]
         for tab_type, label, btn_lbl, price_lbl, is_sell in tabs:
@@ -1473,11 +1473,16 @@ class InvestmentAdvisor(tk.Tk):
         form.pack(fill="x", padx=24)
 
         # Target tab selection
-        tk.Label(form, text="Zakładka:", bg=BG, fg=FG,
+        _tab_label_to_type = {
+            "Obserwowane":    "obserwowane",
+            "Gra na wzrosty": "zakupione",
+            "Gra na spadki":  "sprzedane",
+        }
+        tk.Label(form, text="Dodaj do:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", pady=4)
-        v_tab = tk.StringVar(value="zakupione")
+        v_tab = tk.StringVar(value="Gra na wzrosty")
         tab_cb = ttk.Combobox(form, textvariable=v_tab, width=20, state="readonly",
-                              values=["obserwowane", "zakupione", "sprzedane"])
+                              values=list(_tab_label_to_type.keys()))
         tab_cb.grid(row=0, column=1, padx=(8, 0), pady=4, sticky="w")
 
         # Quantity
@@ -1517,7 +1522,7 @@ class InvestmentAdvisor(tk.Tk):
         btn_bar.pack(fill="x", padx=24, pady=(16, 12))
 
         def _do_add():
-            tab_type = v_tab.get()
+            tab_type = _tab_label_to_type[v_tab.get()]
             qty_str = v_qty.get().strip()
             price_str = v_price.get().strip()
             currency = v_currency.get()
@@ -1550,7 +1555,7 @@ class InvestmentAdvisor(tk.Tk):
             self._refresh_portfolio(tab_type)
             popup.destroy()
             messagebox.showinfo("Dodano",
-                                f"{name} ({symbol}) dodano do zakładki '{tab_type}'.")
+                                f"{name} ({symbol}) dodano do zakładki '{v_tab.get()}'.")
 
         tk.Button(btn_bar, text="✅ Dodaj", bg=GREEN, fg=BG,
                   font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
