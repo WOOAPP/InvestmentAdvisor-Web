@@ -3,6 +3,7 @@ import sys
 import os
 import threading
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from bs4 import BeautifulSoup
 from modules.url_validator import (
@@ -120,20 +121,40 @@ def scrape_url(url, max_chars=SCRAPER_DEFAULT_MAX_CHARS):
 
 
 def scrape_all(urls, max_chars_per_site=SCRAPER_MAX_CHARS_PER_SITE, trusted_domains=None):
-    """Pobiera treść ze wszystkich podanych URL-i (z walidacją)."""
+    """Pobiera treść ze wszystkich podanych URL-i równolegle (z walidacją).
+
+    Używa ThreadPoolExecutor, więc timeout jednego serwisu nie blokuje
+    pozostałych – całkowity czas ≈ najwolniejszy pojedynczy request.
+    """
     if not urls:
         return ""
 
     valid_urls, errors = validate_urls(urls, trusted_domains)
 
-    results = []
+    results_map = {}
     for err in errors:
-        results.append(f"⚠ {err}")
+        results_map[None] = results_map.get(None, []) + [f"⚠ {err}"]
 
-    for url in valid_urls:
-        url = url.strip()
-        if not url:
-            continue
-        text = scrape_url(url, max_chars=max_chars_per_site)
-        results.append(f"=== ŹRÓDŁO: {url} ===\n{text}\n")
-    return "\n".join(results)
+    clean_urls = [u.strip() for u in valid_urls if u.strip()]
+    if clean_urls:
+        per_url_timeout = CONNECT_TIMEOUT + READ_TIMEOUT + 2
+        with ThreadPoolExecutor(max_workers=min(len(clean_urls), 6)) as executor:
+            future_to_url = {
+                executor.submit(scrape_url, url, max_chars_per_site): url
+                for url in clean_urls
+            }
+            for future in as_completed(future_to_url,
+                                       timeout=per_url_timeout):
+                url = future_to_url[future]
+                try:
+                    text = future.result()
+                except Exception as exc:
+                    text = f"[Błąd pobierania {url}: {exc}]"
+                    logger.warning(text)
+                results_map[url] = text
+
+    lines = results_map.pop(None, [])
+    for url in clean_urls:
+        if url in results_map:
+            lines.append(f"=== ŹRÓDŁO: {url} ===\n{results_map[url]}\n")
+    return "\n".join(lines)
