@@ -264,7 +264,7 @@ class InvestmentAdvisor(tk.Tk):
             # Opuszczenie zakładki Prompty – zablokuj ponownie
             if hasattr(self, "_prompts_overlay"):
                 self._prompts_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-                self._prompts_overlay.lift()
+                self._prompts_overlay.tkraise()  # Frame.tkraise() nie koliduje z canvas raise
         self._prompts_prev_idx = selected
 
     def _draw_prompts_blur(self, canvas):
@@ -2929,12 +2929,19 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_calendar_event_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
-        # ── Nakładka blurująca prompty (zakrywa całą zakładkę aż do odblokowania) ──
-        overlay = tk.Canvas(self._tab_prompts, highlightthickness=0, cursor="hand2")
-        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-        overlay.bind("<Configure>", lambda e: self._draw_prompts_blur(overlay))
-        overlay.bind("<Button-1>", lambda e: self._try_unlock_prompts())
-        self._prompts_overlay = overlay
+        # ── Nakładka blurująca prompty ──────────────────────────────────────────
+        # Frame jako kontener (lift() działa na Frame bez konfliktu z canvas raise)
+        overlay_frame = tk.Frame(self._tab_prompts, bg=BG2)
+        overlay_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay_canvas = tk.Canvas(overlay_frame, highlightthickness=0,
+                                   cursor="hand2", bg=BG2)
+        overlay_canvas.pack(fill="both", expand=True)
+        overlay_canvas.bind("<Configure>",
+                            lambda e: self._draw_prompts_blur(overlay_canvas))
+        overlay_canvas.bind("<Button-1>", lambda e: self._try_unlock_prompts())
+        overlay_frame.bind("<Button-1>", lambda e: self._try_unlock_prompts())
+        self._prompts_overlay = overlay_frame
+        self._prompts_overlay_canvas = overlay_canvas
 
     def _try_unlock_prompts(self):
         """Próba odblokowania zakładki Prompty przez kliknięcie nakładki."""
