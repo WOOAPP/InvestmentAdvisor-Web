@@ -452,12 +452,29 @@ class InvestmentAdvisor(tk.Tk):
         """Bind click + cursor on tile and all its children."""
         handler = lambda e, s=symbol: self._on_tile_click(s)
         widget.bind("<Button-1>", handler)
+        right_handler = lambda e, s=symbol: self._on_tile_right_click(s, e)
+        widget.bind("<Button-3>", right_handler)
         try:
             widget.configure(cursor="hand2")
         except tk.TclError:
             pass
         for child in widget.winfo_children():
             self._bind_tile_events(child, symbol)
+
+    def _on_tile_right_click(self, symbol, event):
+        """Show context menu on right-click over an instrument tile."""
+        instruments = self.config_data.get("instruments", [])
+        inst_cfg = next((i for i in instruments if i["symbol"] == symbol), None)
+        name = inst_cfg["name"] if inst_cfg else symbol
+
+        menu = tk.Menu(self, tearoff=0, bg=BG2, fg=FG,
+                       activebackground=ACCENT, activeforeground=BG,
+                       font=("Segoe UI", 10), relief="flat", bd=0)
+        menu.add_command(
+            label=f"💼  Dodaj do portfela — {name}",
+            command=lambda: self._open_add_to_portfolio_dialog(symbol)
+        )
+        menu.tk_popup(event.x_root, event.y_root)
 
     def _on_tile_click(self, symbol):
         """Differentiate single-click (profile) from double-click (chart)."""
@@ -1445,15 +1462,9 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_sym_cb["values"] = symbols
         self.compare_cb["values"] = [""] + symbols
 
-    # ── Add instrument from chart to portfolio ────────────────
-    def _chart_add_to_portfolio(self):
-        """Open a small dialog to add the currently viewed chart instrument to the portfolio."""
-        symbol = self.chart_symbol_var.get()
-        if not symbol:
-            messagebox.showwarning("Brak instrumentu", "Najpierw wybierz instrument na wykresie.")
-            return
-
-        # Find instrument name from config
+    # ── Add instrument to portfolio (shared dialog) ───────────
+    def _open_add_to_portfolio_dialog(self, symbol):
+        """Open a dialog to add any instrument to the portfolio."""
         instruments = self.config_data.get("instruments", [])
         inst_cfg = next((i for i in instruments if i["symbol"] == symbol), None)
         name = inst_cfg["name"] if inst_cfg else symbol
@@ -1563,6 +1574,14 @@ class InvestmentAdvisor(tk.Tk):
         tk.Button(btn_bar, text="Anuluj", bg=BTN_BG, fg=FG,
                   font=("Segoe UI", 10), relief="flat", cursor="hand2",
                   padx=14, pady=6, command=popup.destroy).pack(side="right")
+
+    def _chart_add_to_portfolio(self):
+        """Open add-to-portfolio dialog for the instrument currently shown in the chart."""
+        symbol = self.chart_symbol_var.get()
+        if not symbol:
+            messagebox.showwarning("Brak instrumentu", "Najpierw wybierz instrument na wykresie.")
+            return
+        self._open_add_to_portfolio_dialog(symbol)
 
     # ── Chart chat helpers ─────────────────────────────────────
     def _append_chart_chat(self, label, text, tag):
@@ -3381,7 +3400,7 @@ class InvestmentAdvisor(tk.Tk):
         tk.Label(header, text="Kursy Rynkowe", bg=BG2, fg=ACCENT,
                  font=("Segoe UI", 13, "bold")).pack(side="left")
         tk.Label(header,
-                 text="Dwuklik na kafelku → wykres  |  Pojedynczy klik → profil",
+                 text="Dwuklik → wykres  |  Pojedynczy klik → profil  |  Prawy klik → dodaj do portfela",
                  bg=BG2, fg=SUBTEXT, font=("Segoe UI", 8)).pack(side="right")
 
         # Canvas + scrollbar for tiles
