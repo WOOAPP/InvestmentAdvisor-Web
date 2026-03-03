@@ -264,7 +264,7 @@ class InvestmentAdvisor(tk.Tk):
             # Opuszczenie zakładki Prompty – zablokuj ponownie
             if hasattr(self, "_prompts_overlay"):
                 self._prompts_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-                self._prompts_overlay.lift()
+                self._prompts_overlay.tkraise()  # Frame.tkraise() nie koliduje z canvas raise
         self._prompts_prev_idx = selected
 
     def _draw_prompts_blur(self, canvas):
@@ -630,12 +630,20 @@ class InvestmentAdvisor(tk.Tk):
             pass
 
     def _draw_sparkline(self, canvas_w, data, color):
-        canvas_w.update_idletasks()
-        w = canvas_w.winfo_width() or 130
-        h = canvas_w.winfo_height() or 26
+        # Bez update_idletasks() – blokuje UI przy każdym kafelku
+        w = canvas_w.winfo_width()
+        if w <= 1:
+            w = 130
+        h = canvas_w.winfo_height()
+        if h <= 1:
+            h = 26
         canvas_w.delete("all")
         if len(data) < 2:
             return
+        # Downsample – canvas 130px szeroki, >60 punktów to marnotrawstwo
+        if len(data) > 60:
+            step = len(data) / 60
+            data = [data[int(i * step)] for i in range(60)]
         mn, mx = min(data), max(data)
         rng = mx - mn
         if rng == 0:
@@ -644,11 +652,12 @@ class InvestmentAdvisor(tk.Tk):
             return
         margin = 2
         pts = []
+        n = len(data)
         for i, v in enumerate(data):
-            x = margin + int(i / (len(data) - 1) * (w - 2 * margin))
+            x = margin + int(i / (n - 1) * (w - 2 * margin))
             y = (h - margin) - int((v - mn) / rng * (h - 2 * margin))
             pts.extend([x, y])
-        canvas_w.create_line(pts, fill=color, width=1.5, smooth=True)
+        canvas_w.create_line(pts, fill=color, width=1.5)
 
     # ── Tile click handling (single → profile, double → charts) ──
 
@@ -722,6 +731,20 @@ class InvestmentAdvisor(tk.Tk):
                 return symbol, []
             return symbol, get_sparkline_by_timeframe(symbol, timeframe, source)
 
+        def _draw_one(symbol):
+            """Rysuje sparkline dla jednego symbolu – wywoływane z głównego wątku."""
+            data = self._spark_cache.get(symbol)
+            if not data:
+                return
+            for tile_dict in [self._tile_widgets, self._market_popup_tile_widgets]:
+                w = tile_dict.get(symbol)
+                if not w:
+                    continue
+                d = self.current_market_data.get(symbol, {})
+                color = GREEN if d.get("change_pct", 0) >= 0 else RED
+                self._draw_sparkline(w["spark"], data, color)
+                self._spark_last_color[symbol] = color
+
         try:
             with ThreadPoolExecutor(max_workers=8) as ex:
                 futures = {ex.submit(_fetch, inst): inst for inst in instruments}
@@ -730,15 +753,16 @@ class InvestmentAdvisor(tk.Tk):
                         symbol, data = future.result()
                         if data:
                             self._spark_cache[symbol] = data
+                            # Rysuj od razu po pobraniu – nie czekaj na resztę
+                            if not self._shutting_down:
+                                try:
+                                    self.after(0, lambda s=symbol: _draw_one(s))
+                                except RuntimeError:
+                                    pass
                         # Gdy fetch zwróci [] (np. stooq / WIG intraday), zachowujemy
                         # poprzedni wpis w cache — wykres nie znika podczas przełączania.
                     except Exception as e:
                         logger.warning("sparkline fetch error: %s", e)
-            if not self._shutting_down:
-                try:
-                    self.after(0, self._redraw_all_sparklines)
-                except RuntimeError:
-                    pass
         except Exception as e:
             logger.warning("_refresh_sparklines_worker failed: %s", e)
         finally:
@@ -2905,12 +2929,19 @@ class InvestmentAdvisor(tk.Tk):
             command=self._reset_calendar_event_prompt
         ).pack(anchor="w", padx=16, pady=2)
 
-        # ── Nakładka blurująca prompty (zakrywa całą zakładkę aż do odblokowania) ──
-        overlay = tk.Canvas(self._tab_prompts, highlightthickness=0, cursor="hand2")
-        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-        overlay.bind("<Configure>", lambda e: self._draw_prompts_blur(overlay))
-        overlay.bind("<Button-1>", lambda e: self._try_unlock_prompts())
-        self._prompts_overlay = overlay
+        # ── Nakładka blurująca prompty ──────────────────────────────────────────
+        # Frame jako kontener (lift() działa na Frame bez konfliktu z canvas raise)
+        overlay_frame = tk.Frame(self._tab_prompts, bg=BG2)
+        overlay_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay_canvas = tk.Canvas(overlay_frame, highlightthickness=0,
+                                   cursor="hand2", bg=BG2)
+        overlay_canvas.pack(fill="both", expand=True)
+        overlay_canvas.bind("<Configure>",
+                            lambda e: self._draw_prompts_blur(overlay_canvas))
+        overlay_canvas.bind("<Button-1>", lambda e: self._try_unlock_prompts())
+        overlay_frame.bind("<Button-1>", lambda e: self._try_unlock_prompts())
+        self._prompts_overlay = overlay_frame
+        self._prompts_overlay_canvas = overlay_canvas
 
     def _try_unlock_prompts(self):
         """Próba odblokowania zakładki Prompty przez kliknięcie nakładki."""
