@@ -29,6 +29,21 @@ _PROVIDER_DEFAULTS = {
 
 
 # ── Unified provider call ─────────────────────────────────────────
+def _openai_token_kwarg(model: str, max_tokens: int) -> dict:
+    """Return the correct token-limit kwarg for the given OpenAI model.
+
+    Reasoning and newer models (o-series, gpt-4.5+, gpt-5+) require
+    'max_completion_tokens'; older models use 'max_tokens'.
+    """
+    m = model.lower()
+    use_completion = (
+        m.startswith(("o1", "o3", "o4"))
+        or "gpt-4.5" in m
+        or "gpt-5" in m
+    )
+    return {"max_completion_tokens" if use_completion else "max_tokens": max_tokens}
+
+
 def _call_provider(provider, api_key, model, system_prompt,
                    messages, max_tokens=AI_MAX_TOKENS_ANALYSIS):
     """Call Anthropic or OpenAI-compatible API. Returns (text, usage)."""
@@ -48,8 +63,20 @@ def _call_provider(provider, api_key, model, system_prompt,
         if system_prompt:
             oai_messages.append({"role": "system", "content": system_prompt})
         oai_messages.extend(messages)
-        response = client.chat.completions.create(
-            model=model, max_tokens=max_tokens, messages=oai_messages)
+        token_kwarg = _openai_token_kwarg(model, max_tokens)
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=oai_messages, **token_kwarg)
+        except openai.BadRequestError as e:
+            # Fallback: swap between max_tokens / max_completion_tokens
+            if "max_completion_tokens" in str(e) or "max_tokens" in str(e):
+                alt_key = ("max_tokens" if "max_completion_tokens" in token_kwarg
+                           else "max_completion_tokens")
+                logger.info("Retrying %s with %s instead", model, alt_key)
+                response = client.chat.completions.create(
+                    model=model, messages=oai_messages, **{alt_key: max_tokens})
+            else:
+                raise
         return response.choices[0].message.content, getattr(response, "usage", None)
 
 
