@@ -608,7 +608,7 @@ class InvestmentAdvisor(tk.Tk):
                 # Efekt flash na nazwie gdy cena się zmieniła
                 prev = self._prev_prices.get(symbol)
                 if prev is not None and prev != price and "name_lbl" in w:
-                    flash_col = "#1e3028" if price > prev else "#30181e"
+                    flash_col = GREEN if price > prev else RED
                     self._flash_name_lbl(w["name_lbl"], flash_col)
                 self._prev_prices[symbol] = price
 
@@ -622,10 +622,10 @@ class InvestmentAdvisor(tk.Tk):
                         self._spark_last_color[symbol] = color
 
     def _flash_name_lbl(self, lbl, color):
-        """Podświetla etykietę nazwy na chwilę, potem przywraca tło BG2."""
+        """Podświetla tekst nazwy instrumentu przez 0.5s – zmiana fg dla widoczności."""
         try:
-            lbl.configure(bg=color)
-            lbl.after(500, lambda: lbl.configure(bg=BG2))
+            lbl.configure(fg=color)
+            lbl.after(500, lambda: lbl.configure(fg=FG))
         except tk.TclError:
             pass
 
@@ -1836,10 +1836,8 @@ class InvestmentAdvisor(tk.Tk):
         self.compare_cb.pack(side="left", padx=6)
 
         self.show_ma_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
-            ctrl, text="MA20/50", variable=self.show_ma_var,
-            bg=BG, fg=FG, selectcolor=ACCENT, activebackground=BG,
-            font=("Segoe UI", 9)
+        self._make_checkbutton(
+            ctrl, "MA20/50", self.show_ma_var, font_size=9
         ).pack(side="left", padx=(12, 0))
 
         tk.Button(
@@ -2488,6 +2486,38 @@ class InvestmentAdvisor(tk.Tk):
         except Exception as e:
             logging.getLogger(__name__).warning("crontab update failed: %s", e)
 
+    @staticmethod
+    def _make_checkbutton(parent, text, variable, font_size=10):
+        """
+        Własny checkbox z Unicode ☐/☑ – czytelny na ciemnym motywie niezależnie od OS.
+        Zwraca Frame gotowy do spakowania (.pack / .grid).
+        """
+        bg = BG
+        frame = tk.Frame(parent, bg=bg)
+
+        ind = tk.Label(frame, text="☐", bg=bg, fg=GRAY,
+                       font=("Segoe UI", font_size + 2), cursor="hand2", width=2)
+        ind.pack(side="left")
+
+        lbl = tk.Label(frame, text=text, bg=bg, fg=FG,
+                       font=("Segoe UI", font_size), cursor="hand2")
+        lbl.pack(side="left", padx=(2, 0))
+
+        def _refresh(*_):
+            if variable.get():
+                ind.config(text="☑", fg=ACCENT)
+            else:
+                ind.config(text="☐", fg=GRAY)
+
+        def _toggle(e=None):
+            variable.set(not variable.get())
+
+        for w in (ind, lbl, frame):
+            w.bind("<Button-1>", _toggle)
+        variable.trace_add("write", _refresh)
+        _refresh()
+        return frame
+
     def _build_settings_tab(self):
         # Przycisk zapisu na dole (poza notebookiem, zawsze widoczny)
         tk.Button(
@@ -2681,11 +2711,8 @@ class InvestmentAdvisor(tk.Tk):
         sched_frame.pack(fill="x", padx=16, pady=3)
         self.v_sched_enabled = tk.BooleanVar(
             value=self.config_data["schedule"].get("enabled", False))
-        tk.Checkbutton(
-            sched_frame, text="Włącz automatyczną analizę",
-            variable=self.v_sched_enabled, bg=BG, fg=FG,
-            selectcolor=ACCENT, activebackground=BG,
-            font=("Segoe UI", 10)
+        self._make_checkbutton(
+            sched_frame, "Włącz automatyczną analizę", self.v_sched_enabled
         ).pack(side="left")
 
         times_frame = tk.Frame(inner, bg=BG)
@@ -2710,12 +2737,10 @@ class InvestmentAdvisor(tk.Tk):
         autostart_frame = tk.Frame(inner, bg=BG)
         autostart_frame.pack(fill="x", padx=16, pady=3)
         self.v_autostart = tk.BooleanVar(value=self._is_autostart_enabled())
-        tk.Checkbutton(
+        self._make_checkbutton(
             autostart_frame,
-            text="Uruchamiaj aplikację automatycznie przy włączaniu komputera",
-            variable=self.v_autostart, bg=BG, fg=FG,
-            selectcolor=ACCENT, activebackground=BG,
-            font=("Segoe UI", 10)
+            "Uruchamiaj aplikację automatycznie przy włączaniu komputera",
+            self.v_autostart
         ).pack(side="left")
 
     def _build_settings_instruments(self, inner):
