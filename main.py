@@ -141,12 +141,12 @@ class InvestmentAdvisor(tk.Tk):
         self.tab_history    = tk.Frame(self.notebook, bg=BG)
         self.tab_settings   = tk.Frame(self.notebook, bg=BG)
 
-        self.notebook.add(self.tab_dashboard, text="  🏠 Dashboard  ")
-        self.notebook.add(self.tab_portfolio,  text="  💰 Portfel  ")
-        self.notebook.add(self.tab_calendar,   text="  📅 Kalendarz  ")
-        self.notebook.add(self.tab_charts,     text="  📊 Wykresy  ")
-        self.notebook.add(self.tab_history,    text="  📋 Historia  ")
-        self.notebook.add(self.tab_settings,   text="  ⚙️ Ustawienia  ")
+        self.notebook.add(self.tab_dashboard, text="  🏠  Dashboard  ")
+        self.notebook.add(self.tab_portfolio,  text="  💼  Portfel  ")
+        self.notebook.add(self.tab_calendar,   text="  🗓  Kalendarz  ")
+        self.notebook.add(self.tab_charts,     text="  📈  Wykresy  ")
+        self.notebook.add(self.tab_history,    text="  📜  Historia  ")
+        self.notebook.add(self.tab_settings,   text="  ⚙  Ustawienia  ")
 
         self._build_dashboard()
         self._build_portfolio_tab()
@@ -710,9 +710,9 @@ class InvestmentAdvisor(tk.Tk):
         # (tab_type, label, add_btn_label, price_field_label, is_sell)
         # is_sell=True → "Cena sprzedaży" label; P&L shows locked gain (buy→sell)
         tabs = [
-            ("obserwowane", "  👁 Obserwowane  ", "➕ Obserwuj",     "Cena zakupu:", False),
-            ("zakupione",   "  📈 Zakupione  ",  "➕ Dodaj zakup",  "Cena zakupu:", False),
-            ("sprzedane",   "  📉 Sprzedane  ",  "➕ Dodaj sprzedaż", "Cena sprzedaży:", True),
+            ("obserwowane", "  👁  Obserwowane  ", "➕ Obserwuj",     "Cena zakupu:", False),
+            ("zakupione",   "  🟢 Gra na wzrosty  ",  "➕ Dodaj zakup",  "Cena zakupu:", False),
+            ("sprzedane",   "  🔴 Gra na spadki  ",  "➕ Dodaj sprzedaż", "Cena sprzedaży:", True),
         ]
         self._port_tab_types = [t[0] for t in tabs]
         for tab_type, label, btn_lbl, price_lbl, is_sell in tabs:
@@ -1310,6 +1310,12 @@ class InvestmentAdvisor(tk.Tk):
             padx=12, pady=4, command=self._draw_chart
         ).pack(side="left", padx=8)
 
+        tk.Button(
+            ctrl, text="💼 Do portfela", bg=BTN_BG, fg=GREEN,
+            font=("Segoe UI", 9, "bold"), relief="flat", cursor="hand2",
+            padx=10, pady=4, command=self._chart_add_to_portfolio
+        ).pack(side="left", padx=4)
+
         # ── PanedWindow: chart (top) + chat (bottom) ──
         self._chart_paned = tk.PanedWindow(
             self.tab_charts, orient="vertical", bg=BG,
@@ -1438,6 +1444,120 @@ class InvestmentAdvisor(tk.Tk):
         symbols = [i["symbol"] for i in self.config_data.get("instruments", [])]
         self.chart_sym_cb["values"] = symbols
         self.compare_cb["values"] = [""] + symbols
+
+    # ── Add instrument from chart to portfolio ────────────────
+    def _chart_add_to_portfolio(self):
+        """Open a small dialog to add the currently viewed chart instrument to the portfolio."""
+        symbol = self.chart_symbol_var.get()
+        if not symbol:
+            messagebox.showwarning("Brak instrumentu", "Najpierw wybierz instrument na wykresie.")
+            return
+
+        # Find instrument name from config
+        instruments = self.config_data.get("instruments", [])
+        inst_cfg = next((i for i in instruments if i["symbol"] == symbol), None)
+        name = inst_cfg["name"] if inst_cfg else symbol
+
+        popup = tk.Toplevel(self)
+        popup.title(f"Dodaj do portfela – {symbol}")
+        popup.configure(bg=BG)
+        popup.geometry("420x280")
+        popup.resizable(False, False)
+        popup.transient(self)
+        popup.grab_set()
+
+        tk.Label(popup, text=f"📈 {name} ({symbol})", bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 12, "bold")).pack(pady=(16, 12))
+
+        form = tk.Frame(popup, bg=BG)
+        form.pack(fill="x", padx=24)
+
+        # Target tab selection
+        tk.Label(form, text="Zakładka:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", pady=4)
+        v_tab = tk.StringVar(value="zakupione")
+        tab_cb = ttk.Combobox(form, textvariable=v_tab, width=20, state="readonly",
+                              values=["obserwowane", "zakupione", "sprzedane"])
+        tab_cb.grid(row=0, column=1, padx=(8, 0), pady=4, sticky="w")
+
+        # Quantity
+        tk.Label(form, text="Ilość:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w", pady=4)
+        v_qty = tk.StringVar(value="1")
+        tk.Entry(form, textvariable=v_qty, bg=BG2, fg=FG,
+                 insertbackground=FG, relief="flat", width=14,
+                 font=("Segoe UI", 10),
+                 highlightbackground=GRAY, highlightthickness=1
+                 ).grid(row=1, column=1, padx=(8, 0), pady=4, sticky="w")
+
+        # Price
+        tk.Label(form, text="Cena:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10)).grid(row=2, column=0, sticky="w", pady=4)
+        v_price = tk.StringVar()
+        price_entry = tk.Entry(form, textvariable=v_price, bg=BG2, fg=FG,
+                 insertbackground=FG, relief="flat", width=14,
+                 font=("Segoe UI", 10),
+                 highlightbackground=GRAY, highlightthickness=1)
+        price_entry.grid(row=2, column=1, padx=(8, 0), pady=4, sticky="w")
+
+        # Currency
+        tk.Label(form, text="Waluta:", bg=BG, fg=FG,
+                 font=("Segoe UI", 10)).grid(row=3, column=0, sticky="w", pady=4)
+        v_currency = tk.StringVar(value="USD")
+        ttk.Combobox(form, textvariable=v_currency,
+                     values=["USD", "PLN", "EUR"], width=8, state="readonly"
+                     ).grid(row=3, column=1, padx=(8, 0), pady=4, sticky="w")
+
+        # Pre-fill current price if available
+        d = self.current_market_data.get(symbol, {})
+        if d and "error" not in d and d.get("price"):
+            v_price.set(str(round(d["price"], 4)))
+
+        btn_bar = tk.Frame(popup, bg=BG)
+        btn_bar.pack(fill="x", padx=24, pady=(16, 12))
+
+        def _do_add():
+            tab_type = v_tab.get()
+            qty_str = v_qty.get().strip()
+            price_str = v_price.get().strip()
+            currency = v_currency.get()
+
+            if not qty_str or not price_str:
+                messagebox.showwarning("Brak danych", "Wypełnij ilość i cenę.",
+                                       parent=popup)
+                return
+            try:
+                qty = float(qty_str.replace(",", "."))
+                price = float(price_str.replace(",", "."))
+                assert qty > 0 and price > 0
+            except (ValueError, AssertionError):
+                messagebox.showerror("Błąd", "Ilość i cena muszą być liczbami > 0.",
+                                     parent=popup)
+                return
+
+            fx_rate = get_fx_to_usd(currency)
+            if fx_rate is None:
+                messagebox.showwarning(
+                    "Brak kursu FX",
+                    f"Nie udało się pobrać kursu {currency}→USD.",
+                    parent=popup)
+                return
+
+            add_portfolio_position(symbol, name, qty, price,
+                                   buy_currency=currency,
+                                   buy_fx_to_usd=fx_rate,
+                                   tab_type=tab_type)
+            self._refresh_portfolio(tab_type)
+            popup.destroy()
+            messagebox.showinfo("Dodano",
+                                f"{name} ({symbol}) dodano do zakładki '{tab_type}'.")
+
+        tk.Button(btn_bar, text="✅ Dodaj", bg=GREEN, fg=BG,
+                  font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2",
+                  padx=14, pady=6, command=_do_add).pack(side="left")
+        tk.Button(btn_bar, text="Anuluj", bg=BTN_BG, fg=FG,
+                  font=("Segoe UI", 10), relief="flat", cursor="hand2",
+                  padx=14, pady=6, command=popup.destroy).pack(side="right")
 
     # ── Chart chat helpers ─────────────────────────────────────
     def _append_chart_chat(self, label, text, tag):
@@ -2442,9 +2562,13 @@ class InvestmentAdvisor(tk.Tk):
         self._populate_tile_placeholders(instruments)
 
         inst_names = [f"{i['name']} ({i['symbol']})" for i in instruments]
-        self.port_inst_cb["values"] = inst_names
-        if inst_names:
-            self.v_port_inst.set(inst_names[0])
+        for pw in self._port_widgets.values():
+            cb = pw.get("inst_cb")
+            vi = pw.get("v_inst")
+            if cb:
+                cb["values"] = inst_names
+            if vi and inst_names:
+                vi.set(inst_names[0])
 
         messagebox.showinfo("Zapisano", "Ustawienia zostały zapisane!")
 

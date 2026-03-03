@@ -189,5 +189,5 @@ def fetch_calendar(week="this"):
             })
         events.sort(key=lambda x: (x["date"], x["time"]))
         return events, None
-    except (ConnectionError, TimeoutError, ValueError, KeyError) as exc:
+    except Exception as exc:
         return [], str(exc)
