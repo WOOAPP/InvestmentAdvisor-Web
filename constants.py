@@ -29,7 +29,7 @@ PRICE_ROUND_DECIMALS = 4
 CHANGE_PCT_ROUND_DECIMALS = 2
 
 # ── AI engine ─────────────────────────────────────────────────────
-AI_MAX_TOKENS_ANALYSIS = 4096
+AI_MAX_TOKENS_ANALYSIS = 8192
 AI_MAX_TOKENS_CHAT = 2048
 LEGACY_NEWS_LIMIT = 8             # max news items in legacy prompt
 LEGACY_DESCRIPTION_TRUNCATE = 150
