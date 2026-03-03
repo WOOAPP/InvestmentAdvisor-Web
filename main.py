@@ -1283,7 +1283,7 @@ class InvestmentAdvisor(tk.Tk):
         if not self._price_fetch_in_progress:
             self._price_fetch_in_progress = True
             threading.Thread(target=self._autorefresh_worker, daemon=True).start()
-        self.after(5000, self._autorefresh_prices)
+        self.after(1000, self._autorefresh_prices)
 
     def _autorefresh_worker(self):
         try:
