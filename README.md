@@ -48,7 +48,7 @@ Gotowe pliki wykonywalne — **nie wymagają Pythona ani instalacji**:
 
 ### Analiza AI
 - Generowanie raportów przez: **Anthropic** (Claude Opus / Sonnet / Haiku), **OpenAI** (GPT-4.1, o3, o4-mini), **OpenRouter** (dowolny model)
-- Struktura raportu: News dnia → Sytuacja per region → Porównanie trendów → Implikacje → Scenariusze + ryzyko
+- Struktura raportu: 5 najważniejszych wydarzeń globalnych → Sytuacja per region → Porównanie trendów → Implikacje → Scenariusze + ryzyko
 - Dane wejściowe: ceny instrumentów + wiadomości (Newsdata.io) + treść ze stron WWW (scraper) + trend makro (7d/30d/90d)
 - Automatyczna analiza wg harmonogramu (np. 08:00, 16:00)
 - Eksport raportu do PDF
@@ -81,6 +81,7 @@ Gotowe pliki wykonywalne — **nie wymagają Pythona ani instalacji**:
   - **Pełna zawartość portfela** (wszystkie 3 zakładki z pozycjami i P&L)
 - Osobny wybór modelu/providera dla czatu
 - Renderowanie Markdown w odpowiedziach
+- Animacja oczekiwania (typing indicator) podczas generowania odpowiedzi
 - Otwieranie w osobnym oknie (popup)
 
 ### Trend makro
@@ -325,7 +326,7 @@ InvestmentAdvisor/
 │   ├── macro_trend.py         # Orkiestrator: news → klasyfikacja → trend → LLM
 │   ├── trend_narrative.py     # Agregacja trendów, porównanie okien (24h/7d/30d/90d)
 │   ├── openai_pricing.py      # Kalkulator kosztów LLM (cache 3-poziomowy)
-│   ├── ui_helpers.py          # Markdown renderer dla Tkinter, BusySpinner
+│   ├── ui_helpers.py          # Markdown renderer, BusySpinner, ChatTypingIndicator
 │   └── exceptions.py          # Wyjątki: DataFetchError, AIProviderError, ScraperError
 ├── tests/                     # 13 plików testowych, 242+ test cases
 ├── .github/
