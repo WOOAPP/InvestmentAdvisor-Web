@@ -42,6 +42,11 @@ _CG_MIN_INTERVAL    = 2.5  # sekundy między requestami do CoinGecko
 _cg_last_req_ts     = 0.0
 _cg_req_lock        = _threading.Lock()
 
+# ── COINGECKO 429 BACKOFF ──
+# Po 429 nie próbujemy ponownie przez _CG_BACKOFF_SECONDS.
+_CG_BACKOFF_SECONDS = 60
+_cg_backoff_until   = 0.0  # timestamp do którego nie robimy requestów
+
 
 def _cg_rate_wait():
     """Serializuje requesty do CoinGecko i pilnuje minimalnego odstępu."""
@@ -107,18 +112,37 @@ def get_yfinance_data(symbol, name=""):
         return {"name": name or symbol, "error": str(e)}
 
 # ── COINGECKO ──
+def _cg_is_backed_off():
+    """Sprawdza czy jesteśmy w okresie backoff po 429."""
+    return _time.time() < _cg_backoff_until
+
+
 def _cg_fetch_prices_batch(coin_ids):
     """Pobiera ceny wielu monet jednym żądaniem do CoinGecko.
 
     Zwraca dict {coin_id: {usd, usd_24h_change, usd_24h_vol}} lub {} przy błędzie.
     Wyniki trafiają do _cg_price_cache.
+    Przy 429 ustawia backoff i zwraca {} (caller powinien użyć stale cache).
     """
+    global _cg_backoff_until
+    if _cg_is_backed_off():
+        logger.debug("CoinGecko backoff active, skipping request")
+        return {}
     _cg_rate_wait()
     ids_str = ",".join(coin_ids)
     url = (f"https://api.coingecko.com/api/v3/simple/price"
            f"?ids={ids_str}&vs_currencies=usd"
            f"&include_24hr_change=true&include_24hr_vol=true")
-    r = safe_get(url)
+    try:
+        r = safe_get(url)
+    except requests.RequestException as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 429:
+            _cg_backoff_until = _time.time() + _CG_BACKOFF_SECONDS
+            logger.warning("CoinGecko 429 — backoff %ds, using cached data",
+                           _CG_BACKOFF_SECONDS)
+            return {}
+        raise
     batch = r.json()
     ts = _time.time()
     with _cg_lock:
@@ -128,11 +152,17 @@ def _cg_fetch_prices_batch(coin_ids):
 
 
 def _cg_get_sparkline(coin_id):
-    """Zwraca sparkline z cache lub pobiera (TTL 1 h)."""
+    """Zwraca sparkline z cache lub pobiera (TTL 1 h).
+
+    Przy backoff zwraca stale cache (lub []).
+    """
     with _cg_lock:
         cached = _cg_sparkline_cache.get(coin_id)
     if cached and (_time.time() - cached[1]) < _CG_SPARKLINE_TTL:
         return cached[0]
+    # Nie robimy nowych requestów podczas backoff
+    if _cg_is_backed_off():
+        return cached[0] if cached else []
     try:
         _cg_rate_wait()
         chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
@@ -142,7 +172,8 @@ def _cg_get_sparkline(coin_id):
                      for p in cr.json().get("prices", [])]
     except (requests.RequestException, KeyError, ValueError) as e:
         logger.debug("CoinGecko sparkline for %s unavailable: %s", coin_id, e)
-        sparkline = []
+        # Zwróć stale cache zamiast pustej listy
+        return cached[0] if cached else []
     with _cg_lock:
         _cg_sparkline_cache[coin_id] = (sparkline, _time.time())
     return sparkline
@@ -173,7 +204,10 @@ def _cg_build_result(coin_id, name, data, sparkline):
 
 
 def get_coingecko_data(coin_id, name=""):
-    """Pobiera dane jednej monety (z cache lub przez batch-fetch)."""
+    """Pobiera dane jednej monety (z cache lub przez batch-fetch).
+
+    Przy błędzie 429 zwraca przeterminowane dane z cache (graceful degradation).
+    """
     with _cg_lock:
         cached = _cg_price_cache.get(coin_id)
     if cached and (_time.time() - cached[1]) < _CG_PRICE_TTL:
@@ -184,7 +218,14 @@ def get_coingecko_data(coin_id, name=""):
             data = batch.get(coin_id, {})
         except (requests.RequestException, KeyError, ValueError, TypeError) as e:
             logger.warning("CoinGecko %s failed: %s", coin_id, e)
-            return {"name": name or coin_id, "error": str(e)}
+            # Graceful degradation: zwróć stale cache jeśli dostępny
+            if cached:
+                data = cached[0]
+            else:
+                return {"name": name or coin_id, "error": str(e)}
+        # batch zwróciło {} (np. backoff) — użyj stale cache
+        if not data and cached:
+            data = cached[0]
     if not data:
         return {"name": name or coin_id, "error": "brak danych CoinGecko"}
     sparkline = _cg_get_sparkline(coin_id)
@@ -306,7 +347,8 @@ def get_all_instruments(instruments_config):
             except (requests.RequestException, KeyError, ValueError, TypeError) as e:
                 logger.warning("CoinGecko batch failed: %s", e)
 
-        # Zbuduj wyniki z cache (wypełnionego przez batch lub wcześniej)
+        # Zbuduj wyniki z cache (wypełnionego przez batch lub wcześniej).
+        # Przy 429/backoff używamy stale cache (przeterminowanych danych).
         for symbol, coin_id, name in cg_pending:
             with _cg_lock:
                 cached = _cg_price_cache.get(coin_id)
@@ -314,7 +356,7 @@ def get_all_instruments(instruments_config):
                 sparkline = _cg_get_sparkline(coin_id)
                 results[symbol] = _cg_build_result(coin_id, name, cached[0], sparkline)
             else:
-                results[symbol] = {"name": name, "error": "brak danych CoinGecko"}
+                results[symbol] = {"name": name, "error": "CoinGecko niedostępne (rate limit)"}
 
     return results
 
@@ -336,8 +378,11 @@ def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
     cfg = _SPARK_CFG.get(timeframe, _SPARK_CFG["1h"])
     try:
         if source == "coingecko":
-            _cg_rate_wait()
             coin_id = symbol.lower()
+            if _cg_is_backed_off():
+                logger.debug("CoinGecko backoff, skipping sparkline for %s", coin_id)
+                return []
+            _cg_rate_wait()
             url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
                    f"/market_chart?vs_currency=usd&days={cfg['cg_days']}")
             r = safe_get(url)

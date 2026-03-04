@@ -88,6 +88,12 @@ class TestGetYfinanceData(unittest.TestCase):
 
 class TestGetCoingeckoData(unittest.TestCase):
 
+    def setUp(self):
+        # Reset CoinGecko caches and backoff between tests
+        md._cg_price_cache.clear()
+        md._cg_sparkline_cache.clear()
+        md._cg_backoff_until = 0.0
+
     @patch("modules.market_data.safe_get")
     def test_basic_return(self, mock_get):
         price_resp = MagicMock()
@@ -218,12 +224,27 @@ class TestGetFxToUsd(unittest.TestCase):
 class TestGetAllInstruments(unittest.TestCase):
 
     @patch("modules.market_data.get_stooq_data")
-    @patch("modules.market_data.get_coingecko_data")
+    @patch("modules.market_data._cg_get_sparkline")
+    @patch("modules.market_data._cg_fetch_prices_batch")
     @patch("modules.market_data.get_yfinance_data")
-    def test_dispatches_by_source(self, mock_yf, mock_cg, mock_stq):
+    def test_dispatches_by_source(self, mock_yf, mock_cg_batch, mock_cg_spark, mock_stq):
         mock_yf.return_value = {"name": "SPY", "price": 450}
-        mock_cg.return_value = {"name": "BTC", "price": 65000}
+        cg_data = {"usd": 65000, "usd_24h_change": 2.5, "usd_24h_vol": 30_000_000_000}
+
+        def batch_side_effect(coin_ids):
+            # Simulate real behavior: populate cache + return dict
+            import time
+            ts = time.time()
+            for cid in coin_ids:
+                md._cg_price_cache[cid] = (cg_data, ts)
+            return {"bitcoin": cg_data}
+        mock_cg_batch.side_effect = batch_side_effect
+        mock_cg_spark.return_value = [63000, 64000, 65000]
         mock_stq.return_value = {"name": "WIG", "price": 2000}
+
+        # Clear caches to ensure batch is called
+        md._cg_price_cache.clear()
+        md._cg_backoff_until = 0.0
 
         instruments = [
             {"symbol": "SPY", "name": "S&P 500", "source": "yfinance"},
@@ -234,9 +255,10 @@ class TestGetAllInstruments(unittest.TestCase):
 
         self.assertIn("SPY", results)
         self.assertIn("bitcoin", results)
+        self.assertEqual(results["bitcoin"]["price"], 65000)
         self.assertIn("WIG20", results)
         mock_yf.assert_called_once()
-        mock_cg.assert_called_once()
+        mock_cg_batch.assert_called_once()
         mock_stq.assert_called_once()
 
     def test_skips_empty_symbol(self):
