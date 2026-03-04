@@ -9,6 +9,7 @@ CONFIG_FILE = "data/config.json"
 # Mapowanie: klucz w config["api_keys"] -> nazwa zmiennej środowiskowej
 ENV_KEY_MAP = {
     "newsdata":   "NEWSDATA_KEY",
+    "finnhub":    "FINNHUB_API_KEY",
     "openai":     "OPENAI_API_KEY",
     "anthropic":  "ANTHROPIC_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
@@ -46,6 +47,7 @@ DEFAULT_INSTRUMENTS = [
 DEFAULT_CONFIG = {
     "api_keys": {
         "newsdata": "",
+        "finnhub": "",
         "openai": "",
         "anthropic": "",
         "openrouter": "",
