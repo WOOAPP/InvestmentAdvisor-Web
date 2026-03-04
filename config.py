@@ -1,6 +1,8 @@
 import copy
 import json
+import logging
 import os
+import shutil
 
 CONFIG_FILE = "data/config.json"
 
@@ -423,10 +425,24 @@ def get_api_key(config: dict, key_name: str) -> str:
     return config.get("api_keys", {}).get(key_name, "")
 
 
+_logger = logging.getLogger(__name__)
+
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, ValueError) as exc:
+            _logger.error("Malformed config file %s: %s — backing up and "
+                          "using defaults", CONFIG_FILE, exc)
+            # Preserve the broken file for the user to inspect
+            try:
+                shutil.copy2(CONFIG_FILE, CONFIG_FILE + ".bak")
+            except OSError:
+                pass
+            data = copy.deepcopy(DEFAULT_CONFIG)
+            return _apply_env_overrides(data)
         # Dodaj brakujące klucze najwyższego poziomu
         for key, val in DEFAULT_CONFIG.items():
             if key not in data:

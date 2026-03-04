@@ -1,3 +1,4 @@
+import re
 import yfinance as yf
 import requests
 from datetime import datetime
@@ -15,6 +16,18 @@ from constants import (
     PRICE_ROUND_DECIMALS, CHANGE_PCT_ROUND_DECIMALS,
     NEWS_DEFAULT_PAGE_SIZE,
 )
+
+# Allowed pattern for financial symbols used in URL construction.
+# Covers yfinance (e.g. ^GDAXI, EURUSD=X, GC=F, WIG20.WA), CoinGecko
+# slug (e.g. bitcoin, ethereum), and Stooq (e.g. wig20).
+_SYMBOL_RE = re.compile(r'^[\w\-\.\^=]+$', re.ASCII)
+
+
+def _validate_symbol(symbol: str, source: str = "") -> bool:
+    """Return True if symbol is safe to interpolate into a URL path/query."""
+    if not symbol or len(symbol) > 50:
+        return False
+    return bool(_SYMBOL_RE.match(symbol))
 
 # ── COINGECKO CACHE ──
 _CG_PRICE_TTL      = 600   # 10 min — free tier ~30 req/min, nie bijemy zbyt często
@@ -264,6 +277,10 @@ def get_all_instruments(instruments_config):
         name = inst.get("name", symbol)
         source = inst.get("source", "yfinance")
         if not symbol:
+            continue
+        if not _validate_symbol(symbol, source):
+            logger.warning("Skipping invalid symbol: %r", symbol)
+            results[symbol] = {"name": name, "error": "invalid symbol"}
             continue
         if source == "coingecko":
             cg_pending.append((symbol, symbol.lower(), name))

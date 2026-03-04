@@ -10,7 +10,7 @@ import os
 import sys
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 from modules.http_client import safe_get
@@ -136,7 +136,7 @@ def fetch_news_window(api_key: str, window: str, days: int,
     if not api_key:
         return []
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     from_date = (now - timedelta(days=days)).strftime("%Y-%m-%d")
     to_date = now.strftime("%Y-%m-%d")
 
@@ -238,9 +238,10 @@ def store_news(articles: list[dict]):
     """Insert articles into news_items, skip duplicates (ON CONFLICT IGNORE)."""
     if not articles:
         return
+    _ensure_table()
     with _connect() as conn:
         c = conn.cursor()
-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         for art in articles:
             try:
                 c.execute("""
@@ -275,7 +276,8 @@ def get_news_by_window(window: str, limit: int = NEWS_DEFAULT_LIMIT_BY_WINDOW) -
 
 def get_news_since(hours: int, limit: int = NEWS_DEFAULT_LIMIT_SINCE) -> list[dict]:
     """Retrieve news published in the last N hours."""
-    since = (datetime.utcnow() - timedelta(hours=hours)).strftime(
+    _ensure_table()
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
@@ -292,7 +294,8 @@ def get_news_since(hours: int, limit: int = NEWS_DEFAULT_LIMIT_SINCE) -> list[di
 def get_news_in_range(days_from: int, days_to: int = 0,
                       limit: int = NEWS_DEFAULT_LIMIT_IN_RANGE) -> list[dict]:
     """Retrieve news between days_from and days_to ago (0 = now)."""
-    now = datetime.utcnow()
+    _ensure_table()
+    now = datetime.now(timezone.utc)
     start = (now - timedelta(days=days_from)).strftime("%Y-%m-%dT%H:%M:%SZ")
     end = (now - timedelta(days=days_to)).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
@@ -309,7 +312,8 @@ def get_news_in_range(days_from: int, days_to: int = 0,
 
 def cleanup_old_news(days: int = NEWS_CLEANUP_DAYS):
     """Delete news older than N days."""
-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime(
+    _ensure_table()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
     with _connect() as conn:
         c = conn.cursor()
@@ -317,5 +321,16 @@ def cleanup_old_news(days: int = NEWS_CLEANUP_DAYS):
         conn.commit()
 
 
-# Init table on import
-init_news_table()
+_table_initialized = False
+_init_lock = threading.Lock()
+
+
+def _ensure_table():
+    """Lazy init — create news_items table on first DB access, not on import."""
+    global _table_initialized
+    if _table_initialized:
+        return
+    with _init_lock:
+        if not _table_initialized:
+            init_news_table()
+            _table_initialized = True

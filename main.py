@@ -15,6 +15,7 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
+from constants import AI_CHAT_HISTORY_MAX_MESSAGES
 from config import load_config, save_config, mask_key, get_api_key
 from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd, get_sparkline_by_timeframe
 from modules.openai_pricing import get_model_cost, refresh_pricing
@@ -2286,9 +2287,12 @@ class InvestmentAdvisor(tk.Tk):
                     f"--- RAPORT ---\n{report_text}\n--- KONIEC RAPORTU ---"
                 )
 
+            # Sliding window: keep last N messages to bound token usage
+            recent = list(
+                self._chart_chat_history[-AI_CHAT_HISTORY_MAX_MESSAGES:])
             try:
                 reply = run_chat(
-                    self.config_data, list(self._chart_chat_history), system)
+                    self.config_data, recent, system)
             except Exception as exc:
                 reply = f"Błąd połączenia: {exc}"
             self._chart_chat_history.append(
@@ -3419,8 +3423,10 @@ class InvestmentAdvisor(tk.Tk):
                     f"--- RAPORT ---\n{self.current_analysis}\n--- KONIEC RAPORTU ---"
                 )
 
+            # Sliding window: keep last N messages to bound token usage
+            recent = list(self._chat_history[-AI_CHAT_HISTORY_MAX_MESSAGES:])
             try:
-                reply = run_chat(self.config_data, list(self._chat_history), system)
+                reply = run_chat(self.config_data, recent, system)
             except Exception as exc:
                 reply = f"Błąd połączenia: {exc}"
             self._chat_history.append({"role": "assistant", "content": reply})
@@ -3970,7 +3976,11 @@ class InvestmentAdvisor(tk.Tk):
 
         def runner():
             while not self._shutting_down:
-                schedule.run_pending()
+                try:
+                    schedule.run_pending()
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Scheduler tick failed")
                 time.sleep(30)
 
         threading.Thread(target=runner, daemon=True).start()

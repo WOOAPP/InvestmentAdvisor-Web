@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 from constants import (
     AI_MAX_TOKENS_ANALYSIS, AI_MAX_TOKENS_CHAT,
+    AI_MAX_TOKENS_PROFILE, AI_MAX_TOKENS_CALENDAR,
+    AI_PROVIDER_TIMEOUT, AI_SCRAPED_TEXT_BUDGET,
     LEGACY_NEWS_LIMIT, LEGACY_DESCRIPTION_TRUNCATE,
 )
 
@@ -47,13 +49,14 @@ def _call_provider(provider, api_key, model, system_prompt,
                    messages, max_tokens=AI_MAX_TOKENS_ANALYSIS):
     """Call Anthropic or OpenAI-compatible API. Returns (text, usage)."""
     if provider == "anthropic":
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(
+            api_key=api_key, timeout=AI_PROVIDER_TIMEOUT)
         response = client.messages.create(
             model=model, max_tokens=max_tokens,
             system=system_prompt, messages=messages)
         return response.content[0].text, getattr(response, "usage", None)
     else:
-        kwargs = {"api_key": api_key}
+        kwargs = {"api_key": api_key, "timeout": AI_PROVIDER_TIMEOUT}
         base_url = _PROVIDER_DEFAULTS.get(provider, {}).get("base_url")
         if base_url:
             kwargs["base_url"] = base_url
@@ -79,7 +82,8 @@ def _call_provider(provider, api_key, model, system_prompt,
         return response.choices[0].message.content, getattr(response, "usage", None)
 
 
-def _run_provider(config, system_prompt, user_message):
+def _run_provider(config, system_prompt, user_message,
+                  max_tokens=AI_MAX_TOKENS_ANALYSIS):
     """Run a single system+user prompt through the configured provider."""
     provider = config.get("ai_provider", "anthropic")
     pcfg = _PROVIDER_DEFAULTS.get(provider)
@@ -94,7 +98,8 @@ def _run_provider(config, system_prompt, user_message):
     try:
         text, usage = _call_provider(
             provider, api_key, model, system_prompt,
-            [{"role": "user", "content": user_message}])
+            [{"role": "user", "content": user_message}],
+            max_tokens=max_tokens)
         return _make_result(text, usage)
     except (anthropic.APIError, openai.OpenAIError, KeyError,
             ValueError, ConnectionError, TimeoutError) as e:
@@ -221,7 +226,9 @@ def generate_instrument_profile(config, symbol, name, category):
         f"Kategoria: {category}\n\n"
         f"{custom_prompt}"
     )
-    return _result_text(_run_provider(config, system, user_msg))
+    return _result_text(
+        _run_provider(config, system, user_msg,
+                      max_tokens=AI_MAX_TOKENS_PROFILE))
 
 
 def generate_calendar_event_analysis(config, event_data):
@@ -267,7 +274,9 @@ def generate_calendar_event_analysis(config, event_data):
         parts.append(f"Kontekst: {significance}")
 
     user_msg = "\n".join(parts) + "\n\n" + custom_prompt
-    return _result_text(_run_provider(config, system, user_msg))
+    return _result_text(
+        _run_provider(config, system, user_msg,
+                      max_tokens=AI_MAX_TOKENS_CALENDAR))
 
 
 def get_available_models(provider):
@@ -328,9 +337,11 @@ def _build_macro_prompt(market_summary, macro_text, scraped_text=""):
         macro_text,
     ]
     if scraped_text:
+        # Cap scraped text to avoid blowing up token costs
+        trimmed = scraped_text[:AI_SCRAPED_TEXT_BUDGET]
         parts.append("")
         parts.append("=== TREŚĆ ZE ŹRÓDEŁ WWW ===")
-        parts.append(scraped_text)
+        parts.append(trimmed)
     parts.append("")
     parts.append(
         "Na podstawie powyższych danych przeprowadź analizę w następującej strukturze:\n"
