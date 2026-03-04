@@ -1545,7 +1545,7 @@ class InvestmentAdvisor(tk.Tk):
         tk.Label(ctrl, text="Zakres:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).pack(side="left", padx=(16, 4))
         self.cal_week_var = tk.StringVar(value="upcoming")
-        for val, lbl in [("upcoming", "7 dni"), ("this", "Ten tydzień"), ("next", "Następny")]:
+        for val, lbl in [("upcoming", "Od dziś ➜"), ("all", "Cały tydzień")]:
             tk.Radiobutton(
                 ctrl, text=lbl, variable=self.cal_week_var, value=val,
                 bg=BG, fg=FG, selectcolor=ACCENT, activebackground=BG,
@@ -1642,9 +1642,8 @@ class InvestmentAdvisor(tk.Tk):
                 today_str = _dt.date.today().strftime("%Y-%m-%d")
                 today_count = sum(1 for e in events if e["date"] == today_str)
                 range_labels = {
-                    "upcoming": "najbliższe 7 dni",
-                    "this": "bieżący tydzień",
-                    "next": "następny tydzień",
+                    "upcoming": "od dziś",
+                    "all": "cały tydzień",
                 }
                 range_lbl = range_labels.get(week_offset, week_offset)
                 status = f"{len(events)} wydarzeń — {range_lbl}"
