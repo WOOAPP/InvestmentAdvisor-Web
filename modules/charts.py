@@ -33,8 +33,8 @@ COLORS = {
 }
 
 PERIOD_MAP = {
-    "1T": "1d",
-    "5T": "5d",
+    "1D": "1d",
+    "5D": "5d",
     "1M": "1mo",
     "3M": "3mo",
     "6M": "6mo",
@@ -43,8 +43,8 @@ PERIOD_MAP = {
 }
 
 COINGECKO_DAYS = {
-    "1T": 1,
-    "5T": 5,
+    "1D": 1,
+    "5D": 5,
     "1M": 30,
     "3M": 90,
     "6M": 180,
@@ -128,10 +128,10 @@ def _compute_vol_colors(hist):
 
 def _setup_xaxis(ax, period, n_points):
     """Configure x-axis date formatting and tick density for readability."""
-    if period == "1T":
+    if period == "1D":
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
         ax.xaxis.set_major_locator(mdates.HourLocator(interval=max(1, n_points // 8)))
-    elif period == "5T":
+    elif period == "5D":
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m\n%a"))
         ax.xaxis.set_major_locator(mdates.DayLocator())
     elif period == "1M":
@@ -285,11 +285,11 @@ def create_price_chart(parent_frame, symbol, period="1M",
     bottom_ax.tick_params(axis="x", colors=COLORS["fg"], labelsize=8)
 
     # Rotate labels adaptively per period for readability
-    if period == "1T":
+    if period == "1D":
         for label in bottom_ax.get_xticklabels():
             label.set_rotation(0)
             label.set_ha("center")
-    elif period == "5T":
+    elif period == "5D":
         for label in bottom_ax.get_xticklabels():
             label.set_rotation(0)
             label.set_ha("center")

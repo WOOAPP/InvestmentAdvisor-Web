@@ -1000,7 +1000,7 @@ class InvestmentAdvisor(tk.Tk):
         import pandas as pd
         lines = ["Zmiana ceny:\n"]
 
-        for period, label in [("1T", "1 dzień"), ("5T", "5 dni"),
+        for period, label in [("1D", "1 dzień"), ("5D", "5 dni"),
                                ("1M", "1 miesiąc")]:
             try:
                 hist = fetch_chart_data(symbol, period, source)
@@ -1875,7 +1875,7 @@ class InvestmentAdvisor(tk.Tk):
 
         self.chart_period_var = tk.StringVar(value="1M")
         self._period_buttons = {}
-        for p in ["1T", "5T", "1M", "3M", "6M", "1R", "2R"]:
+        for p in ["1D", "5D", "1M", "3M", "6M", "1R", "2R"]:
             btn = tk.Button(
                 ctrl, text=p, bg=BTN_BG, fg=FG,
                 font=("Segoe UI", 9, "bold"), relief="flat",
@@ -2254,7 +2254,7 @@ class InvestmentAdvisor(tk.Tk):
                 break
 
         period_names = {
-            "1T": "1 dzień", "5T": "5 dni", "1M": "1 miesiąc",
+            "1D": "1 dzień", "5D": "5 dni", "1M": "1 miesiąc",
             "3M": "3 miesiące", "6M": "6 miesięcy",
             "1R": "1 rok", "2R": "2 lata",
         }
