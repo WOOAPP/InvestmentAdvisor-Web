@@ -1386,7 +1386,10 @@ class InvestmentAdvisor(tk.Tk):
             cur_fx = None
             if currency != "USD":
                 if currency not in fx_cache:
-                    fx_cache[currency] = get_fx_to_usd(currency)
+                    try:
+                        fx_cache[currency] = get_fx_to_usd(currency)
+                    except Exception:
+                        fx_cache[currency] = None
                 cur_fx = fx_cache[currency]  # currency→USD rate (or None)
 
             if current_price is not None:
@@ -3730,11 +3733,17 @@ class InvestmentAdvisor(tk.Tk):
             import traceback
             traceback.print_exc()
             err_msg = str(exc)
-            self.after(0, lambda m=err_msg: self._show_analysis_error(m))
+            try:
+                self.after(0, lambda m=err_msg: self._show_analysis_error(m))
+            except RuntimeError:
+                pass
         finally:
-            self.set_busy(False, "Gotowy")
-            self.after(0, lambda: self.analyze_btn.configure(
-                text="▶  Uruchom Analizę"))
+            try:
+                self.set_busy(False, "Gotowy")
+                self.after(0, lambda: self.analyze_btn.configure(
+                    text="▶  Uruchom Analizę"))
+            except RuntimeError:
+                pass
 
     def _show_analysis_error(self, message):
         """Display a fatal analysis error in the analysis text area."""
