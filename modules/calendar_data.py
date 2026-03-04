@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import logging
+import threading
 from modules.http_client import safe_get
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,11 @@ def _parse_ff_json(data):
     return events
 
 
+_calendar_cache = {"events": [], "ts": None}
+_calendar_cache_lock = threading.Lock()
+_CALENDAR_CACHE_TTL = 600  # 10 minutes
+
+
 def _fetch_one_week(slug):
     """Fetch a single week ('thisweek' or 'nextweek') from ForexFactory.
 
@@ -194,19 +200,58 @@ def _fetch_one_week(slug):
         return [], str(exc)
 
 
+def _fetch_both_weeks():
+    """Fetch thisweek + nextweek events, with caching (10 min TTL).
+
+    Returns: (events_list, error_str_or_None)
+    """
+    now = datetime.now().timestamp()
+    with _calendar_cache_lock:
+        if (_calendar_cache["ts"] is not None
+                and now - _calendar_cache["ts"] < _CALENDAR_CACHE_TTL
+                and _calendar_cache["events"]):
+            return list(_calendar_cache["events"]), None
+
+    all_events = []
+    last_err = None
+    for slug in ("thisweek", "nextweek"):
+        events, err = _fetch_one_week(slug)
+        if err:
+            last_err = err
+        all_events.extend(events)
+
+    if not all_events and last_err:
+        return [], last_err
+
+    # Deduplicate by (date, time, event, country)
+    seen = set()
+    unique = []
+    for e in all_events:
+        key = (e["date"], e["time"], e["event"], e["country"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(e)
+
+    with _calendar_cache_lock:
+        _calendar_cache["events"] = unique
+        _calendar_cache["ts"] = datetime.now().timestamp()
+
+    return unique, last_err if not unique else None
+
+
 def fetch_calendar(week="upcoming"):
     """Fetch economic calendar from ForexFactory JSON feed.
 
     week:
       'upcoming' — events from today onward (default)
-      'all'      — full current week (including past days)
+      'all'      — full current + next week
     Returns: (events_list, error_str_or_None)
     Each event dict has keys:
         date, time, flag, country, event, impact_icon, impact_label,
         impact_raw, forecast, previous, significance
     """
-    events, err = _fetch_one_week("thisweek")
-    if err:
+    events, err = _fetch_both_weeks()
+    if err and not events:
         return events, err
 
     events.sort(key=lambda x: (x["date"], x["time"]))
