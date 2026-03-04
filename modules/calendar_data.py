@@ -12,11 +12,25 @@ FLAG_MAP = {
     "SGD": "🇸🇬", "HKD": "🇭🇰", "KRW": "🇰🇷",
 }
 
+# Finnhub uses 2-letter country codes; map to currency for flag lookup
+_COUNTRY_TO_CURRENCY = {
+    "US": "USD", "EU": "EUR", "GB": "GBP", "JP": "JPY",
+    "CH": "CHF", "AU": "AUD", "CA": "CAD", "CN": "CNY",
+    "NZ": "NZD", "PL": "PLN", "NO": "NOK", "SE": "SEK",
+    "SG": "SGD", "HK": "HKD", "KR": "KRW",
+}
+
 IMPACT_PL = {
     "High":    ("🔴", "Wysoki"),
     "Medium":  ("🟡", "Średni"),
     "Low":     ("⚪", "Niski"),
     "Holiday": ("📅", "Święto"),
+}
+
+# Finnhub uses "high"/"medium"/"low" (lowercase) — normalize
+_IMPACT_NORMALIZE = {
+    "high": "High", "medium": "Medium", "low": "Low",
+    "1": "Low", "2": "Medium", "3": "High",
 }
 
 # ── Significance mapping for macroeconomic events ──
@@ -146,65 +160,100 @@ def get_event_significance(event_title):
     return "Dane makroekonomiczne"
 
 
-def _parse_ff_json(data):
-    """Parse ForexFactory JSON into event dicts."""
-    events = []
-    for e in data:
-        date_str = e.get("date", "")
-        try:
-            dt = datetime.fromisoformat(date_str)
-            date_fmt = dt.strftime("%Y-%m-%d")
-            time_fmt = dt.strftime("%H:%M")
-        except (ValueError, TypeError):
-            date_fmt = date_str[:10] if date_str else "?"
-            time_fmt = ""
-
-        country = e.get("country", "")
-        impact_raw = e.get("impact", "Low")
-        icon, label = IMPACT_PL.get(impact_raw, ("⚪", impact_raw))
-        title = e.get("title", "")
-        events.append({
-            "date":         date_fmt,
-            "time":         time_fmt,
-            "flag":         FLAG_MAP.get(country, "🌐"),
-            "country":      country,
-            "event":        title,
-            "impact_icon":  icon,
-            "impact_label": label,
-            "impact_raw":   impact_raw,
-            "forecast":     e.get("forecast", "") or "",
-            "previous":     e.get("previous", "") or "",
-            "significance": get_event_significance(title),
-        })
-    return events
-
+# ── Finnhub economic calendar ──
 
 _calendar_cache = {"events": [], "ts": None}
 _calendar_cache_lock = threading.Lock()
 _CALENDAR_CACHE_TTL = 600  # 10 minutes
 
 
-def _fetch_one_week(slug):
-    """Fetch a single week ('thisweek' or 'nextweek') from ForexFactory.
+def _parse_finnhub_json(data):
+    """Parse Finnhub economic calendar JSON into event dicts."""
+    events = []
+    raw_events = data.get("economicCalendar", data) if isinstance(data, dict) else data
+    if isinstance(raw_events, dict):
+        raw_events = raw_events.get("result", raw_events.get("economicCalendar", []))
+    if not isinstance(raw_events, list):
+        return events
+
+    for e in raw_events:
+        # Finnhub time field: "2026-03-04 13:30:00" or ISO format
+        time_str = e.get("time", "")
+        try:
+            dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+            date_fmt = dt.strftime("%Y-%m-%d")
+            time_fmt = dt.strftime("%H:%M")
+        except (ValueError, TypeError):
+            # Try splitting date-only
+            date_fmt = time_str[:10] if len(time_str) >= 10 else "?"
+            time_fmt = time_str[11:16] if len(time_str) >= 16 else ""
+
+        country = e.get("country", "")
+        currency = _COUNTRY_TO_CURRENCY.get(country, country)
+
+        impact_raw_val = str(e.get("impact", "Low")).strip()
+        impact_raw = _IMPACT_NORMALIZE.get(impact_raw_val.lower(), impact_raw_val)
+        if impact_raw not in IMPACT_PL:
+            impact_raw = "Low"
+        icon, label = IMPACT_PL[impact_raw]
+
+        title = e.get("event", "")
+
+        # Format values — Finnhub returns numeric or empty
+        def _fmt_val(val):
+            if val is None:
+                return ""
+            if isinstance(val, (int, float)):
+                return f"{val:g}"
+            return str(val)
+
+        events.append({
+            "date":         date_fmt,
+            "time":         time_fmt,
+            "flag":         FLAG_MAP.get(currency, "🌐"),
+            "country":      country,
+            "event":        title,
+            "impact_icon":  icon,
+            "impact_label": label,
+            "impact_raw":   impact_raw,
+            "forecast":     _fmt_val(e.get("estimate")),
+            "previous":     _fmt_val(e.get("prev")),
+            "significance": get_event_significance(title),
+        })
+    return events
+
+
+def _fetch_finnhub(api_key, from_date, to_date):
+    """Fetch economic calendar from Finnhub API.
 
     Returns: (events_list, error_str_or_None)
     """
-    url = f"https://nfs.faireconomy.media/ff_calendar_{slug}.json"
+    url = (
+        f"https://finnhub.io/api/v1/calendar/economic"
+        f"?from={from_date}&to={to_date}&token={api_key}"
+    )
     try:
         r = safe_get(url, timeout=(8, 15))
         r.raise_for_status()
         data = r.json()
-        return _parse_ff_json(data), None
+        return _parse_finnhub_json(data), None
     except Exception as exc:
-        logger.warning("Calendar fetch %s failed: %s", slug, exc)
+        logger.warning("Finnhub calendar fetch failed: %s", exc)
         return [], str(exc)
 
 
-def _fetch_both_weeks():
-    """Fetch thisweek + nextweek events, with caching (10 min TTL).
+def fetch_calendar(api_key=""):
+    """Fetch economic calendar: today + 7 days ahead.
 
+    api_key: Finnhub API key (required).
     Returns: (events_list, error_str_or_None)
+    Each event dict has keys:
+        date, time, flag, country, event, impact_icon, impact_label,
+        impact_raw, forecast, previous, significance
     """
+    if not api_key:
+        return [], "Brak klucza Finnhub API — ustaw w Ustawieniach lub FINNHUB_API_KEY"
+
     now = datetime.now().timestamp()
     with _calendar_cache_lock:
         if (_calendar_cache["ts"] is not None
@@ -212,21 +261,20 @@ def _fetch_both_weeks():
                 and _calendar_cache["events"]):
             return list(_calendar_cache["events"]), None
 
-    all_events = []
-    last_err = None
-    for slug in ("thisweek", "nextweek"):
-        events, err = _fetch_one_week(slug)
-        if err:
-            last_err = err
-        all_events.extend(events)
+    today = datetime.now().date()
+    from_date = today.strftime("%Y-%m-%d")
+    to_date = (today + timedelta(days=7)).strftime("%Y-%m-%d")
 
-    if not all_events and last_err:
-        return [], last_err
+    events, err = _fetch_finnhub(api_key, from_date, to_date)
+    if err and not events:
+        return [], err
+
+    events.sort(key=lambda x: (x["date"], x["time"]))
 
     # Deduplicate by (date, time, event, country)
     seen = set()
     unique = []
-    for e in all_events:
+    for e in events:
         key = (e["date"], e["time"], e["event"], e["country"])
         if key not in seen:
             seen.add(key)
@@ -236,28 +284,4 @@ def _fetch_both_weeks():
         _calendar_cache["events"] = unique
         _calendar_cache["ts"] = datetime.now().timestamp()
 
-    return unique, last_err if not unique else None
-
-
-def fetch_calendar(week="upcoming"):
-    """Fetch economic calendar from ForexFactory JSON feed.
-
-    week:
-      'upcoming' — events from today onward (default)
-      'all'      — full current + next week
-    Returns: (events_list, error_str_or_None)
-    Each event dict has keys:
-        date, time, flag, country, event, impact_icon, impact_label,
-        impact_raw, forecast, previous, significance
-    """
-    events, err = _fetch_both_weeks()
-    if err and not events:
-        return events, err
-
-    events.sort(key=lambda x: (x["date"], x["time"]))
-
-    if week == "upcoming":
-        today_str = datetime.now().date().strftime("%Y-%m-%d")
-        events = [e for e in events if e["date"] >= today_str]
-
-    return events, None
+    return unique, None

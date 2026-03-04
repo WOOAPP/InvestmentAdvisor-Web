@@ -1545,15 +1545,8 @@ class InvestmentAdvisor(tk.Tk):
             padx=10, pady=4, command=self._load_calendar
         ).pack(side="left")
 
-        tk.Label(ctrl, text="Zakres:", bg=BG, fg=FG,
-                 font=("Segoe UI", 10)).pack(side="left", padx=(16, 4))
-        self.cal_week_var = tk.StringVar(value="upcoming")
-        for val, lbl in [("upcoming", "Od dziś ➜"), ("all", "Cały tydzień")]:
-            tk.Radiobutton(
-                ctrl, text=lbl, variable=self.cal_week_var, value=val,
-                bg=BG, fg=FG, selectcolor=ACCENT, activebackground=BG,
-                font=("Segoe UI", 10), command=self._load_calendar
-            ).pack(side="left", padx=4)
+        tk.Label(ctrl, text="Zakres: dziś + 7 dni", bg=BG, fg=SUBTEXT,
+                 font=("Segoe UI", 9)).pack(side="left", padx=(16, 4))
 
         tk.Label(ctrl, text="Filtruj:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).pack(side="left", padx=(16, 4))
@@ -1621,13 +1614,13 @@ class InvestmentAdvisor(tk.Tk):
 
     def _load_calendar(self):
         self.cal_status.configure(text="Pobieranie…")
-        week_offset = self.cal_week_var.get()   # odczyt w głównym wątku
+        finnhub_key = get_api_key(self.config_data, "finnhub")
         self._cal_request_id += 1
         req_id = self._cal_request_id           # kopia dla domknięcia wątku
 
         def _fetch():
             try:
-                events, err = fetch_calendar(week_offset)
+                events, err = fetch_calendar(api_key=finnhub_key)
             except Exception as exc:
                 events, err = [], str(exc)
 
@@ -1639,17 +1632,12 @@ class InvestmentAdvisor(tk.Tk):
 
             if err and not events:
                 self.after(0, lambda: self.cal_status.configure(
-                    text=f"Błąd: {err[:60]}"))
+                    text=f"Błąd: {err[:80]}"))
             else:
                 import datetime as _dt
                 today_str = _dt.date.today().strftime("%Y-%m-%d")
                 today_count = sum(1 for e in events if e["date"] == today_str)
-                range_labels = {
-                    "upcoming": "od dziś",
-                    "all": "cały tydzień",
-                }
-                range_lbl = range_labels.get(week_offset, week_offset)
-                status = f"{len(events)} wydarzeń — {range_lbl}"
+                status = f"{len(events)} wydarzeń — dziś + 7 dni"
                 if today_count:
                     status += f"  •  dziś: {today_count}"
                 self.after(0, lambda s=status: self.cal_status.configure(text=s))
@@ -2655,7 +2643,7 @@ class InvestmentAdvisor(tk.Tk):
     def _build_settings_api_keys(self, inner):
         self._settings_section(inner, "🔑 Klucze API")
         self._key_from_env = {}
-        for kn in ("newsdata", "openai", "anthropic", "openrouter"):
+        for kn in ("newsdata", "finnhub", "openai", "anthropic", "openrouter"):
             from config import ENV_KEY_MAP
             env_name = ENV_KEY_MAP.get(kn, "")
             self._key_from_env[kn] = bool(
@@ -2668,10 +2656,12 @@ class InvestmentAdvisor(tk.Tk):
             return val
 
         self.v_newsdata  = tk.StringVar(value=_key_display("newsdata"))
+        self.v_finnhub   = tk.StringVar(value=_key_display("finnhub"))
         self.v_openai    = tk.StringVar(value=_key_display("openai"))
         self.v_anthropic = tk.StringVar(value=_key_display("anthropic"))
         self.v_openrouter = tk.StringVar(value=_key_display("openrouter"))
         self._settings_entry_row(inner, "Newsdata.io:", self.v_newsdata, show="*")
+        self._settings_entry_row(inner, "Finnhub.io:", self.v_finnhub, show="*")
         self._settings_entry_row(inner, "OpenAI API Key:", self.v_openai, show="*")
         self._settings_entry_row(inner, "Anthropic API Key:", self.v_anthropic, show="*")
         self._settings_entry_row(inner, "OpenRouter API Key:", self.v_openrouter, show="*")
@@ -3371,7 +3361,8 @@ class InvestmentAdvisor(tk.Tk):
 
     def _save_settings(self):
         # Nie nadpisuj kluczy zarządzanych przez env
-        for kn, var in (("newsdata", self.v_newsdata), ("openai", self.v_openai),
+        for kn, var in (("newsdata", self.v_newsdata), ("finnhub", self.v_finnhub),
+                        ("openai", self.v_openai),
                         ("anthropic", self.v_anthropic), ("openrouter", self.v_openrouter)):
             if not self._key_from_env.get(kn):
                 self.config_data["api_keys"][kn] = var.get().strip()
