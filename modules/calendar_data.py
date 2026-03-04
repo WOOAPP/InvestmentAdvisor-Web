@@ -194,61 +194,25 @@ def _fetch_one_week(slug):
         return [], str(exc)
 
 
-def fetch_calendar(week="this"):
+def fetch_calendar(week="upcoming"):
     """Fetch economic calendar from ForexFactory JSON feed.
 
-    week: 'this', 'next', or 'upcoming' (7 days from today)
+    week:
+      'upcoming' — events from today onward (default)
+      'all'      — full current week (including past days)
     Returns: (events_list, error_str_or_None)
     Each event dict has keys:
         date, time, flag, country, event, impact_icon, impact_label,
         impact_raw, forecast, previous, significance
     """
-    errors = []
+    events, err = _fetch_one_week("thisweek")
+    if err:
+        return events, err
+
+    events.sort(key=lambda x: (x["date"], x["time"]))
 
     if week == "upcoming":
-        # Fetch both weeks and filter to today + 7 days
-        today = datetime.now().date()
-        cutoff = today + timedelta(days=7)
-        cutoff_str = cutoff.strftime("%Y-%m-%d")
-        today_str = today.strftime("%Y-%m-%d")
+        today_str = datetime.now().date().strftime("%Y-%m-%d")
+        events = [e for e in events if e["date"] >= today_str]
 
-        all_events = []
-        for slug in ("thisweek", "nextweek"):
-            events, err = _fetch_one_week(slug)
-            if err:
-                errors.append(f"{slug}: {err}")
-            all_events.extend(events)
-
-        if not all_events and errors:
-            return [], "; ".join(errors)
-
-        # Deduplicate by (date, time, event)
-        seen = set()
-        unique = []
-        for e in all_events:
-            key = (e["date"], e["time"], e["event"])
-            if key not in seen:
-                seen.add(key)
-                unique.append(e)
-
-        # Filter: today → today+7 days
-        filtered = [e for e in unique
-                    if today_str <= e["date"] <= cutoff_str]
-        filtered.sort(key=lambda x: (x["date"], x["time"]))
-
-        err_msg = None
-        if errors and filtered:
-            # Partial success — got data from at least one week
-            err_msg = None
-        elif errors:
-            err_msg = "; ".join(errors)
-
-        return filtered, err_msg
-
-    else:
-        slug = "thisweek" if week == "this" else "nextweek"
-        events, err = _fetch_one_week(slug)
-        if err:
-            return events, err
-        events.sort(key=lambda x: (x["date"], x["time"]))
-        return events, None
+    return events, None
