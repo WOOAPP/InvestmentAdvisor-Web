@@ -1584,9 +1584,17 @@ class InvestmentAdvisor(tk.Tk):
             self.cal_tree.heading(col, text=col)
             self.cal_tree.column(col, width=w, anchor=anc)
 
-        self.cal_tree.tag_configure("high",   foreground=RED)
-        self.cal_tree.tag_configure("medium", foreground=YELLOW)
-        self.cal_tree.tag_configure("low",    foreground=FG)
+        self.cal_tree.tag_configure("high",        foreground=RED)
+        self.cal_tree.tag_configure("medium",      foreground=YELLOW)
+        self.cal_tree.tag_configure("low",         foreground=FG)
+        # Today's events — same impact colors but bold + accented background
+        self.cal_tree.tag_configure("today_high",   foreground=RED,    background=GRAY, font=("Segoe UI", 9, "bold"))
+        self.cal_tree.tag_configure("today_medium", foreground=YELLOW, background=GRAY, font=("Segoe UI", 9, "bold"))
+        self.cal_tree.tag_configure("today_low",    foreground=FG,     background=GRAY, font=("Segoe UI", 9, "bold"))
+        # Past events — dimmed
+        self.cal_tree.tag_configure("past_high",   foreground="#7a4a50")
+        self.cal_tree.tag_configure("past_medium", foreground="#7a6e40")
+        self.cal_tree.tag_configure("past_low",    foreground=SUBTEXT)
 
         vsb = ttk.Scrollbar(tree_cont, orient="vertical",
                              command=self.cal_tree.yview)
@@ -1621,16 +1629,24 @@ class InvestmentAdvisor(tk.Tk):
                 self.after(0, lambda: self.cal_status.configure(
                     text=f"Błąd: {err[:60]}"))
             else:
-                self.after(0, lambda: self.cal_status.configure(
-                    text=f"{len(events)} wydarzeń — "
-                         f"{'bieżący' if week_offset == 'this' else 'następny'} tydzień"))
+                import datetime as _dt
+                today_str = _dt.date.today().strftime("%Y-%m-%d")
+                today_count = sum(1 for e in events if e["date"] == today_str)
+                week_lbl = "bieżący" if week_offset == "this" else "następny"
+                status = f"{len(events)} wydarzeń — {week_lbl} tydzień"
+                if today_count:
+                    status += f"  •  dziś: {today_count}"
+                self.after(0, lambda s=status: self.cal_status.configure(text=s))
             self.after(0, self._apply_cal_filter)
 
         threading.Thread(target=_fetch, daemon=True).start()
 
     def _apply_cal_filter(self):
+        import datetime as _dt
         for row in self.cal_tree.get_children():
             self.cal_tree.delete(row)
+
+        today_str = _dt.date.today().strftime("%Y-%m-%d")
 
         raw_map = {
             "🔴 Wysoki": "High",
@@ -1638,13 +1654,27 @@ class InvestmentAdvisor(tk.Tk):
             "⚪ Niski":  "Low",
         }
         raw_filter = raw_map.get(self.cal_filter_var.get())
-        tag_map    = {"High": "high", "Medium": "medium", "Low": "low"}
 
-        for e in self._cal_events:
+        # Tag lookup: today / future / past × impact level
+        def _tag(impact_raw, event_date):
+            if event_date == today_str:
+                return {"High": "today_high", "Medium": "today_medium"}.get(impact_raw, "today_low")
+            if event_date > today_str:
+                return {"High": "high", "Medium": "medium"}.get(impact_raw, "low")
+            return {"High": "past_high", "Medium": "past_medium"}.get(impact_raw, "past_low")
+
+        # Events from today onward first, then past events at the bottom
+        upcoming = [e for e in self._cal_events if e["date"] >= today_str]
+        past     = [e for e in self._cal_events if e["date"] <  today_str]
+
+        first_today_iid = None
+        first_future_iid = None
+
+        for e in upcoming + past:
             if raw_filter and e["impact_raw"] != raw_filter:
                 continue
-            tag = tag_map.get(e["impact_raw"], "low")
-            self.cal_tree.insert("", "end", tags=(tag,), values=(
+            tag = _tag(e["impact_raw"], e["date"])
+            iid = self.cal_tree.insert("", "end", tags=(tag,), values=(
                 e["date"],
                 e["time"],
                 f"{e['flag']} {e['country']}",
@@ -1654,6 +1684,16 @@ class InvestmentAdvisor(tk.Tk):
                 e["forecast"],
                 e["previous"],
             ))
+            if first_today_iid is None and e["date"] == today_str:
+                first_today_iid = iid
+            if first_future_iid is None and e["date"] > today_str:
+                first_future_iid = iid
+
+        # Scroll to today's first event; fall back to next upcoming if no events today
+        scroll_to = first_today_iid or first_future_iid
+        if scroll_to:
+            self.cal_tree.see(scroll_to)
+            self.cal_tree.selection_set(scroll_to)
 
     def _on_cal_event_dblclick(self, _event):
         sel = self.cal_tree.selection()
