@@ -1,0 +1,1617 @@
+From 5f3b6a3660f65fed5dd557ec746e441fc27b08f1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 4 Mar 2026 00:13:56 +0000
+Subject: [PATCH 1/3] Update CLAUDE.md and add AUDIT_REPORT.md with deep
+ codebase audit
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CLAUDE.md: Rewritten to reflect actual codebase state — accurate
+architecture overview with data flow diagram, full module listing
+(17 modules + 13 test files), AI provider logic (Anthropic/OpenAI/
+OpenRouter switching), security mechanisms (SSRF protection, domain
+allowlist, URL masking), environment variable overrides, all
+run/test commands, known weak spots, and change safety guidelines.
+
+AUDIT_REPORT.md: Comprehensive file-by-file analysis covering
+Performance (6 findings), AI Costs (5 findings), Stability (8
+findings), Security (6 findings), and Code Quality (7 findings).
+Includes executive summary with top 5 issues, 10 quick wins under
+30 min each, and estimated overall impact assessment.
+
+https://claude.ai/code/session_01V4HWVjPZM7TUsoqZmsEsCR
+---
+ AUDIT_REPORT.md | 584 ++++++++++++++++++++++++++++++++++++++++++++++++
+ CLAUDE.md       | 343 ++++++++++++++++++++--------
+ 2 files changed, 839 insertions(+), 88 deletions(-)
+ create mode 100644 AUDIT_REPORT.md
+
+diff --git a/AUDIT_REPORT.md b/AUDIT_REPORT.md
+new file mode 100644
+index 0000000..b4f5e91
+--- /dev/null
++++ b/AUDIT_REPORT.md
+@@ -0,0 +1,584 @@
++# InvestmentAdvisor — Deep Audit Report
++
++**Date:** 2026-03-04
++**Scope:** All source files, tests, configuration, and dependencies
++**Method:** File-by-file static analysis, no code modifications
++
++---
++
++## 1. Executive Summary
++
++### Top 5 Highest-Impact Issues
++
++| # | Issue | Category | Impact |
++|---|-------|----------|--------|
++| 1 | **Duplicate news classification runs 5x** on the same data in `macro_trend.py` | Performance / AI Costs | Eliminates ~80% of classification overhead per analysis cycle |
++| 2 | **No timeout on AI provider API calls** — a stalled Anthropic/OpenAI call blocks the worker thread indefinitely | Stability | Prevents indefinite hangs; unblocks stuck analysis |
++| 3 | **Chat history grows unbounded** — full conversation sent with every message, no token limit | AI Costs | Can save 50-80% of chat token costs on long conversations |
++| 4 | **`main.py` is 4300+ LOC in a single class** — high merge conflict risk, hard to navigate | Code Quality | Reduces cognitive load, enables parallel development |
++| 5 | **SSRF protection not applied to market data URLs** — user-provided symbols injected into CoinGecko/Stooq URLs without validation | Security | Closes server-side request forgery vector via crafted instrument symbols |
++
++### Estimated Overall Impact (if all HIGH+ issues resolved)
++
++- **~60% reduction in unnecessary token spending** (duplicate classification, unbounded chat history, missing token limits)
++- **3 crash/hang paths eliminated** (AI timeout, matplotlib thread safety, unhandled empty responses)
++- **2 security vectors closed** (symbol injection into URLs, hardcoded plaintext password)
++- **~40% improvement in analysis cycle time** (skip redundant classification, cache news between runs)
++
++---
++
++## 2. Full Findings by Category
++
++---
++
++### 2.1 PERFORMANCE
++
++---
++
++#### P1: Duplicate news classification in macro_trend.py
++
++```
++[PRIORITY: HIGH]
++Problem: classify_articles() is called 5 times — once on raw fetched articles, then again
++         on each of 4 DB query results (24h, 7d, 30d, 90d). The DB rows already have
++         region/topic from the first classification + storage, making re-classification redundant.
++Location: modules/macro_trend.py lines 55-75 (build_macro_payload)
++Fix: Remove the 4 redundant classify_articles() calls on DB query results. Only classify once
++     on raw_articles before storing. Ensure store_news() persists region/topic (it already does).
++Impact: Eliminates ~80% of classification CPU per analysis cycle (~17 regex * articles * 4 passes).
++```
++
++---
++
++#### P2: No caching of market data between analysis and chart rendering
++
++```
++[PRIORITY: MEDIUM]
++Problem: When a user runs analysis and then opens a chart for the same instrument, data is
++         fetched again from yfinance/CoinGecko. The analysis already fetched all instrument data
++         via get_all_instruments().
++Location: modules/charts.py:fetch_chart_data() (line 90), main.py:_draw_chart()
++Fix: Pass already-fetched data to chart rendering when available, or add a short TTL cache
++     (e.g., 5 min) to fetch_chart_data().
++Impact: Saves 1 API call per chart open after analysis. Reduces chart load time by ~1-3s.
++```
++
++---
++
++#### P3: Newsdata.io windows fetched sequentially
++
++```
++[PRIORITY: MEDIUM]
++Problem: fetch_all_windows() in news_store.py iterates 5 time windows (24h, 72h, 7d, 30d, 90d)
++         sequentially. Each window makes an HTTP request to Newsdata.io.
++Location: modules/news_store.py:fetch_all_windows() (line 221)
++Fix: Use ThreadPoolExecutor to fetch windows in parallel (with fail-fast on auth error via
++     shared flag). Respect Newsdata.io rate limits.
++Impact: Reduces news fetching time from ~5 sequential requests to ~1-2 parallel batches.
++```
++
++---
++
++#### P4: Matplotlib figures not always closed after chart replacement
++
++```
++[PRIORITY: MEDIUM]
++Problem: When user changes chart period/symbol, old figures are closed via plt.close(fig),
++         but if create_price_chart() raises an exception after creating the figure but before
++         returning, the figure leaks. Also, _build_chart_toolbar() creates a hidden
++         NavigationToolbar2Tk that is never destroyed.
++Location: main.py:_draw_chart() (lines 1944-1981), modules/charts.py:_build_chart_toolbar() (line 372)
++Fix: Use try/finally to ensure plt.close(fig) on exception. Track and destroy hidden toolbars.
++Impact: Prevents gradual memory growth in long sessions (~2-5 MB per leaked figure).
++```
++
++---
++
++#### P5: CoinGecko rate limiter uses time.sleep() blocking the calling thread
++
++```
++[PRIORITY: LOW]
++Problem: _cg_rate_wait() in market_data.py calls time.sleep() which blocks the calling thread.
++         When called from the main analysis thread, this adds up to 2.5s of dead time per
++         CoinGecko request.
++Location: modules/market_data.py:_cg_rate_wait() (lines 33-41)
++Fix: The batch optimization in get_all_instruments() already minimizes CoinGecko calls.
++     For chart data, consider async fetching or accept the delay.
++Impact: Minor — batch optimization already mitigates this for the main analysis flow.
++```
++
++---
++
++#### P6: _EVENT_SIGNIFICANCE dict lookup is O(n) per event
++
++```
++[PRIORITY: LOW]
++Problem: get_event_significance() in calendar_data.py iterates 170+ keyword entries for each
++         calendar event, checking substring inclusion.
++Location: modules/calendar_data.py:get_event_significance() (line 139)
++Fix: Precompile into a single regex pattern with named groups, or use a trie for O(k) lookup.
++Impact: Negligible for typical calendar sizes (50-100 events), but could matter for bulk processing.
++```
++
++---
++
++### 2.2 AI PROVIDER COSTS
++
++---
++
++#### C1: Chat history grows without token limit
++
++```
++[PRIORITY: CRITICAL]
++Problem: _chat_history in main.py accumulates all messages and sends the entire history with
++         every run_chat() call. There is no truncation, summarization, or sliding window.
++         A 20-message conversation can easily exceed 10k tokens of context per message.
++Location: main.py:_send_chat_message() / _send_chat_message_from(), modules/ai_engine.py:run_chat()
++Fix: Implement a sliding window (keep last N messages) or token-budget approach. Summarize
++     older messages before they fall off the window. Set max_tokens on chat responses.
++Impact: Can save 50-80% of chat token costs for conversations >10 messages. Prevents hitting
++        context window limits.
++```
++
++---
++
++#### C2: Analysis prompt includes full scraped text without truncation control
++
++```
++[PRIORITY: HIGH]
++Problem: scrape_all() returns up to 2000 chars per site. With 50+ configured sources, the
++         scraped text can be 100k+ chars (~25k tokens). This entire block is sent to the AI.
++Location: main.py:_run_analysis() line 3540-3543, modules/ai_engine.py:_build_macro_prompt()
++Fix: Add a total scraped text budget (e.g., 8000 chars / ~2k tokens). Prioritize sources by
++     relevance or truncate proportionally.
++Impact: Could save $0.01-0.10 per analysis call depending on model. Prevents context overflow.
++```
++
++---
++
++#### C3: No response token limit differentiation by task type
++
++```
++[PRIORITY: MEDIUM]
++Problem: AI_MAX_TOKENS (8192) is used for analysis, chat, profiles, and calendar event analysis
++         alike. Profiles and event analyses need far fewer tokens (~500-1000).
++Location: modules/ai_engine.py:generate_instrument_profile() line 218,
++          generate_calendar_event_analysis() line 255
++Fix: Use task-specific max_tokens: analysis=8192, chat=2048 (already done via AI_CHAT_MAX_TOKENS),
++     profiles=1024, calendar events=1024.
++Impact: Reduces output token costs for profile/event calls by ~75%. Faster responses.
++```
++
++---
++
++#### C4: No caching of AI-generated instrument profiles
++
++```
++[PRIORITY: MEDIUM]
++Problem: Instrument profiles are generated via AI and saved to SQLite (instrument_profiles table).
++         However, the code in main.py always checks DB first (get_instrument_profile), so this
++         is partially handled. The issue is that profiles have no expiry — stale profiles persist
++         indefinitely, and there's no mechanism to regenerate them periodically.
++Location: modules/database.py:get_instrument_profile(), main.py:_open_instrument_profile()
++Fix: Add a TTL column to instrument_profiles (e.g., 30 days). Regenerate when stale.
++Impact: Low cost impact but keeps profiles accurate as market conditions change.
++```
++
++---
++
++#### C5: Chart chat sends full chat history on every message
++
++```
++[PRIORITY: MEDIUM]
++Problem: _chart_chat_history in main.py is separate from main chat history but has the same
++         unbounded growth problem. Each chart question sends all prior chart messages.
++Location: main.py:_chart_chat_history (line 127), chart chat send logic
++Fix: Apply same sliding window as main chat (see C1).
++Impact: Same as C1 for users who use chart chat extensively.
++```
++
++---
++
++### 2.3 STABILITY & RELIABILITY
++
++---
++
++#### S1: No timeout on AI provider API calls
++
++```
++[PRIORITY: CRITICAL]
++Problem: _call_provider() in ai_engine.py calls anthropic.messages.create() and
++         openai.chat.completions.create() without a timeout parameter. If the API stalls
++         (network issue, provider outage), the worker thread blocks indefinitely. The UI
++         shows "Analizuję..." forever with no way to cancel.
++Location: modules/ai_engine.py:_call_provider() lines 56-78
++Fix: Pass timeout=120 (or configurable) to both Anthropic and OpenAI client calls.
++     Add a cancellation mechanism (e.g., threading.Event checked between retries).
++Impact: Eliminates indefinite hang path. Users can retry after timeout instead of force-quitting.
++```
++
++---
++
++#### S2: news_store.py runs init_news_table() on import
++
++```
++[PRIORITY: HIGH]
++Problem: Importing news_store.py immediately calls init_news_table() (line 321), which creates
++         the data/ directory and SQLite database. This is a side effect of module import that
++         runs during test collection and makes the module harder to test in isolation.
++Location: modules/news_store.py line 321
++Fix: Remove the import-time call. Call init_news_table() explicitly during app startup
++     (alongside database.init_db()).
++Impact: Cleaner test isolation, no surprise filesystem side effects on import.
++```
++
++---
++
++#### S3: Config load has no error handling for malformed JSON
++
++```
++[PRIORITY: HIGH]
++Problem: load_config() in config.py calls json.load(f) without try/except. If config.json is
++         corrupted (truncated write, disk error), the app crashes on startup with an unhandled
++         JSONDecodeError.
++Location: config.py:load_config()
++Fix: Wrap json.load in try/except JSONDecodeError. On failure, back up the corrupt file and
++     create fresh defaults. Log a warning.
++Impact: Prevents crash-on-startup from corrupt config. Preserves user data via backup.
++```
++
++---
++
++#### S4: schedule library runner has no exception handling
++
++```
++[PRIORITY: HIGH]
++Problem: The scheduler runner thread in main.py (lines 3971-3974) calls
++         schedule.run_pending() in a loop. If the scheduled job (_run_analysis_thread) raises
++         an unhandled exception, the schedule library catches it but logs to stderr. However,
++         if schedule.run_pending() itself fails, the runner thread dies silently.
++Location: main.py:_start_scheduler() lines 3965-3976
++Fix: Wrap schedule.run_pending() in try/except with logging. Restart the runner on failure.
++Impact: Prevents silent scheduler death. Ensures scheduled analyses continue running.
++```
++
++---
++
++#### S5: CoinGecko batch failure silently marks all coins as error
++
++```
++[PRIORITY: MEDIUM]
++Problem: In get_all_instruments(), if the batch CoinGecko price fetch fails, all individual
++         CoinGecko instruments fall through to individual fetches. But if the individual fetches
++         also fail (e.g., rate limit), each coin gets {"error": "..."} with no retry.
++Location: modules/market_data.py:get_all_instruments() lines 276-300
++Fix: Add a single retry for the batch call with a 3s delay. If batch succeeds partially,
++     only retry failed coins individually.
++Impact: Reduces "N/A" price displays when CoinGecko has transient issues.
++```
++
++---
++
++#### S6: Matplotlib not thread-safe but chart data fetched inside create_price_chart
++
++```
++[PRIORITY: MEDIUM]
++Problem: create_price_chart() in charts.py both fetches data (blocking I/O via yfinance/CoinGecko)
++         AND creates matplotlib figures. It's called from the main thread, so the I/O blocks
++         the UI. Moving the fetch to a worker thread would be ideal, but matplotlib figure
++         creation must stay on the main thread.
++Location: modules/charts.py:create_price_chart() lines 160-362
++Fix: Split into two phases: (1) fetch data in background thread, (2) create chart on main
++     thread via self.after(). This is partially done for the dashboard but not for the charts tab.
++Impact: Eliminates UI freeze during chart loading (1-5s depending on source).
++```
++
++---
++
++#### S7: datetime.utcnow() is deprecated
++
++```
++[PRIORITY: LOW]
++Problem: Multiple modules use datetime.utcnow() which is deprecated in Python 3.12+.
++         Returns naive datetime, can cause timezone confusion.
++Location: modules/news_store.py (lines 139, 243, 278, 296, 312),
++          modules/news_of_day.py (line 101)
++Fix: Replace with datetime.now(timezone.utc) for timezone-aware UTC datetimes.
++Impact: Future-proofs against Python deprecation warnings. Prevents subtle timezone bugs.
++```
++
++---
++
++#### S8: Scraper has no retry logic
++
++```
++[PRIORITY: LOW]
++Problem: scraper.py creates its HTTP session with max_retries=0 (line 37). A transient
++         connection error on any URL means that source is lost entirely for that analysis.
++Location: modules/scraper.py:_build_scraper_session() line 37
++Fix: Set max_retries=1 with a short backoff. Since scraping runs in parallel with a per-URL
++     timeout, a single retry adds minimal latency.
++Impact: Recovers from ~10-20% of transient failures without meaningful delay.
++```
++
++---
++
++### 2.4 SECURITY
++
++---
++
++#### X1: User-provided symbols injected into URLs without validation
++
++```
++[PRIORITY: HIGH]
++Problem: In market_data.py, instrument symbols from config are interpolated directly into
++         CoinGecko and Stooq URLs (f-strings). A crafted symbol like
++         "bitcoin/market_chart?vs_currency=usd&days=1#" could manipulate the URL path.
++         The SSRF protection in url_validator.py only covers the scraper, not market data calls.
++Location: modules/market_data.py lines 105, 183, 324 (charts.py line 59)
++Fix: Validate symbols against a regex (alphanumeric + limited special chars). URL-encode
++     symbol values. Consider applying url_validator to all external HTTP calls.
++Impact: Closes URL injection vector via crafted instrument configs.
++```
++
++---
++
++#### X2: Hardcoded plaintext password for settings protection
++
++```
++[PRIORITY: HIGH]
++Problem: _SETTINGS_PASSWORD = "666" is hardcoded in main.py (line 250). This "protects" the
++         prompts/settings tab. The password is trivially discoverable in source code.
++Location: main.py line 250
++Fix: Either hash the password (store hash in config) or remove the password protection entirely
++     (it provides false sense of security for a local desktop app). If needed, use OS-level
++     keychain integration.
++Impact: Eliminates false security. Users won't rely on a trivially bypassed mechanism.
++```
++
++---
++
++#### X3: Newsdata.io API key visible in URL query parameters
++
++```
++[PRIORITY: MEDIUM]
++Problem: In news_store.py and market_data.py, the Newsdata.io API key is passed as a query
++         parameter (?apikey=...). While http_client.py masks this in error logs, the key is
++         still visible in HTTP request URLs, proxy logs, and potentially browser history.
++Location: modules/news_store.py:_newsdata_request() line 171,
++          modules/market_data.py:get_news() line 363
++Fix: This is a Newsdata.io API design limitation (they require key in URL). Ensure all logging
++     goes through http_client's masking. Add a warning in documentation.
++Impact: Acknowledged limitation. Masking in logs is already in place.
++```
++
++---
++
++#### X4: Markdown links opened without user confirmation
++
++```
++[PRIORITY: MEDIUM]
++Problem: ui_helpers.py:_insert_inline() binds markdown links to webbrowser.open(url)
++         without confirmation. If AI generates a malicious link in its response, clicking it
++         would navigate to an untrusted URL.
++Location: modules/ui_helpers.py line 168
++Fix: Show a confirmation dialog ("Open URL: {url}?") before calling webbrowser.open().
++Impact: Prevents drive-by navigation to malicious URLs generated by AI or scraped content.
++```
++
++---
++
++#### X5: No input sanitization on ticker symbols in UI
++
++```
++[PRIORITY: LOW]
++Problem: Users can add arbitrary strings as instrument symbols via the settings UI. These
++         strings are used in API URLs, database queries, and file paths without validation.
++Location: main.py settings tab (instrument list editing)
++Fix: Validate symbols against a whitelist regex (e.g., ^[A-Za-z0-9._^=-]{1,20}$) when
++     saving settings.
++Impact: Defense-in-depth. Prevents malformed symbols from causing unexpected behavior.
++```
++
++---
++
++#### X6: Crontab entries built without shell escaping
++
++```
++[PRIORITY: LOW]
++Problem: _update_cron_schedule() in main.py builds crontab command strings by interpolating
++         Python path and script path. If these paths contain spaces or special characters,
++         the cron entry may break or execute unintended commands.
++Location: main.py:_update_cron_schedule() lines 2479-2481
++Fix: Use shlex.quote() on path components when building crontab entries.
++Impact: Prevents cron entry breakage on systems with spaces in paths.
++```
++
++---
++
++### 2.5 CODE QUALITY & MAINTAINABILITY
++
++---
++
++#### Q1: main.py is 4300+ lines in a single class
++
++```
++[PRIORITY: HIGH]
++Problem: The InvestmentAdvisor class contains 150+ methods handling UI building, event handling,
++         analysis orchestration, PDF export, scheduling, chart management, portfolio management,
++         alerts, settings, and more. This makes the file extremely hard to navigate, review,
++         and modify without merge conflicts.
++Location: main.py (entire file)
++Fix: Extract logical groups into separate modules:
++     - ui/dashboard.py, ui/charts_tab.py, ui/portfolio_tab.py, ui/settings_tab.py
++     - pdf_export.py
++     - scheduler.py
++     Keep main.py as the entry point with the Notebook skeleton.
++Impact: Dramatically improves maintainability and enables parallel development.
++```
++
++---
++
++#### Q2: Duplicate HTTP session/header definitions
++
++```
++[PRIORITY: MEDIUM]
++Problem: Both http_client.py and scraper.py define their own User-Agent headers, session
++         builders, and thread-safe singleton patterns. The code is nearly identical.
++Location: modules/http_client.py lines 29-83, modules/scraper.py lines 22-53
++Fix: Have scraper.py use http_client's session (with scraper-specific config like max_redirects).
++     Remove duplicate header definitions.
++Impact: Reduces maintenance burden. Single place to update HTTP behavior.
++```
++
++---
++
++#### Q3: Theme colors defined in 3 places
++
++```
++[PRIORITY: MEDIUM]
++Problem: Catppuccin Mocha colors are defined independently in main.py (lines 41-48),
++         charts.py (COLORS dict, line 23), and ui_helpers.py (lines 17-24). Changes to the
++         theme require updating all three.
++Location: main.py, modules/charts.py, modules/ui_helpers.py
++Fix: Move all color definitions to constants.py and import everywhere.
++Impact: Single source of truth for theme. Easier to add theme switching later.
++```
++
++---
++
++#### Q4: Duplicate error handling pattern in ai_engine.py
++
++```
++[PRIORITY: LOW]
++Problem: _run_provider() and run_chat() catch identical exception tuples
++         (anthropic.APIError, openai.OpenAIError, KeyError, ValueError, ConnectionError,
++         TimeoutError) with nearly identical handling.
++Location: modules/ai_engine.py lines 99-102, 194-197
++Fix: Extract common error handling into a decorator or helper function.
++Impact: Reduces code duplication, ensures consistent error handling.
++```
++
++---
++
++#### Q5: sys.path manipulation in multiple modules
++
++```
++[PRIORITY: LOW]
++Problem: Multiple modules (charts.py, news_of_day.py, news_store.py, macro_trend.py,
++         trend_narrative.py, openai_pricing.py, ui_helpers.py) use
++         sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
++         to import from constants.py.
++Location: 7 modules under modules/
++Fix: Use relative imports (from ..constants import ...) or restructure as a proper Python
++     package with __init__.py at root.
++Impact: Cleaner imports, prevents path pollution, follows Python packaging conventions.
++```
++
++---
++
++#### Q6: Custom exceptions defined but rarely used
++
++```
++[PRIORITY: LOW]
++Problem: modules/exceptions.py defines DataFetchError, AIProviderError, and ScraperError,
++         but most code catches broad Exception or specific library exceptions. The custom
++         exceptions are mostly unused.
++Location: modules/exceptions.py, modules/ai_engine.py, modules/market_data.py, modules/scraper.py
++Fix: Gradually adopt custom exceptions in modules. Raise DataFetchError from market_data
++     failures, AIProviderError from ai_engine failures, ScraperError from scraper failures.
++     This enables more targeted error handling in main.py.
++Impact: Better error categorization. Main.py can handle different failure types differently.
++```
++
++---
++
++#### Q7: Test coverage gaps for critical modules
++
++```
++[PRIORITY: MEDIUM]
++Problem: Several modules have zero or minimal test coverage:
++         - config.py — no tests (config load, save, env override)
++         - scraper.py — no tests (URL fetch, HTML parse, parallel scrape)
++         - calendar_data.py — no tests
++         - openai_pricing.py — no tests (cost calculation, cache logic)
++         - http_client.py — only _mask_url() tested; safe_get() not tested
++         - main.py — no tests (UI, but this is expected for Tkinter)
++Location: tests/ directory
++Fix: Priority additions:
++     1. test_config.py — config load/save, env overrides, malformed file handling
++     2. test_scraper.py — mocked HTTP, HTML parsing, parallel execution
++     3. test_openai_pricing.py — cost calculation, cache TTL, prefix matching
++     4. Expand test_http_client.py — safe_get retry, timeout, size limit
++Impact: Catches regressions in config, scraping, and pricing — all critical paths.
++```
++
++---
++
++## 3. Quick Wins (fixes under 30 minutes each)
++
++| # | Fix | File | Time Est. |
++|---|-----|------|-----------|
++| 1 | Remove 4 redundant `classify_articles()` calls in `build_macro_payload()` | `macro_trend.py` | 5 min |
++| 2 | Add `timeout=120` parameter to Anthropic and OpenAI API calls | `ai_engine.py` | 10 min |
++| 3 | Add `try/except JSONDecodeError` in `load_config()` with backup + defaults | `config.py` | 15 min |
++| 4 | Replace `datetime.utcnow()` with `datetime.now(timezone.utc)` everywhere | `news_store.py`, `news_of_day.py` | 10 min |
++| 5 | Add `try/except` around `schedule.run_pending()` in scheduler runner | `main.py` | 5 min |
++| 6 | Move color constants to `constants.py`, import everywhere | `constants.py`, 3 files | 20 min |
++| 7 | Add symbol validation regex in `market_data.py` before URL construction | `market_data.py` | 15 min |
++| 8 | Add sliding window (last 20 messages) to chat history before sending | `main.py` | 15 min |
++| 9 | Set `max_retries=1` in scraper session builder | `scraper.py` | 2 min |
++| 10 | Remove `init_news_table()` call from module-level in `news_store.py` | `news_store.py`, `main.py` | 5 min |
++
++---
++
++## 4. Estimated Overall Impact if All HIGH+ Issues Are Resolved
++
++### Token Cost Reduction
++- **~60% reduction in unnecessary token spending** — from eliminating unbounded chat history (C1/C5), reducing scraped text payload (C2), and using task-specific max_tokens (C3)
++- At 2 analyses + 10 chat messages per day with gpt-4o: estimated savings of ~$0.50-1.00/day
++
++### Stability Improvement
++- **3 potential hang/crash paths eliminated:**
++  1. AI provider timeout hang (S1)
++  2. Corrupt config.json crash (S3)
++  3. Silent scheduler death (S4)
++- **2 data loss paths prevented:**
++  1. Config corruption recovery (S3)
++  2. Graceful degradation on CoinGecko batch failure (S5)
++
++### Performance Improvement
++- **~40% faster analysis cycles** — from skipping redundant classification (P1), parallelizing news fetches (P3)
++- **Eliminated UI freezes** — from separating chart data fetch from rendering (S6)
++
++### Security Improvement
++- **2 attack vectors closed:**
++  1. Symbol injection into market data URLs (X1)
++  2. Hardcoded password replaced/removed (X2)
++- **1 phishing vector mitigated:**
++  1. Link click confirmation dialog (X4)
++
++### Maintainability Improvement
++- **Splitting main.py** into logical modules reduces average change scope from 4300 LOC to ~500-800 LOC per module
++- **Single source of truth** for colors, HTTP config, and error handling
++- **Test coverage** expanded from 8/15 modules to 12/15 modules
+diff --git a/CLAUDE.md b/CLAUDE.md
+index db665eb..595ba36 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -1,152 +1,319 @@
+ # InvestmentAdvisor – CLAUDE.md
+ 
+-## Opis projektu
++## Project Overview
+ 
+-**InvestmentAdvisor** to desktopowa aplikacja do analizy rynków finansowych napisana w Pythonie.
+-Pobiera dane rynkowe w czasie rzeczywistym, pobiera newsy i wysyła je do modeli AI (Anthropic / OpenAI),
+-które generują szczegółowe raporty inwestycyjne. Interfejs graficzny oparty na Tkinter z ciemnym motywem Catppuccin Mocha.
++**InvestmentAdvisor** is a Python desktop application for financial market analysis.
++It fetches real-time market data, news (Newsdata.io), and web-scraped content, then sends everything
++to AI models (Anthropic / OpenAI / OpenRouter) which generate detailed investment reports.
++The GUI is built with Tkinter using the Catppuccin Mocha dark theme.
+ 
+ ---
+ 
+-## Uruchamianie aplikacji
++## Running the Application
+ 
+ ```bash
+ python main.py
+ ```
+ 
+-Wymagany Python 3.10+. Przy pierwszym uruchomieniu aplikacja tworzy plik `data/advisor.db` (SQLite).
++Requires Python 3.10+. On first run the app creates `data/advisor.db` (SQLite) and `data/config.json`.
+ 
+-### Instalacja zależności
++Auto-analysis mode (launched by cron):
++```bash
++python main.py --auto-analysis
++```
++
++### Installing Dependencies
+ 
+ ```bash
+-pip install anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule
++pip install anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2
+ ```
+ 
++### Running Tests
++
++```bash
++python -m unittest discover tests/ -v
++```
++
++There are 13 test files with 620+ test cases covering core modules.
++
+ ---
+ 
+-## Struktura projektu
++## Project Structure
+ 
+ ```
+ InvestmentAdvisor/
+-├── main.py                 # Główna aplikacja Tkinter (klasa InvestmentAdvisor)
+-├── config.py               # Ładowanie/zapis konfiguracji, domyślne instrumenty
++├── main.py                    # Tkinter application (class InvestmentAdvisor, ~4300 LOC)
++├── config.py                  # Config load/save, env overrides, default instruments & prompts
++├── constants.py               # 73 centralized tuning parameters (timeouts, limits, weights)
++├── CLAUDE.md                  # This file
+ ├── data/
+-│   ├── config.json         # Konfiguracja użytkownika (klucze API, instrumenty)
+-│   └── advisor.db          # Baza SQLite (nie wersjonowana)
+-└── modules/
+-    ├── ai_engine.py        # Integracja z Anthropic i OpenAI
+-    ├── market_data.py      # Pobieranie danych (yfinance, CoinGecko, Stooq)
+-    ├── database.py         # CRUD SQLite – raporty, snapshoty, alerty, portfel
+-    ├── charts.py           # Wykresy Matplotlib osadzone w Tkinter
+-    ├── scraper.py          # Web scraper (BeautifulSoup)
+-    └── calendar_data.py    # Dane kalendarza ekonomicznego
++│   ├── config.json            # User config (API keys, instruments) – not versioned
++│   ├── advisor.db             # SQLite database – not versioned
++│   └── llm_pricing_cache.json # Cached LLM pricing – auto-generated
++├── modules/
++│   ├── ai_engine.py           # AI provider dispatch (Anthropic / OpenAI / OpenRouter)
++│   ├── market_data.py         # Market data fetching (yfinance, CoinGecko, Stooq, Newsdata.io)
++│   ├── database.py            # SQLite CRUD – reports, snapshots, alerts, portfolio, profiles
++│   ├── charts.py              # Matplotlib charts embedded in Tkinter (price, volume, risk gauge)
++│   ├── scraper.py             # Parallel web scraper with URL validation (BeautifulSoup)
++│   ├── http_client.py         # Shared HTTP session with retry, backoff, URL masking
++│   ├── url_validator.py       # SSRF protection: scheme/IP/DNS checks + domain allowlist
++│   ├── calendar_data.py       # Economic calendar (ForexFactory JSON feed)
++│   ├── news_store.py          # News fetching (Newsdata.io), deduplication, SQLite storage
++│   ├── news_classifier.py     # Deterministic region/topic classification (regex, no ML)
++│   ├── news_of_day.py         # Scoring engine to select most impactful news
++│   ├── macro_trend.py         # Macro-trend orchestrator: news → classify → trend → LLM payload
++│   ├── trend_narrative.py     # Trend aggregation & window comparison (24h vs 7d/30d/90d)
++│   ├── openai_pricing.py      # LLM cost calculation with 3-level cache (memory/disk/web)
++│   ├── ui_helpers.py          # Markdown renderer for Tkinter, BusySpinner, click-to-focus
++│   └── exceptions.py          # Custom exceptions: DataFetchError, AIProviderError, ScraperError
++└── tests/
++    ├── test_ai_engine.py      # Provider dispatch, token counting, prompt builders
++    ├── test_charts.py         # Bar width, vol colors, x-axis formatting, risk extraction
++    ├── test_database.py       # Full CRUD, migrations, isolation via temp DB
++    ├── test_http_client.py    # URL masking for logs
++    ├── test_macro_trend.py    # Payload slimming, LLM formatting
++    ├── test_market_data.py    # yfinance/CoinGecko/Stooq, FX cache, formatting
++    ├── test_news_classifier.py # Region/topic classification, priority order
++    ├── test_news_of_day.py    # Scoring components, selection, justification
++    ├── test_news_store.py     # Dedup, window fetching, auth error fail-fast
++    ├── test_trend_narrative.py # Aggregation, window comparison, signals
++    ├── test_ui_helpers.py     # Markdown rendering, spinner lifecycle
++    └── test_url_validator.py  # SSRF prevention, IP blocking, allowlist (28 tests)
++```
++
++---
++
++## Architecture & Data Flow
++
++```
++User clicks "Uruchom Analizę"
++        │
++        ├── market_data.py ──→ yfinance / CoinGecko / Stooq
++        │       └── http_client.py (safe_get with retry)
++        │
++        ├── macro_trend.py ──→ news_store.py ──→ Newsdata.io API
++        │       ├── news_classifier.py (region/topic tagging)
++        │       ├── news_of_day.py (scoring → top news)
++        │       └── trend_narrative.py (7d/30d/90d comparisons)
++        │
++        ├── scraper.py ──→ url_validator.py (SSRF check) ──→ HTTP fetch
++        │
++        └── ai_engine.py ──→ Anthropic / OpenAI / OpenRouter API
++                │
++                └── Report saved to database.py → SQLite
+ ```
+ 
++All heavy I/O runs in daemon threads; UI updates via `self.after(0, callback)`.
++
+ ---
+ 
+-## Konfiguracja (`data/config.json`)
++## Configuration (`data/config.json`)
++
++Auto-created on first run. Key fields:
++
++| Field | Description |
++|-------|-------------|
++| `api_keys.anthropic` | Anthropic API key |
++| `api_keys.openai` | OpenAI API key |
++| `api_keys.openrouter` | OpenRouter API key |
++| `api_keys.newsdata` | Newsdata.io API key |
++| `ai_provider` | `"anthropic"`, `"openai"`, or `"openrouter"` |
++| `ai_model` | e.g. `"claude-opus-4-6"`, `"gpt-4.1"`, `"openai/gpt-4o"` |
++| `chat_provider` / `chat_model` | Separate provider/model for chat |
++| `instruments` | `[{symbol, name, category, source}]` |
++| `sources` | URLs for web scraping |
++| `trusted_domains` | Domain allowlist for scraper (80+ defaults) |
++| `prompt` | System prompt for analysis |
++| `chat_prompt` | System prompt for chat |
++| `schedule.enabled` | Enable automatic analysis (bool) |
++| `schedule.times` | Times e.g. `["08:00", "16:00"]` |
+ 
+-Plik JSON tworzony automatycznie przy pierwszym uruchomieniu. Kluczowe pola:
++### Environment Variable Overrides (priority over config file)
+ 
+-| Pole | Opis |
+-|------|------|
+-| `api_keys.anthropic` | Klucz API Anthropic |
+-| `api_keys.openai` | Klucz API OpenAI |
+-| `api_keys.newsapi` | Klucz API NewsAPI.org |
+-| `ai_provider` | `"anthropic"` lub `"openai"` |
+-| `ai_model` | Np. `"claude-opus-4-6"` lub `"gpt-4o"` |
+-| `instruments` | Lista instrumentów: `[{symbol, name, category, source}]` |
+-| `sources` | Lista URL-i do scrapowania |
+-| `prompt` | System prompt wysyłany do modelu AI |
+-| `schedule.enabled` | Automatyczne analizy (bool) |
+-| `schedule.times` | Lista godzin np. `["08:00", "16:00"]` |
++| Env Variable | Overrides |
++|---|---|
++| `ANTHROPIC_API_KEY` | `api_keys.anthropic` |
++| `OPENAI_API_KEY` | `api_keys.openai` |
++| `OPENROUTER_API_KEY` | `api_keys.openrouter` |
++| `NEWSDATA_KEY` | `api_keys.newsdata` |
+ 
+-### Dostępne modele
++Keys loaded from env are never written back to `config.json`.
++
++### Available AI Models
+ 
+ **Anthropic:** `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`
+ 
+-**OpenAI:** `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `o1-preview`
++**OpenAI:** `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `o3`, `o3-mini`, `o4-mini`, `o1`, `o1-preview`, `o1-mini`
++
++**OpenRouter:** Any model available on OpenRouter via `provider/model` format (e.g. `openai/gpt-4o`).
+ 
+ ---
+ 
+-## Źródła danych rynkowych
++## AI Provider Logic
+ 
+-| Source | Użycie |
+-|--------|--------|
+-| `yfinance` | Akcje, indeksy, forex, surowce (domyślne) |
+-| `coingecko` | Kryptowaluty (Bitcoin, Ethereum itp.) |
+-| `stooq` | Alternatywa dla polskich instrumentów |
++Provider dispatch in `modules/ai_engine.py`:
+ 
+-Instrument definiuje się przez pole `"source"` w liście `instruments` w config.
++1. **`_call_provider(provider, ...)`** — unified entry point
++   - `"anthropic"` → uses `anthropic.Anthropic` client
++   - `"openai"` → uses `openai.OpenAI` client
++   - `"openrouter"` → uses `openai.OpenAI` client with `base_url="https://openrouter.ai/api/v1"`
++2. **Token kwarg handling** — OpenAI models use `max_tokens` or `max_completion_tokens` depending on model; auto-retries with swapped kwarg on `BadRequestError`
++3. **`run_analysis()`** — builds prompt from market data + news + scraped text, calls provider
++   - Uses macro-trend prompt if macro data available, otherwise falls back to legacy prompt
++4. **`run_chat()`** — multi-turn chat with conversation history
++5. **Cost tracking** — `openai_pricing.py` calculates USD cost per call; displayed in UI with PLN conversion
+ 
+ ---
+ 
+-## Baza danych SQLite
++## Market Data Sources
++
++| Source | Module Function | Data |
++|--------|-----------------|------|
++| `yfinance` | `get_yfinance_data()` | Stocks, indices, forex, commodities (default) |
++| `coingecko` | `get_coingecko_data()` | Cryptocurrencies (rate-limited: 2.5s interval) |
++| `stooq` | `get_stooq_data()` | Polish instruments (CSV API) |
+ 
+-Plik: `data/advisor.db` (poza kontrolą wersji).
++Batching: CoinGecko coins are fetched in a single batch API call when possible.
+ 
+-| Tabela | Zawartość |
+-|--------|-----------|
+-| `reports` | Raporty AI (provider, model, analiza, poziom ryzyka) |
+-| `market_snapshots` | Historia cen instrumentów |
+-| `alerts` | Alerty cenowe |
+-| `portfolio` | Pozycje portfela (symbol, ilość, cena zakupu) |
++Caching:
++- CoinGecko prices: 10 min TTL (in-memory, thread-safe)
++- CoinGecko sparklines: 1 hour TTL
++- FX rates: configurable TTL (`FX_CACHE_TTL` in constants)
+ 
+ ---
+ 
+-## Motyw wizualny
++## Database (SQLite)
++
++File: `data/advisor.db` (not versioned). Auto-migrated on startup.
++
++| Table | Contents |
++|-------|----------|
++| `reports` | AI reports (provider, model, analysis, risk level, token usage) |
++| `market_snapshots` | Price history for instruments |
++| `alerts` | Price alerts (seen/unseen) |
++| `portfolio` | Portfolio positions (symbol, quantity, buy price, currency, FX rate) |
++| `instrument_profiles` | Cached AI-generated instrument profiles |
++| `news_items` | Stored news articles with hash deduplication (5 indexes) |
+ 
+-Aplikacja używa palety **Catppuccin Mocha** – kolory zdefiniowane na górze `main.py` i `modules/charts.py`:
++All DB access is thread-safe via `threading.RLock`.
++
++---
++
++## Security Mechanisms
++
++### SSRF Protection (`modules/url_validator.py`)
++Applied to all scraper URLs before any HTTP request:
++1. **Scheme check** — only `http` / `https` allowed
++2. **Literal IP block** — private, loopback, reserved, link-local, multicast ranges
++3. **Known hostname block** — `localhost`, `ip6-localhost`, etc.
++4. **DNS resolution check** — resolves hostname, blocks if IP is private/loopback
++5. **Domain allowlist** — if `trusted_domains` configured, only allowlisted domains pass (supports subdomains)
++
++### HTTP Client (`modules/http_client.py`)
++- Automatic retry with exponential backoff on 429/500/502/503/504
++- Configurable timeouts (connect: 8s, read: 15s)
++- URL masking in logs — `apiKey`, `api_key`, `token`, `secret`, `password` params are masked
++- Singleton session with thread-safe initialization
++
++### Scraper (`modules/scraper.py`)
++- URL validation via `url_validator` before any request
++- Response size limit (2 MB)
++- Read timeout enforcement during streaming
++- Max 3 redirects
++- Max 20 URLs per scrape run
++- Parallel scraping with ThreadPoolExecutor (max 6 workers)
++
++### API Keys
++- Environment variables take priority over config file
++- Keys from env are never saved to `config.json`
++- `mask_key()` in `config.py` masks keys for UI display
++- Settings tab is password-protected (prompts section)
++
++### .gitignore
++`data/config.json` and `data/advisor.db` are excluded from version control.
++
++---
++
++## Known Weak Spots / Areas Needing Attention
++
++1. **`main.py` is 4300+ LOC** — the entire UI lives in one class. Should be split into tab-specific modules.
++2. **Synchronous AI calls** — `run_analysis()` and `run_chat()` block their worker thread; no timeout parameter passed to API clients.
++3. **Hardcoded password** — `_SETTINGS_PASSWORD = "666"` in `main.py` (plaintext, not hashed).
++4. **SSRF TOCTOU risk** — DNS is validated at check time, but the actual HTTP request happens later (hostname could resolve differently).
++5. **No SSRF on non-scraper HTTP** — `market_data.py` calls CoinGecko/Stooq URLs with user-provided symbols without URL validation.
++6. **Matplotlib thread safety** — charts are created on the main thread but `fetch_chart_data()` inside `create_price_chart()` does blocking I/O.
++7. **Duplicate news classification** — `macro_trend.py` calls `classify_articles()` 5 times (once on raw, then again on each DB query result).
++8. **No retry on yfinance/CoinGecko** — HTTP retry exists for scraper via `http_client`, but yfinance uses its own HTTP and CoinGecko uses `safe_get` (which does retry).
++9. **`news_store.py` inits table on import** — `init_news_table()` runs at module import time, creating the DB file as a side effect.
++10. **Web pricing scrape is brittle** — `openai_pricing.py` tries to scrape the OpenAI pricing page (JS SPA); this always fails. Hardcoded fallback covers it.
++
++---
++
++## Coding Conventions
++
++- **UI and prompt language:** Polish
++- **Code comments:** mixed Polish/English — preserve existing style per file
++- **Error pattern:** functions returning external data use `{"error": "..."}` dicts on failure
++- **Threading:** all background work uses `threading.Thread(daemon=True)`, UI updates via `self.after(0, callback)`
++- **Constants:** tuning parameters centralized in `constants.py` (73 values)
++- **Thread safety:** global caches use `threading.Lock` or `threading.RLock`
++- **Style:** straightforward, minimal abstraction; UI logic in `main.py`, business logic in `modules/`
++- **Custom exceptions** defined in `modules/exceptions.py` but not widely used yet (most code catches broad exceptions)
++
++---
++
++## Visual Theme
++
++Catppuccin Mocha palette — colors defined in `main.py` and `modules/charts.py`:
+ 
+ ```python
+-BG     = "#1e1e2e"   # tło główne
+-BG2    = "#181825"   # tło wtórne
+-FG     = "#cdd6f4"   # tekst
+-ACCENT = "#89b4fa"   # niebieski akcent
++BG     = "#1e1e2e"   # main background
++BG2    = "#181825"   # secondary background
++FG     = "#cdd6f4"   # text
++ACCENT = "#89b4fa"   # blue accent
+ GREEN  = "#a6e3a1"
+ RED    = "#f38ba8"
+ YELLOW = "#f9e2af"
+ GRAY   = "#313244"
+ ```
+ 
+----
+-
+-## Konwencje kodowania
+-
+-- **Język UI i promptów:** polski
+-- **Komentarze w kodzie:** polski lub angielski (mieszane – zachowaj styl pliku)
+-- **Brak testów automatycznych** – aplikacja desktopowa, testowanie manualne
+-- **Obsługa błędów:** każda funkcja pobierająca dane zwraca dict z kluczem `"error"` przy niepowodzeniu
+-- **Styl:** prosty, bez nadmiarowych abstrakcji; logika UI w `main.py`, logika biznesowa w `modules/`
++Colors are also duplicated in `modules/ui_helpers.py` (prefixed with `_`).
+ 
+ ---
+ 
+-## Ostrzeżenie bezpieczeństwa
++## Common Development Tasks
+ 
+-> `data/config.json` zawiera klucze API w plaintext i **nie jest** w `.gitignore`.
+-> **Nie commituj tego pliku** z prawdziwymi kluczami do repozytorium.
+-> Dodaj do `.gitignore`:
+-> ```
+-> data/config.json
+-> ```
+-> Klucze API przechowuj w zmiennych środowiskowych lub pliku lokalnym poza repo.
++### Add a New Market Data Source
++1. Add `get_XYZ_data(symbol, name)` in `modules/market_data.py`
++2. Handle the new `"source"` value in `get_all_instruments()`
++3. Extend `format_market_summary()` if needed
++4. Add chart support in `charts.py:fetch_chart_data()` if applicable
+ 
+----
++### Add a New UI Tab
++1. In `main.py`, method `_build_ui()` manages `ttk.Notebook`
++2. Add `_build_XXX_tab(nb)` following existing patterns
+ 
+-## Typowe zadania deweloperskie
++### Change the AI Model
++Edit `data/config.json` fields `ai_model` / `chat_model`, or change in UI (Settings tab).
+ 
+-### Dodanie nowego źródła danych
+-1. Dodaj funkcję `get_XYZ_data(symbol, name)` w `modules/market_data.py`
+-2. Obsłuż nową wartość `"source"` w `get_all_instruments()`
+-3. Ewentualnie rozszerz kategoryzację w `format_market_summary()`
++### Add a New AI Provider
++1. Add branch in `_call_provider()` in `modules/ai_engine.py`
++2. Add entry in `get_available_models()` and `_PROVIDER_DEFAULTS`
++3. Add env variable mapping in `config.py:_apply_env_overrides()`
+ 
+-### Dodanie nowej zakładki UI
+-1. W `main.py` metoda `_build_ui()` zarządza `ttk.Notebook`
+-2. Dodaj metodę `_build_XXX_tab(nb)` wzorując się na istniejących
++### Add a New Tuning Parameter
++Add the constant to `constants.py` and import it where needed. Avoid hardcoding magic numbers.
++
++---
+ 
+-### Zmiana modelu AI
+-Edytuj `data/config.json` lub zmień w UI (zakładka Ustawienia) – pole `ai_model`.
++## What to Be Careful About Before Making Changes
+ 
+-### Dodanie nowego dostawcy AI
+-1. Dodaj funkcję `_run_XYZ(config, prompt, message)` w `modules/ai_engine.py`
+-2. Dodaj gałąź w `run_analysis()` i wpis w `get_available_models()`
++1. **Thread safety** — any global/shared state must be protected by locks. UI operations must run on the main thread (use `self.after()`).
++2. **`main.py` size** — the file is huge; changes here risk merge conflicts. Keep edits minimal and targeted.
++3. **API key safety** — never log, print, or commit API keys. Use `mask_key()` for display. Use env vars.
++4. **Matplotlib** — not thread-safe. All figure creation/modification must happen on the main thread. Always close figures to avoid memory leaks.
++5. **Import side effects** — `news_store.py` creates DB tables on import. `database.py:init_db()` is called explicitly but runs migrations every time.
++6. **Config schema** — adding fields to config requires backward-compatible defaults in `load_config()`.
++7. **Prompt changes** — system prompts are stored in `config.json` and are large (900+ lines). Users may have customized them. Don't overwrite silently.
++8. **Test suite** — run `python -m unittest discover tests/ -v` before pushing. Tests cover AI engine, charts, database, HTTP client, market data, news pipeline, URL validator, and UI helpers.
+-- 
+2.43.0
+
+
+From 409470e98759445da88fbe04e5441ea0199b82ce Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 4 Mar 2026 12:03:45 +0000
+Subject: [PATCH 2/3] Fix critical/high audit findings: timeouts, chat limits,
+ validation, safety
+
+- Add 120s timeout to all AI provider API calls (Anthropic + OpenAI)
+- Add sliding window (20 messages) to both chat histories to bound tokens
+- Add symbol validation regex before URL interpolation in market_data.py
+- Remove 4 redundant classify_articles() calls in macro_trend.py (use lazy _classify_if_missing)
+- Replace module-level init_news_table() with lazy _ensure_table() in news_store.py
+- Add JSONDecodeError handling in config.py load_config() with .bak backup
+- Add exception handling around schedule.run_pending() in main.py
+- Cap scraped text at 30k chars before sending to AI (AI_SCRAPED_TEXT_BUDGET)
+- Use task-specific max_tokens for profiles (1024) and calendar events (1024)
+- Replace deprecated datetime.utcnow() with datetime.now(timezone.utc)
+- Add new constants: AI_PROVIDER_TIMEOUT, AI_CHAT_HISTORY_MAX_MESSAGES,
+  AI_SCRAPED_TEXT_BUDGET, AI_MAX_TOKENS_PROFILE, AI_MAX_TOKENS_CALENDAR
+- Update tests to match new timeout parameter in provider calls
+
+https://claude.ai/code/session_01V4HWVjPZM7TUsoqZmsEsCR
+---
+ config.py               | 20 ++++++++++++++++++--
+ constants.py            |  5 +++++
+ main.py                 | 16 +++++++++++++---
+ modules/ai_engine.py    | 25 ++++++++++++++++++-------
+ modules/macro_trend.py  | 23 ++++++++++++++++++-----
+ modules/market_data.py  | 17 +++++++++++++++++
+ modules/news_of_day.py  |  4 ++--
+ modules/news_store.py   | 31 +++++++++++++++++++++++--------
+ tests/test_ai_engine.py |  6 ++++--
+ 9 files changed, 118 insertions(+), 29 deletions(-)
+
+diff --git a/config.py b/config.py
+index 050a992..fcbf3eb 100644
+--- a/config.py
++++ b/config.py
+@@ -1,6 +1,8 @@
+ import copy
+ import json
++import logging
+ import os
++import shutil
+ 
+ CONFIG_FILE = "data/config.json"
+ 
+@@ -423,10 +425,24 @@ def get_api_key(config: dict, key_name: str) -> str:
+     return config.get("api_keys", {}).get(key_name, "")
+ 
+ 
++_logger = logging.getLogger(__name__)
++
++
+ def load_config():
+     if os.path.exists(CONFIG_FILE):
+-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+-            data = json.load(f)
++        try:
++            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
++                data = json.load(f)
++        except (json.JSONDecodeError, ValueError) as exc:
++            _logger.error("Malformed config file %s: %s — backing up and "
++                          "using defaults", CONFIG_FILE, exc)
++            # Preserve the broken file for the user to inspect
++            try:
++                shutil.copy2(CONFIG_FILE, CONFIG_FILE + ".bak")
++            except OSError:
++                pass
++            data = copy.deepcopy(DEFAULT_CONFIG)
++            return _apply_env_overrides(data)
+         # Dodaj brakujące klucze najwyższego poziomu
+         for key, val in DEFAULT_CONFIG.items():
+             if key not in data:
+diff --git a/constants.py b/constants.py
+index 945e291..e1958c7 100644
+--- a/constants.py
++++ b/constants.py
+@@ -31,6 +31,11 @@ CHANGE_PCT_ROUND_DECIMALS = 2
+ # ── AI engine ─────────────────────────────────────────────────────
+ AI_MAX_TOKENS_ANALYSIS = 8192
+ AI_MAX_TOKENS_CHAT = 2048
++AI_MAX_TOKENS_PROFILE = 1024     # instrument profile (short)
++AI_MAX_TOKENS_CALENDAR = 1024    # calendar event analysis (short)
++AI_PROVIDER_TIMEOUT = 120        # seconds — prevent indefinite hangs
++AI_CHAT_HISTORY_MAX_MESSAGES = 20 # sliding window for chat context
++AI_SCRAPED_TEXT_BUDGET = 30000   # max chars of scraped text sent to AI
+ LEGACY_NEWS_LIMIT = 8             # max news items in legacy prompt
+ LEGACY_DESCRIPTION_TRUNCATE = 150
+ 
+diff --git a/main.py b/main.py
+index ed9f4f5..51be2fe 100644
+--- a/main.py
++++ b/main.py
+@@ -15,6 +15,7 @@ matplotlib.use("TkAgg")
+ import matplotlib.pyplot as plt
+ 
+ sys.path.insert(0, os.path.dirname(__file__))
++from constants import AI_CHAT_HISTORY_MAX_MESSAGES
+ from config import load_config, save_config, mask_key, get_api_key
+ from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd, get_sparkline_by_timeframe
+ from modules.openai_pricing import get_model_cost, refresh_pricing
+@@ -2286,9 +2287,12 @@ class InvestmentAdvisor(tk.Tk):
+                     f"--- RAPORT ---\n{report_text}\n--- KONIEC RAPORTU ---"
+                 )
+ 
++            # Sliding window: keep last N messages to bound token usage
++            recent = list(
++                self._chart_chat_history[-AI_CHAT_HISTORY_MAX_MESSAGES:])
+             try:
+                 reply = run_chat(
+-                    self.config_data, list(self._chart_chat_history), system)
++                    self.config_data, recent, system)
+             except Exception as exc:
+                 reply = f"Błąd połączenia: {exc}"
+             self._chart_chat_history.append(
+@@ -3419,8 +3423,10 @@ class InvestmentAdvisor(tk.Tk):
+                     f"--- RAPORT ---\n{self.current_analysis}\n--- KONIEC RAPORTU ---"
+                 )
+ 
++            # Sliding window: keep last N messages to bound token usage
++            recent = list(self._chat_history[-AI_CHAT_HISTORY_MAX_MESSAGES:])
+             try:
+-                reply = run_chat(self.config_data, list(self._chat_history), system)
++                reply = run_chat(self.config_data, recent, system)
+             except Exception as exc:
+                 reply = f"Błąd połączenia: {exc}"
+             self._chat_history.append({"role": "assistant", "content": reply})
+@@ -3970,7 +3976,11 @@ class InvestmentAdvisor(tk.Tk):
+ 
+         def runner():
+             while not self._shutting_down:
+-                schedule.run_pending()
++                try:
++                    schedule.run_pending()
++                except Exception:
++                    logging.getLogger(__name__).exception(
++                        "Scheduler tick failed")
+                 time.sleep(30)
+ 
+         threading.Thread(target=runner, daemon=True).start()
+diff --git a/modules/ai_engine.py b/modules/ai_engine.py
+index ee6f2b2..04b2c68 100644
+--- a/modules/ai_engine.py
++++ b/modules/ai_engine.py
+@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
+ 
+ from constants import (
+     AI_MAX_TOKENS_ANALYSIS, AI_MAX_TOKENS_CHAT,
++    AI_MAX_TOKENS_PROFILE, AI_MAX_TOKENS_CALENDAR,
++    AI_PROVIDER_TIMEOUT, AI_SCRAPED_TEXT_BUDGET,
+     LEGACY_NEWS_LIMIT, LEGACY_DESCRIPTION_TRUNCATE,
+ )
+ 
+@@ -47,13 +49,14 @@ def _call_provider(provider, api_key, model, system_prompt,
+                    messages, max_tokens=AI_MAX_TOKENS_ANALYSIS):
+     """Call Anthropic or OpenAI-compatible API. Returns (text, usage)."""
+     if provider == "anthropic":
+-        client = anthropic.Anthropic(api_key=api_key)
++        client = anthropic.Anthropic(
++            api_key=api_key, timeout=AI_PROVIDER_TIMEOUT)
+         response = client.messages.create(
+             model=model, max_tokens=max_tokens,
+             system=system_prompt, messages=messages)
+         return response.content[0].text, getattr(response, "usage", None)
+     else:
+-        kwargs = {"api_key": api_key}
++        kwargs = {"api_key": api_key, "timeout": AI_PROVIDER_TIMEOUT}
+         base_url = _PROVIDER_DEFAULTS.get(provider, {}).get("base_url")
+         if base_url:
+             kwargs["base_url"] = base_url
+@@ -79,7 +82,8 @@ def _call_provider(provider, api_key, model, system_prompt,
+         return response.choices[0].message.content, getattr(response, "usage", None)
+ 
+ 
+-def _run_provider(config, system_prompt, user_message):
++def _run_provider(config, system_prompt, user_message,
++                  max_tokens=AI_MAX_TOKENS_ANALYSIS):
+     """Run a single system+user prompt through the configured provider."""
+     provider = config.get("ai_provider", "anthropic")
+     pcfg = _PROVIDER_DEFAULTS.get(provider)
+@@ -94,7 +98,8 @@ def _run_provider(config, system_prompt, user_message):
+     try:
+         text, usage = _call_provider(
+             provider, api_key, model, system_prompt,
+-            [{"role": "user", "content": user_message}])
++            [{"role": "user", "content": user_message}],
++            max_tokens=max_tokens)
+         return _make_result(text, usage)
+     except (anthropic.APIError, openai.OpenAIError, KeyError,
+             ValueError, ConnectionError, TimeoutError) as e:
+@@ -221,7 +226,9 @@ def generate_instrument_profile(config, symbol, name, category):
+         f"Kategoria: {category}\n\n"
+         f"{custom_prompt}"
+     )
+-    return _result_text(_run_provider(config, system, user_msg))
++    return _result_text(
++        _run_provider(config, system, user_msg,
++                      max_tokens=AI_MAX_TOKENS_PROFILE))
+ 
+ 
+ def generate_calendar_event_analysis(config, event_data):
+@@ -267,7 +274,9 @@ def generate_calendar_event_analysis(config, event_data):
+         parts.append(f"Kontekst: {significance}")
+ 
+     user_msg = "\n".join(parts) + "\n\n" + custom_prompt
+-    return _result_text(_run_provider(config, system, user_msg))
++    return _result_text(
++        _run_provider(config, system, user_msg,
++                      max_tokens=AI_MAX_TOKENS_CALENDAR))
+ 
+ 
+ def get_available_models(provider):
+@@ -328,9 +337,11 @@ def _build_macro_prompt(market_summary, macro_text, scraped_text=""):
+         macro_text,
+     ]
+     if scraped_text:
++        # Cap scraped text to avoid blowing up token costs
++        trimmed = scraped_text[:AI_SCRAPED_TEXT_BUDGET]
+         parts.append("")
+         parts.append("=== TREŚĆ ZE ŹRÓDEŁ WWW ===")
+-        parts.append(scraped_text)
++        parts.append(trimmed)
+     parts.append("")
+     parts.append(
+         "Na podstawie powyższych danych przeprowadź analizę w następującej strukturze:\n"
+diff --git a/modules/macro_trend.py b/modules/macro_trend.py
+index 459c57e..1095e77 100644
+--- a/modules/macro_trend.py
++++ b/modules/macro_trend.py
+@@ -23,7 +23,7 @@ from modules.news_store import (
+     fetch_all_windows, store_news, get_news_since, get_news_in_range,
+     cleanup_old_news,
+ )
+-from modules.news_classifier import classify_articles
++from modules.news_classifier import classify_articles, classify_article
+ from modules.news_of_day import select_news_of_day
+ from modules.trend_narrative import build_trend_payload, build_geo_24h
+ 
+@@ -33,6 +33,17 @@ MAX_24H_TO_LLM = MACRO_MAX_24H_TO_LLM
+ MAX_LONGER_WINDOW = MACRO_MAX_LONGER_WINDOW
+ 
+ 
++def _classify_if_missing(articles: list[dict]) -> None:
++    """Classify only articles that are missing region/topic fields.
++
++    Articles freshly classified and stored already carry these fields.
++    Only older DB rows (inserted before classification was added) need it.
++    """
++    for art in articles:
++        if not art.get("region") or not art.get("topic"):
++            classify_article(art)
++
++
+ def build_macro_payload(api_key: str, **kwargs) -> dict:
+     """
+     Full pipeline:
+@@ -59,20 +70,22 @@ def build_macro_payload(api_key: str, **kwargs) -> dict:
+     cleanup_old_news(days=NEWS_CLEANUP_DAYS)
+ 
+     # ── 4. Split by time range (from DB for completeness) ──────
++    # Articles already classified before storage; only patch rows
++    # that predate classification (missing region/topic).
+     articles_24h = get_news_since(hours=MACRO_24H_HOURS)  # 24-72h window
+-    classify_articles(articles_24h)  # re-classify DB rows missing region/topic
++    _classify_if_missing(articles_24h)
+ 
+     articles_7d = get_news_in_range(days_from=7, days_to=0,
+                                     limit=MAX_LONGER_WINDOW)
+-    classify_articles(articles_7d)
++    _classify_if_missing(articles_7d)
+ 
+     articles_30d = get_news_in_range(days_from=30, days_to=0,
+                                      limit=MAX_LONGER_WINDOW)
+-    classify_articles(articles_30d)
++    _classify_if_missing(articles_30d)
+ 
+     articles_90d = get_news_in_range(days_from=90, days_to=0,
+                                      limit=MAX_LONGER_WINDOW)
+-    classify_articles(articles_90d)
++    _classify_if_missing(articles_90d)
+ 
+     # ── 5. News of the day ──────────────────────────────────────
+     news_of_day = select_news_of_day(articles_24h)
+diff --git a/modules/market_data.py b/modules/market_data.py
+index 6c1a46d..2a375ba 100644
+--- a/modules/market_data.py
++++ b/modules/market_data.py
+@@ -1,3 +1,4 @@
++import re
+ import yfinance as yf
+ import requests
+ from datetime import datetime
+@@ -16,6 +17,18 @@ from constants import (
+     NEWS_DEFAULT_PAGE_SIZE,
+ )
+ 
++# Allowed pattern for financial symbols used in URL construction.
++# Covers yfinance (e.g. ^GDAXI, EURUSD=X, GC=F, WIG20.WA), CoinGecko
++# slug (e.g. bitcoin, ethereum), and Stooq (e.g. wig20).
++_SYMBOL_RE = re.compile(r'^[\w\-\.\^=]+$', re.ASCII)
++
++
++def _validate_symbol(symbol: str, source: str = "") -> bool:
++    """Return True if symbol is safe to interpolate into a URL path/query."""
++    if not symbol or len(symbol) > 50:
++        return False
++    return bool(_SYMBOL_RE.match(symbol))
++
+ # ── COINGECKO CACHE ──
+ _CG_PRICE_TTL      = 600   # 10 min — free tier ~30 req/min, nie bijemy zbyt często
+ _CG_SPARKLINE_TTL  = 3600  # 1 h  — sparkline zmienia się wolno (interwał dzienny)
+@@ -265,6 +278,10 @@ def get_all_instruments(instruments_config):
+         source = inst.get("source", "yfinance")
+         if not symbol:
+             continue
++        if not _validate_symbol(symbol, source):
++            logger.warning("Skipping invalid symbol: %r", symbol)
++            results[symbol] = {"name": name, "error": "invalid symbol"}
++            continue
+         if source == "coingecko":
+             cg_pending.append((symbol, symbol.lower(), name))
+         elif source == "stooq":
+diff --git a/modules/news_of_day.py b/modules/news_of_day.py
+index a9784e6..b248852 100644
+--- a/modules/news_of_day.py
++++ b/modules/news_of_day.py
+@@ -10,7 +10,7 @@ Scoring factors:
+ 
+ import re
+ import sys, os
+-from datetime import datetime, timedelta
++from datetime import datetime, timedelta, timezone
+ 
+ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+ from constants import (
+@@ -98,7 +98,7 @@ def _recency_score(published_at: str) -> float:
+             dt = datetime.strptime(pub[:19], "%Y-%m-%d %H:%M:%S")
+     except (ValueError, TypeError):
+         return NOD_RECENCY_UNKNOWN_SCORE  # unknown date → low score
+-    age_hours = (datetime.utcnow() - dt).total_seconds() / 3600
++    age_hours = (datetime.now(timezone.utc) - dt.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+     if age_hours < 0:
+         age_hours = 0
+     # 0h → max, 72h → min
+diff --git a/modules/news_store.py b/modules/news_store.py
+index cb48d08..a4b66b1 100644
+--- a/modules/news_store.py
++++ b/modules/news_store.py
+@@ -10,7 +10,7 @@ import os
+ import sys
+ import threading
+ from contextlib import contextmanager
+-from datetime import datetime, timedelta
++from datetime import datetime, timedelta, timezone
+ 
+ import requests
+ from modules.http_client import safe_get
+@@ -136,7 +136,7 @@ def fetch_news_window(api_key: str, window: str, days: int,
+     if not api_key:
+         return []
+ 
+-    now = datetime.utcnow()
++    now = datetime.now(timezone.utc)
+     from_date = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+     to_date = now.strftime("%Y-%m-%d")
+ 
+@@ -238,9 +238,10 @@ def store_news(articles: list[dict]):
+     """Insert articles into news_items, skip duplicates (ON CONFLICT IGNORE)."""
+     if not articles:
+         return
++    _ensure_table()
+     with _connect() as conn:
+         c = conn.cursor()
+-        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
++        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+         for art in articles:
+             try:
+                 c.execute("""
+@@ -275,7 +276,8 @@ def get_news_by_window(window: str, limit: int = NEWS_DEFAULT_LIMIT_BY_WINDOW) -
+ 
+ def get_news_since(hours: int, limit: int = NEWS_DEFAULT_LIMIT_SINCE) -> list[dict]:
+     """Retrieve news published in the last N hours."""
+-    since = (datetime.utcnow() - timedelta(hours=hours)).strftime(
++    _ensure_table()
++    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
+         "%Y-%m-%dT%H:%M:%SZ")
+     with _connect() as conn:
+         conn.row_factory = sqlite3.Row
+@@ -292,7 +294,8 @@ def get_news_since(hours: int, limit: int = NEWS_DEFAULT_LIMIT_SINCE) -> list[di
+ def get_news_in_range(days_from: int, days_to: int = 0,
+                       limit: int = NEWS_DEFAULT_LIMIT_IN_RANGE) -> list[dict]:
+     """Retrieve news between days_from and days_to ago (0 = now)."""
+-    now = datetime.utcnow()
++    _ensure_table()
++    now = datetime.now(timezone.utc)
+     start = (now - timedelta(days=days_from)).strftime("%Y-%m-%dT%H:%M:%SZ")
+     end = (now - timedelta(days=days_to)).strftime("%Y-%m-%dT%H:%M:%SZ")
+     with _connect() as conn:
+@@ -309,7 +312,8 @@ def get_news_in_range(days_from: int, days_to: int = 0,
+ 
+ def cleanup_old_news(days: int = NEWS_CLEANUP_DAYS):
+     """Delete news older than N days."""
+-    cutoff = (datetime.utcnow() - timedelta(days=days)).strftime(
++    _ensure_table()
++    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+         "%Y-%m-%dT%H:%M:%SZ")
+     with _connect() as conn:
+         c = conn.cursor()
+@@ -317,5 +321,16 @@ def cleanup_old_news(days: int = NEWS_CLEANUP_DAYS):
+         conn.commit()
+ 
+ 
+-# Init table on import
+-init_news_table()
++_table_initialized = False
++_init_lock = threading.Lock()
++
++
++def _ensure_table():
++    """Lazy init — create news_items table on first DB access, not on import."""
++    global _table_initialized
++    if _table_initialized:
++        return
++    with _init_lock:
++        if not _table_initialized:
++            init_news_table()
++            _table_initialized = True
+diff --git a/tests/test_ai_engine.py b/tests/test_ai_engine.py
+index c579a3f..500f9cc 100644
+--- a/tests/test_ai_engine.py
++++ b/tests/test_ai_engine.py
+@@ -80,7 +80,8 @@ class TestCallProviderAnthropic(unittest.TestCase):
+             "system prompt", [{"role": "user", "content": "hi"}])
+ 
+         self.assertEqual(text, "AI response")
+-        mock_anthropic.Anthropic.assert_called_once_with(api_key="key123")
++        mock_anthropic.Anthropic.assert_called_once_with(
++            api_key="key123", timeout=ai.AI_PROVIDER_TIMEOUT)
+         client.messages.create.assert_called_once()
+         call_kwargs = client.messages.create.call_args
+         self.assertEqual(call_kwargs.kwargs["model"], "claude-opus-4-6")
+@@ -103,7 +104,8 @@ class TestCallProviderOpenAI(unittest.TestCase):
+             "system", [{"role": "user", "content": "test"}])
+ 
+         self.assertEqual(text, "GPT response")
+-        mock_openai.OpenAI.assert_called_once_with(api_key="sk-key")
++        mock_openai.OpenAI.assert_called_once_with(
++            api_key="sk-key", timeout=ai.AI_PROVIDER_TIMEOUT)
+ 
+     @patch("modules.ai_engine.openai")
+     def test_openrouter_uses_base_url(self, mock_openai):
+-- 
+2.43.0
+
+
+From 67d961cb198eee5117e9253104397aa715c254b4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 4 Mar 2026 12:14:02 +0000
+Subject: [PATCH 3/3] Calendar tab: scroll to today, reorder events, highlight
+ today/past
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Events from today onward shown first; past events from earlier
+  in the week moved to the bottom of the list
+- Auto-scroll + auto-select the first event matching today's date
+  on every load/filter; falls back to next upcoming if no events today
+- Today's events: bold + GRAY background highlight
+- Past events: dimmed colors (muted red/yellow/gray)
+- Status bar now shows today's event count alongside total (e.g. "dziś: 3")
+
+https://claude.ai/code/session_01V4HWVjPZM7TUsoqZmsEsCR
+---
+ main.py | 60 +++++++++++++++++++++++++++++++++++++++++++++++----------
+ 1 file changed, 50 insertions(+), 10 deletions(-)
+
+diff --git a/main.py b/main.py
+index 51be2fe..fefdce6 100644
+--- a/main.py
++++ b/main.py
+@@ -1584,9 +1584,17 @@ class InvestmentAdvisor(tk.Tk):
+             self.cal_tree.heading(col, text=col)
+             self.cal_tree.column(col, width=w, anchor=anc)
+ 
+-        self.cal_tree.tag_configure("high",   foreground=RED)
+-        self.cal_tree.tag_configure("medium", foreground=YELLOW)
+-        self.cal_tree.tag_configure("low",    foreground=FG)
++        self.cal_tree.tag_configure("high",        foreground=RED)
++        self.cal_tree.tag_configure("medium",      foreground=YELLOW)
++        self.cal_tree.tag_configure("low",         foreground=FG)
++        # Today's events — same impact colors but bold + accented background
++        self.cal_tree.tag_configure("today_high",   foreground=RED,    background=GRAY, font=("Segoe UI", 9, "bold"))
++        self.cal_tree.tag_configure("today_medium", foreground=YELLOW, background=GRAY, font=("Segoe UI", 9, "bold"))
++        self.cal_tree.tag_configure("today_low",    foreground=FG,     background=GRAY, font=("Segoe UI", 9, "bold"))
++        # Past events — dimmed
++        self.cal_tree.tag_configure("past_high",   foreground="#7a4a50")
++        self.cal_tree.tag_configure("past_medium", foreground="#7a6e40")
++        self.cal_tree.tag_configure("past_low",    foreground=SUBTEXT)
+ 
+         vsb = ttk.Scrollbar(tree_cont, orient="vertical",
+                              command=self.cal_tree.yview)
+@@ -1621,30 +1629,52 @@ class InvestmentAdvisor(tk.Tk):
+                 self.after(0, lambda: self.cal_status.configure(
+                     text=f"Błąd: {err[:60]}"))
+             else:
+-                self.after(0, lambda: self.cal_status.configure(
+-                    text=f"{len(events)} wydarzeń — "
+-                         f"{'bieżący' if week_offset == 'this' else 'następny'} tydzień"))
++                import datetime as _dt
++                today_str = _dt.date.today().strftime("%Y-%m-%d")
++                today_count = sum(1 for e in events if e["date"] == today_str)
++                week_lbl = "bieżący" if week_offset == "this" else "następny"
++                status = f"{len(events)} wydarzeń — {week_lbl} tydzień"
++                if today_count:
++                    status += f"  •  dziś: {today_count}"
++                self.after(0, lambda s=status: self.cal_status.configure(text=s))
+             self.after(0, self._apply_cal_filter)
+ 
+         threading.Thread(target=_fetch, daemon=True).start()
+ 
+     def _apply_cal_filter(self):
++        import datetime as _dt
+         for row in self.cal_tree.get_children():
+             self.cal_tree.delete(row)
+ 
++        today_str = _dt.date.today().strftime("%Y-%m-%d")
++
+         raw_map = {
+             "🔴 Wysoki": "High",
+             "🟡 Średni": "Medium",
+             "⚪ Niski":  "Low",
+         }
+         raw_filter = raw_map.get(self.cal_filter_var.get())
+-        tag_map    = {"High": "high", "Medium": "medium", "Low": "low"}
+ 
+-        for e in self._cal_events:
++        # Tag lookup: today / future / past × impact level
++        def _tag(impact_raw, event_date):
++            if event_date == today_str:
++                return {"High": "today_high", "Medium": "today_medium"}.get(impact_raw, "today_low")
++            if event_date > today_str:
++                return {"High": "high", "Medium": "medium"}.get(impact_raw, "low")
++            return {"High": "past_high", "Medium": "past_medium"}.get(impact_raw, "past_low")
++
++        # Events from today onward first, then past events at the bottom
++        upcoming = [e for e in self._cal_events if e["date"] >= today_str]
++        past     = [e for e in self._cal_events if e["date"] <  today_str]
++
++        first_today_iid = None
++        first_future_iid = None
++
++        for e in upcoming + past:
+             if raw_filter and e["impact_raw"] != raw_filter:
+                 continue
+-            tag = tag_map.get(e["impact_raw"], "low")
+-            self.cal_tree.insert("", "end", tags=(tag,), values=(
++            tag = _tag(e["impact_raw"], e["date"])
++            iid = self.cal_tree.insert("", "end", tags=(tag,), values=(
+                 e["date"],
+                 e["time"],
+                 f"{e['flag']} {e['country']}",
+@@ -1654,6 +1684,16 @@ class InvestmentAdvisor(tk.Tk):
+                 e["forecast"],
+                 e["previous"],
+             ))
++            if first_today_iid is None and e["date"] == today_str:
++                first_today_iid = iid
++            if first_future_iid is None and e["date"] > today_str:
++                first_future_iid = iid
++
++        # Scroll to today's first event; fall back to next upcoming if no events today
++        scroll_to = first_today_iid or first_future_iid
++        if scroll_to:
++            self.cal_tree.see(scroll_to)
++            self.cal_tree.selection_set(scroll_to)
+ 
+     def _on_cal_event_dblclick(self, _event):
+         sel = self.cal_tree.selection()
+-- 
+2.43.0
+
