@@ -1,0 +1,42 @@
+name: Build and Upload Release Asset
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2
+      
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --name InvestmentAdvisor \
+            --add-data "modules:modules" \
+            --hidden-import=anthropic --hidden-import=openai \
+            --hidden-import=yfinance --hidden-import=bs4 \
+            --hidden-import=matplotlib --hidden-import=pandas \
+            --hidden-import=schedule --hidden-import=fpdf \
+            --hidden-import=sqlite3 --hidden-import=tkinter \
+            --collect-submodules yfinance --collect-submodules matplotlib \
+            main.py
+      
+      - name: Get latest tag
+        id: tag
+        run: echo "TAG=$(git tag --sort=-v:refname | head -1)" >> $GITHUB_OUTPUT
+      
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          files: dist/InvestmentAdvisor
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
