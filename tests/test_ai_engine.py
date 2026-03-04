@@ -80,7 +80,8 @@ class TestCallProviderAnthropic(unittest.TestCase):
             "system prompt", [{"role": "user", "content": "hi"}])
 
         self.assertEqual(text, "AI response")
-        mock_anthropic.Anthropic.assert_called_once_with(api_key="key123")
+        mock_anthropic.Anthropic.assert_called_once_with(
+            api_key="key123", timeout=ai.AI_PROVIDER_TIMEOUT)
         client.messages.create.assert_called_once()
         call_kwargs = client.messages.create.call_args
         self.assertEqual(call_kwargs.kwargs["model"], "claude-opus-4-6")
@@ -103,7 +104,8 @@ class TestCallProviderOpenAI(unittest.TestCase):
             "system", [{"role": "user", "content": "test"}])
 
         self.assertEqual(text, "GPT response")
-        mock_openai.OpenAI.assert_called_once_with(api_key="sk-key")
+        mock_openai.OpenAI.assert_called_once_with(
+            api_key="sk-key", timeout=ai.AI_PROVIDER_TIMEOUT)
 
     @patch("modules.ai_engine.openai")
     def test_openrouter_uses_base_url(self, mock_openai):

@@ -23,7 +23,7 @@ from modules.news_store import (
     fetch_all_windows, store_news, get_news_since, get_news_in_range,
     cleanup_old_news,
 )
-from modules.news_classifier import classify_articles
+from modules.news_classifier import classify_articles, classify_article
 from modules.news_of_day import select_news_of_day
 from modules.trend_narrative import build_trend_payload, build_geo_24h
 
@@ -31,6 +31,17 @@ logger = logging.getLogger(__name__)
 
 MAX_24H_TO_LLM = MACRO_MAX_24H_TO_LLM
 MAX_LONGER_WINDOW = MACRO_MAX_LONGER_WINDOW
+
+
+def _classify_if_missing(articles: list[dict]) -> None:
+    """Classify only articles that are missing region/topic fields.
+
+    Articles freshly classified and stored already carry these fields.
+    Only older DB rows (inserted before classification was added) need it.
+    """
+    for art in articles:
+        if not art.get("region") or not art.get("topic"):
+            classify_article(art)
 
 
 def build_macro_payload(api_key: str, **kwargs) -> dict:
@@ -59,20 +70,22 @@ def build_macro_payload(api_key: str, **kwargs) -> dict:
     cleanup_old_news(days=NEWS_CLEANUP_DAYS)
 
     # ── 4. Split by time range (from DB for completeness) ──────
+    # Articles already classified before storage; only patch rows
+    # that predate classification (missing region/topic).
     articles_24h = get_news_since(hours=MACRO_24H_HOURS)  # 24-72h window
-    classify_articles(articles_24h)  # re-classify DB rows missing region/topic
+    _classify_if_missing(articles_24h)
 
     articles_7d = get_news_in_range(days_from=7, days_to=0,
                                     limit=MAX_LONGER_WINDOW)
-    classify_articles(articles_7d)
+    _classify_if_missing(articles_7d)
 
     articles_30d = get_news_in_range(days_from=30, days_to=0,
                                      limit=MAX_LONGER_WINDOW)
-    classify_articles(articles_30d)
+    _classify_if_missing(articles_30d)
 
     articles_90d = get_news_in_range(days_from=90, days_to=0,
                                      limit=MAX_LONGER_WINDOW)
-    classify_articles(articles_90d)
+    _classify_if_missing(articles_90d)
 
     # ── 5. News of the day ──────────────────────────────────────
     news_of_day = select_news_of_day(articles_24h)

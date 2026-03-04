@@ -31,6 +31,11 @@ CHANGE_PCT_ROUND_DECIMALS = 2
 # ── AI engine ─────────────────────────────────────────────────────
 AI_MAX_TOKENS_ANALYSIS = 8192
 AI_MAX_TOKENS_CHAT = 2048
+AI_MAX_TOKENS_PROFILE = 1024     # instrument profile (short)
+AI_MAX_TOKENS_CALENDAR = 1024    # calendar event analysis (short)
+AI_PROVIDER_TIMEOUT = 120        # seconds — prevent indefinite hangs
+AI_CHAT_HISTORY_MAX_MESSAGES = 20 # sliding window for chat context
+AI_SCRAPED_TEXT_BUDGET = 30000   # max chars of scraped text sent to AI
 LEGACY_NEWS_LIMIT = 8             # max news items in legacy prompt
 LEGACY_DESCRIPTION_TRUNCATE = 150
 

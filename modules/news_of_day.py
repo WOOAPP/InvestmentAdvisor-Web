@@ -10,7 +10,7 @@ Scoring factors:
 
 import re
 import sys, os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from constants import (
@@ -98,7 +98,7 @@ def _recency_score(published_at: str) -> float:
             dt = datetime.strptime(pub[:19], "%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return NOD_RECENCY_UNKNOWN_SCORE  # unknown date → low score
-    age_hours = (datetime.utcnow() - dt).total_seconds() / 3600
+    age_hours = (datetime.now(timezone.utc) - dt.replace(tzinfo=timezone.utc)).total_seconds() / 3600
     if age_hours < 0:
         age_hours = 0
     # 0h → max, 72h → min
