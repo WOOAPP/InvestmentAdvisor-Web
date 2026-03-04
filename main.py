@@ -10,11 +10,23 @@ import schedule
 import time
 import sys
 import os
+
+# ── PyInstaller frozen-exe support ───────────────────────────────────────
+# When running as a --onefile EXE, __file__ points to a temporary _MEIPASS
+# directory.  User data (config, DB) must live next to the .exe, so we
+# resolve the "application directory" once and chdir into it.
+if getattr(sys, "frozen", False):
+    # Frozen by PyInstaller – use the directory containing the .exe
+    _APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(_APP_DIR)
+
 import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, _APP_DIR)
 from constants import AI_CHAT_HISTORY_MAX_MESSAGES
 from config import load_config, save_config, mask_key, get_api_key
 from modules.market_data import get_all_instruments, get_news, format_market_summary, get_fx_to_usd, get_sparkline_by_timeframe
@@ -2506,12 +2518,15 @@ class InvestmentAdvisor(tk.Tk):
     def _set_autostart(self, enable: bool):
         if enable:
             os.makedirs(self._AUTOSTART_DIR, exist_ok=True)
-            main_py = os.path.abspath(__file__)
+            if getattr(sys, "frozen", False):
+                exec_cmd = os.path.abspath(sys.executable)
+            else:
+                exec_cmd = f"{sys.executable} {os.path.abspath(__file__)}"
             content = (
                 "[Desktop Entry]\n"
                 "Type=Application\n"
                 "Name=Investment Advisor\n"
-                f"Exec={sys.executable} {main_py}\n"
+                f"Exec={exec_cmd}\n"
                 "Hidden=false\n"
                 "NoDisplay=false\n"
                 "X-GNOME-Autostart-enabled=true\n"
@@ -2546,7 +2561,10 @@ class InvestmentAdvisor(tk.Tk):
                  if self._CRON_MARKER not in l]
 
         if enabled:
-            main_py = os.path.abspath(__file__)
+            if getattr(sys, "frozen", False):
+                exec_cmd = os.path.abspath(sys.executable)
+            else:
+                exec_cmd = f"{sys.executable} {os.path.abspath(__file__)}"
             for t in times:
                 try:
                     hh, mm = t.strip().split(":")
@@ -2554,7 +2572,7 @@ class InvestmentAdvisor(tk.Tk):
                 except (ValueError, AttributeError):
                     continue
                 lines.append(
-                    f"{m} {h} * * * {sys.executable} {main_py}"
+                    f"{m} {h} * * * {exec_cmd}"
                     f" --auto-analysis  {self._CRON_MARKER}"
                 )
 
@@ -4503,6 +4521,14 @@ class InvestmentAdvisor(tk.Tk):
 
 
 if __name__ == "__main__":
+    # Configure crash logging to file for frozen EXE (console may close instantly)
+    if getattr(sys, "frozen", False):
+        _crash_log = os.path.join(_APP_DIR, "crash.log")
+        logging.basicConfig(
+            filename=_crash_log, level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+
     _auto_analysis = "--auto-analysis" in sys.argv
     print("Start…")
     try:
@@ -4515,4 +4541,10 @@ if __name__ == "__main__":
     except Exception as exc:
         import traceback
         traceback.print_exc()
+        # Write crash info to file next to EXE for post-mortem analysis
+        if getattr(sys, "frozen", False):
+            _crash_log = os.path.join(_APP_DIR, "crash.log")
+            with open(_crash_log, "a", encoding="utf-8") as _f:
+                _f.write(f"\n{'='*60}\nCRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                traceback.print_exc(file=_f)
         input("Nacisnij Enter aby zamknac...")

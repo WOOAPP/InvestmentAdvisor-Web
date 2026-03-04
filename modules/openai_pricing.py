@@ -17,7 +17,12 @@ from constants import PRICING_CACHE_TTL, PRICING_TOKENS_PER_UNIT
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+# Resolve data directory relative to application directory for frozen EXE
+if getattr(sys, "frozen", False):
+    _APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+DATA_DIR = os.path.join(_APP_DIR, "data")
 CACHE_FILE = os.path.join(DATA_DIR, "llm_pricing_cache.json")
 CACHE_TTL = PRICING_CACHE_TTL
 

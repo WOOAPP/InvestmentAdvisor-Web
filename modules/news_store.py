@@ -24,7 +24,12 @@ from constants import (
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "data/advisor.db"
+# Resolve DB path relative to application directory for frozen EXE
+if getattr(sys, "frozen", False):
+    _APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+DB_PATH = os.path.join(_APP_DIR, "data", "advisor.db")
 _db_lock = threading.RLock()
 
 
@@ -51,7 +56,7 @@ WINDOWS = {
 # ── SQLite schema / migration ──────────────────────────────────────
 def init_news_table():
     """Create news_items table if it doesn't exist. Safe for existing DBs."""
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with _connect() as conn:
         c = conn.cursor()
         c.execute("""

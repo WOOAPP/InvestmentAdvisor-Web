@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2
+          pip install pyinstaller anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2 certifi tzdata
 
       - name: Build executable
         run: >
@@ -43,7 +43,11 @@ jobs:
           --hidden-import=matplotlib --hidden-import=pandas
           --hidden-import=schedule --hidden-import=fpdf
           --hidden-import=sqlite3 --hidden-import=tkinter
+          --hidden-import=certifi --hidden-import=tzdata
           --collect-submodules yfinance --collect-submodules matplotlib
+          --collect-submodules certifi --collect-submodules tzdata
+          --collect-data certifi --collect-data tzdata
+          --noupx
           main.py
 
       - name: Get latest tag

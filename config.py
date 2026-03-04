@@ -3,8 +3,17 @@ import json
 import logging
 import os
 import shutil
+import sys
 
-CONFIG_FILE = "data/config.json"
+# Resolve application directory for frozen PyInstaller builds.
+# When running as --onefile EXE, CWD may differ from .exe location;
+# main.py does chdir(), but config may be imported before that.
+if getattr(sys, "frozen", False):
+    _APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CONFIG_FILE = os.path.join(_APP_DIR, "data", "config.json")
 
 # Mapowanie: klucz w config["api_keys"] -> nazwa zmiennej środowiskowej
 ENV_KEY_MAP = {
@@ -461,7 +470,7 @@ def load_config():
 
 def save_config(config):
     """Zapisz config. Klucze z env nie są zapisywane do pliku."""
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     to_save = json.loads(json.dumps(config))  # deep copy
     # Nie zapisuj kluczy pochodzących z env — zostaw puste
     saved_keys = to_save.get("api_keys", {})
