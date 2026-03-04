@@ -109,6 +109,15 @@ def _make_dollar_icon_png(size: int = 48) -> bytes:
 
 
 class InvestmentAdvisor(tk.Tk):
+    def after(self, ms, func=None, *args):
+        """Override to silently drop callbacks scheduled after window destruction."""
+        if getattr(self, "_shutting_down", False) and ms == 0:
+            return None
+        try:
+            return super().after(ms, func, *args)
+        except tk.TclError:
+            return None
+
     def __init__(self):
         super().__init__()
         self.title("Investment Advisor")
@@ -1515,7 +1524,7 @@ class InvestmentAdvisor(tk.Tk):
         if not self._price_fetch_in_progress:
             self._price_fetch_in_progress = True
             threading.Thread(target=self._autorefresh_worker, daemon=True).start()
-        self.after(1000, self._autorefresh_prices)
+        self._safe_after(1000, self._autorefresh_prices)
 
     def _autorefresh_worker(self):
         try:
@@ -4054,7 +4063,7 @@ class InvestmentAdvisor(tk.Tk):
         if alerts:
             self.alert_btn.configure(
                 fg=RED, text=f"🔔 Alerty ({len(alerts)})")
-        self.after(60000, self._check_alerts)
+        self._safe_after(60000, self._check_alerts)
 
     def _show_alerts(self):
         alerts = get_unseen_alerts()
@@ -4165,7 +4174,7 @@ class InvestmentAdvisor(tk.Tk):
             self._analysis_overlay_visible = False
             return
         self._analysis_overlay_step += 1
-        self._analysis_overlay_after = self.after(120, self._tick_overlay)
+        self._analysis_overlay_after = self._safe_after(120, self._tick_overlay)
 
     def set_busy(self, is_busy, message="Pracuję…"):
         """Lock/unlock buttons and start/stop spinner animation.
@@ -4450,9 +4459,27 @@ class InvestmentAdvisor(tk.Tk):
 
         win.protocol("WM_DELETE_WINDOW", _on_popup_close)
 
+    def _safe_after(self, ms, func, *args):
+        """Schedule callback only if not shutting down."""
+        if self._shutting_down:
+            return None
+        try:
+            return self.after(ms, func, *args)
+        except tk.TclError:
+            return None
+
     def _on_close(self):
         """Clean shutdown: close all matplotlib figures before destroying Tk."""
         self._shutting_down = True
+        # Cancel known recurring after-callbacks
+        for attr in ("_analysis_overlay_after", "_click_pending",
+                     "_popup_resize_after"):
+            after_id = getattr(self, attr, None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except (tk.TclError, ValueError):
+                    pass
         try:
             if self._current_chart_fig:
                 plt.close(self._current_chart_fig)
@@ -4461,7 +4488,8 @@ class InvestmentAdvisor(tk.Tk):
         except (ValueError, RuntimeError):
             pass
         schedule.clear()
-        self.destroy()
+        # Short delay lets daemon threads see _shutting_down before widgets vanish
+        self.after(50, self.destroy)
 
 
 if __name__ == "__main__":
