@@ -2521,6 +2521,8 @@ class InvestmentAdvisor(tk.Tk):
     def _update_cron_schedule(self, enabled: bool, times: list):
         """Rejestruje / usuwa wpisy crontab do automatycznego uruchamiania aplikacji."""
         import subprocess
+        if sys.platform == "win32":
+            return
         try:
             result = subprocess.run(["crontab", "-l"],
                                     capture_output=True, text=True)
