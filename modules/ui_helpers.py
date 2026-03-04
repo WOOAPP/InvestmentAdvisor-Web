@@ -288,3 +288,70 @@ class BusySpinner:
             return
         self._frame_idx += 1
         self._after_id = self._root.after(SPINNER_TICK_MS, self._tick)
+
+
+# ── Chat typing indicator ──────────────────────────────────
+_TYPING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+_TYPING_TICK_MS = 120
+
+
+class ChatTypingIndicator:
+    """Animated 'AI is thinking' indicator inside a ScrolledText chat widget."""
+
+    def __init__(self, root, chat_widget):
+        self._root = root
+        self._widget = chat_widget
+        self._running = False
+        self._frame_idx = 0
+        self._after_id = None
+        self._mark = "typing_start"
+
+    def start(self, message="AI analizuje"):
+        if self._running:
+            return
+        self._message = message
+        self._running = True
+        self._frame_idx = 0
+        try:
+            self._widget.configure(state="normal")
+            self._widget.mark_set(self._mark, "end-1c")
+            self._widget.mark_gravity(self._mark, "left")
+            self._widget.insert("end", "\n", "typing")
+            self._widget.configure(state="disabled")
+            self._widget.see("end")
+        except (tk.TclError, RuntimeError):
+            self._running = False
+            return
+        self._tick()
+
+    def stop(self):
+        self._running = False
+        if self._after_id is not None:
+            try:
+                self._root.after_cancel(self._after_id)
+            except (tk.TclError, RuntimeError):
+                pass
+            self._after_id = None
+        try:
+            self._widget.configure(state="normal")
+            self._widget.delete(self._mark, "end")
+            self._widget.configure(state="disabled")
+        except (tk.TclError, RuntimeError):
+            pass
+
+    def _tick(self):
+        if not self._running:
+            return
+        frame = _TYPING_FRAMES[self._frame_idx % len(_TYPING_FRAMES)]
+        text = f"{frame}  {self._message}…"
+        try:
+            self._widget.configure(state="normal")
+            self._widget.delete(self._mark, "end")
+            self._widget.insert("end", f"\n{text}", "typing")
+            self._widget.configure(state="disabled")
+            self._widget.see("end")
+        except (tk.TclError, RuntimeError):
+            self._running = False
+            return
+        self._frame_idx += 1
+        self._after_id = self._root.after(_TYPING_TICK_MS, self._tick)

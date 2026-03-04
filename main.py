@@ -36,7 +36,7 @@ from modules.calendar_data import fetch_calendar, get_event_significance
 from modules.macro_trend import build_macro_payload, format_macro_payload_for_llm
 from modules.ui_helpers import (
     setup_markdown_tags, insert_markdown,
-    bind_chat_focus, BusySpinner,
+    bind_chat_focus, BusySpinner, ChatTypingIndicator,
 )
 
 BG     = "#1e1e2e"
@@ -477,6 +477,9 @@ class InvestmentAdvisor(tk.Tk):
         self.chat_display.tag_configure("label", foreground=YELLOW,
                                          font=("Segoe UI", 9, "bold"))
         self.chat_display.tag_configure("error", foreground=RED)
+        self.chat_display.tag_configure("typing", foreground=SUBTEXT,
+                                         font=("Segoe UI", 9, "italic"))
+        self._chat_typing = ChatTypingIndicator(self, self.chat_display)
 
         input_bar = tk.Frame(self.chat_frame, bg=BG)
         input_bar.pack(fill="x", padx=4, pady=(0, 6))
@@ -1949,6 +1952,9 @@ class InvestmentAdvisor(tk.Tk):
         self.chart_chat_display.tag_configure("label", foreground=YELLOW,
                                                font=("Segoe UI", 9, "bold"))
         self.chart_chat_display.tag_configure("error", foreground=RED)
+        self.chart_chat_display.tag_configure("typing", foreground=SUBTEXT,
+                                               font=("Segoe UI", 9, "italic"))
+        self._chart_chat_typing = ChatTypingIndicator(self, self.chart_chat_display)
 
         chart_input_bar = tk.Frame(self.chart_chat_frame, bg=BG)
         chart_input_bar.pack(fill="x", padx=4, pady=(0, 6))
@@ -2318,6 +2324,7 @@ class InvestmentAdvisor(tk.Tk):
 
         self._chart_chat_history.append({"role": "user", "content": msg})
         self.chart_chat_send_btn.configure(state="disabled", text="…")
+        self._chart_chat_typing.start("AI analizuje wykres")
 
         def _worker():
             system = self.config_data.get("chart_chat_prompt", "")
@@ -2361,6 +2368,7 @@ class InvestmentAdvisor(tk.Tk):
             self._chart_chat_history.append(
                 {"role": "assistant", "content": reply})
 
+            self.after(0, lambda: self._chart_chat_typing.stop())
             self.after(0, lambda: self._append_chart_chat(
                 "AI:", reply, "assistant"))
             self.after(0, lambda: self.chart_chat_send_btn.configure(
@@ -3530,6 +3538,7 @@ class InvestmentAdvisor(tk.Tk):
 
         self._chat_history.append({"role": "user", "content": msg})
         send_btn.configure(state="disabled", text="…")
+        self._chat_typing.start("AI przygotowuje odpowiedź")
 
         def _worker():
             system = self.config_data.get("chat_prompt", "")
@@ -3570,6 +3579,7 @@ class InvestmentAdvisor(tk.Tk):
                 reply = f"Błąd połączenia: {exc}"
             self._chat_history.append({"role": "assistant", "content": reply})
 
+            self.after(0, lambda: self._chat_typing.stop())
             self.after(0, lambda: self._append_chat("AI:", reply, "assistant"))
             self.after(0, lambda: send_btn.configure(state="normal", text="Wyślij"))
             self.after(0, lambda: entry_widget.focus_set())
