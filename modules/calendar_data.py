@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from modules.http_client import safe_get
 
@@ -145,49 +145,110 @@ def get_event_significance(event_title):
     return "Dane makroekonomiczne"
 
 
+def _parse_ff_json(data):
+    """Parse ForexFactory JSON into event dicts."""
+    events = []
+    for e in data:
+        date_str = e.get("date", "")
+        try:
+            dt = datetime.fromisoformat(date_str)
+            date_fmt = dt.strftime("%Y-%m-%d")
+            time_fmt = dt.strftime("%H:%M")
+        except (ValueError, TypeError):
+            date_fmt = date_str[:10] if date_str else "?"
+            time_fmt = ""
+
+        country = e.get("country", "")
+        impact_raw = e.get("impact", "Low")
+        icon, label = IMPACT_PL.get(impact_raw, ("⚪", impact_raw))
+        title = e.get("title", "")
+        events.append({
+            "date":         date_fmt,
+            "time":         time_fmt,
+            "flag":         FLAG_MAP.get(country, "🌐"),
+            "country":      country,
+            "event":        title,
+            "impact_icon":  icon,
+            "impact_label": label,
+            "impact_raw":   impact_raw,
+            "forecast":     e.get("forecast", "") or "",
+            "previous":     e.get("previous", "") or "",
+            "significance": get_event_significance(title),
+        })
+    return events
+
+
+def _fetch_one_week(slug):
+    """Fetch a single week ('thisweek' or 'nextweek') from ForexFactory.
+
+    Returns: (events_list, error_str_or_None)
+    """
+    url = f"https://nfs.faireconomy.media/ff_calendar_{slug}.json"
+    try:
+        r = safe_get(url, timeout=(8, 15))
+        r.raise_for_status()
+        data = r.json()
+        return _parse_ff_json(data), None
+    except Exception as exc:
+        logger.warning("Calendar fetch %s failed: %s", slug, exc)
+        return [], str(exc)
+
+
 def fetch_calendar(week="this"):
     """Fetch economic calendar from ForexFactory JSON feed.
 
-    week: 'this' or 'next'
+    week: 'this', 'next', or 'upcoming' (7 days from today)
     Returns: (events_list, error_str_or_None)
     Each event dict has keys:
         date, time, flag, country, event, impact_icon, impact_label,
         impact_raw, forecast, previous, significance
     """
-    slug = "thisweek" if week == "this" else "nextweek"
-    url = f"https://nfs.faireconomy.media/ff_calendar_{slug}.json"
-    try:
-        r = safe_get(url)
-        data = r.json()
-        events = []
-        for e in data:
-            date_str = e.get("date", "")
-            try:
-                dt = datetime.fromisoformat(date_str)
-                date_fmt = dt.strftime("%Y-%m-%d")
-                time_fmt = dt.strftime("%H:%M")
-            except (ValueError, TypeError):
-                date_fmt = date_str[:10] if date_str else "?"
-                time_fmt = ""
+    errors = []
 
-            country = e.get("country", "")
-            impact_raw = e.get("impact", "Low")
-            icon, label = IMPACT_PL.get(impact_raw, ("⚪", impact_raw))
-            title = e.get("title", "")
-            events.append({
-                "date":         date_fmt,
-                "time":         time_fmt,
-                "flag":         FLAG_MAP.get(country, "🌐"),
-                "country":      country,
-                "event":        title,
-                "impact_icon":  icon,
-                "impact_label": label,
-                "impact_raw":   impact_raw,
-                "forecast":     e.get("forecast", "") or "",
-                "previous":     e.get("previous", "") or "",
-                "significance": get_event_significance(title),
-            })
+    if week == "upcoming":
+        # Fetch both weeks and filter to today + 7 days
+        today = datetime.now().date()
+        cutoff = today + timedelta(days=7)
+        cutoff_str = cutoff.strftime("%Y-%m-%d")
+        today_str = today.strftime("%Y-%m-%d")
+
+        all_events = []
+        for slug in ("thisweek", "nextweek"):
+            events, err = _fetch_one_week(slug)
+            if err:
+                errors.append(f"{slug}: {err}")
+            all_events.extend(events)
+
+        if not all_events and errors:
+            return [], "; ".join(errors)
+
+        # Deduplicate by (date, time, event)
+        seen = set()
+        unique = []
+        for e in all_events:
+            key = (e["date"], e["time"], e["event"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(e)
+
+        # Filter: today → today+7 days
+        filtered = [e for e in unique
+                    if today_str <= e["date"] <= cutoff_str]
+        filtered.sort(key=lambda x: (x["date"], x["time"]))
+
+        err_msg = None
+        if errors and filtered:
+            # Partial success — got data from at least one week
+            err_msg = None
+        elif errors:
+            err_msg = "; ".join(errors)
+
+        return filtered, err_msg
+
+    else:
+        slug = "thisweek" if week == "this" else "nextweek"
+        events, err = _fetch_one_week(slug)
+        if err:
+            return events, err
         events.sort(key=lambda x: (x["date"], x["time"]))
         return events, None
-    except Exception as exc:
-        return [], str(exc)

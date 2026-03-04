@@ -635,13 +635,16 @@ class InvestmentAdvisor(tk.Tk):
             pass
 
     def _draw_sparkline(self, canvas_w, data, color):
-        # Bez update_idletasks() – blokuje UI przy każdym kafelku
+        try:
+            canvas_w.update_idletasks()
+        except tk.TclError:
+            pass
         w = canvas_w.winfo_width()
         if w <= 1:
-            w = 130
+            w = int(canvas_w.cget("width") or 130)
         h = canvas_w.winfo_height()
         if h <= 1:
-            h = 26
+            h = int(canvas_w.cget("height") or 26)
         canvas_w.delete("all")
         if len(data) < 2:
             return
@@ -1539,10 +1542,10 @@ class InvestmentAdvisor(tk.Tk):
             padx=10, pady=4, command=self._load_calendar
         ).pack(side="left")
 
-        tk.Label(ctrl, text="Tydzień:", bg=BG, fg=FG,
+        tk.Label(ctrl, text="Zakres:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).pack(side="left", padx=(16, 4))
-        self.cal_week_var = tk.StringVar(value="this")
-        for val, lbl in [("this", "Bieżący"), ("next", "Następny")]:
+        self.cal_week_var = tk.StringVar(value="upcoming")
+        for val, lbl in [("upcoming", "7 dni"), ("this", "Ten tydzień"), ("next", "Następny")]:
             tk.Radiobutton(
                 ctrl, text=lbl, variable=self.cal_week_var, value=val,
                 bg=BG, fg=FG, selectcolor=ACCENT, activebackground=BG,
@@ -1620,24 +1623,40 @@ class InvestmentAdvisor(tk.Tk):
         req_id = self._cal_request_id           # kopia dla domknięcia wątku
 
         def _fetch():
-            events, err = fetch_calendar(week_offset)
+            try:
+                events, err = fetch_calendar(week_offset)
+            except Exception as exc:
+                events, err = [], str(exc)
+
             # Odrzuć wynik jeśli zdążył przyjść nowszy request
             if req_id != self._cal_request_id:
                 return
+
             self._cal_events = events
-            if err:
+
+            if err and not events:
                 self.after(0, lambda: self.cal_status.configure(
                     text=f"Błąd: {err[:60]}"))
             else:
                 import datetime as _dt
                 today_str = _dt.date.today().strftime("%Y-%m-%d")
                 today_count = sum(1 for e in events if e["date"] == today_str)
-                week_lbl = "bieżący" if week_offset == "this" else "następny"
-                status = f"{len(events)} wydarzeń — {week_lbl} tydzień"
+                range_labels = {
+                    "upcoming": "najbliższe 7 dni",
+                    "this": "bieżący tydzień",
+                    "next": "następny tydzień",
+                }
+                range_lbl = range_labels.get(week_offset, week_offset)
+                status = f"{len(events)} wydarzeń — {range_lbl}"
                 if today_count:
                     status += f"  •  dziś: {today_count}"
                 self.after(0, lambda s=status: self.cal_status.configure(text=s))
-            self.after(0, self._apply_cal_filter)
+
+            # Always apply filter (even with empty list) to clear old rows
+            try:
+                self.after(0, self._apply_cal_filter)
+            except RuntimeError:
+                pass
 
         threading.Thread(target=_fetch, daemon=True).start()
 
@@ -3428,6 +3447,70 @@ class InvestmentAdvisor(tk.Tk):
             w.delete("1.0", "end")
             w.configure(state="disabled")
 
+    def _build_portfolio_context(self):
+        """Buduje tekstowy opis portfela (wszystkie zakładki) dla kontekstu AI."""
+        tab_labels = {
+            "obserwowane": "OBSERWOWANE (watchlist)",
+            "zakupione":   "GRA NA WZROSTY (long)",
+            "sprzedane":   "GRA NA SPADKI (short)",
+        }
+        parts = []
+        for tab_type in self._port_tab_types:
+            positions = get_portfolio_positions(tab_type)
+            if not positions:
+                continue
+            label = tab_labels.get(tab_type, tab_type)
+            lines = [f"## {label}"]
+            is_sell = tab_type == "sprzedane"
+            total_invested = 0.0
+            total_current = 0.0
+
+            for pos in positions:
+                symbol     = pos[1]
+                name       = pos[2]
+                qty        = pos[3]
+                buy_price  = pos[4]
+                currency   = pos[6] if len(pos) > 6 and pos[6] else "USD"
+                fx_rate    = pos[7] if len(pos) > 7 and pos[7] else 1.0
+                price_usd  = pos[8] if len(pos) > 8 and pos[8] else (buy_price * fx_rate)
+
+                d = self.current_market_data.get(symbol, {})
+                current_price = d.get("price") if d and "error" not in d else None
+
+                invested_usd = qty * price_usd
+                total_invested += invested_usd
+                entry_lbl = "sprzedaż" if is_sell else "zakup"
+
+                if current_price is not None:
+                    current_val = qty * current_price
+                    pnl = (invested_usd - current_val) if is_sell else (current_val - invested_usd)
+                    pnl_pct = (pnl / invested_usd * 100) if invested_usd else 0
+                    total_current += current_val
+                    lines.append(
+                        f"- {name} ({symbol}): ilość={qty:g}, "
+                        f"cena {entry_lbl}={buy_price:.4f} {currency}, "
+                        f"cena obecna={current_price:.4f} USD, "
+                        f"P&L={pnl:+,.2f} USD ({pnl_pct:+.2f}%)"
+                    )
+                else:
+                    total_current += invested_usd
+                    lines.append(
+                        f"- {name} ({symbol}): ilość={qty:g}, "
+                        f"cena {entry_lbl}={buy_price:.4f} {currency}, "
+                        f"cena obecna=brak danych"
+                    )
+
+            total_pnl = (total_invested - total_current) if is_sell else (total_current - total_invested)
+            total_pct = (total_pnl / total_invested * 100) if total_invested else 0
+            lines.append(
+                f"SUMA: zainwestowano={total_invested:,.2f} USD, "
+                f"wartość={total_current:,.2f} USD, "
+                f"P&L={total_pnl:+,.2f} USD ({total_pct:+.2f}%)"
+            )
+            parts.append("\n".join(lines))
+
+        return "\n\n".join(parts) if parts else ""
+
     def _send_chat_message(self):
         self._send_chat_message_from(self.chat_entry, self.chat_send_btn)
 
@@ -3456,6 +3539,16 @@ class InvestmentAdvisor(tk.Tk):
                     "przez użytkownika (dane z ostatniej analizy):\n\n"
                     f"--- INSTRUMENTY ---\n{instrument_list}\n--- KONIEC ---"
                 )
+
+            # Dodaj zawartość portfela (wszystkie zakładki)
+            portfolio_text = self._build_portfolio_context()
+            if portfolio_text:
+                system += (
+                    "\n\nPoniżej znajduje się pełna zawartość portfela użytkownika "
+                    "(obserwowane, kupione, sprzedane pozycje):\n\n"
+                    f"--- PORTFEL ---\n{portfolio_text}\n--- KONIEC PORTFELA ---"
+                )
+
             if self.current_analysis:
                 system += (
                     "\n\nPoniżej znajduje się ostatni raport analizy rynkowej, "
@@ -4316,8 +4409,9 @@ class InvestmentAdvisor(tk.Tk):
                                    font=("Segoe UI", 10), anchor="w")
             change_lbl.pack(fill="x")
 
-            spark = tk.Canvas(tile, bg=BG2, height=32, highlightthickness=0)
-            spark.pack(fill="x", pady=(4, 0))
+            spark = tk.Canvas(tile, bg=BG2, height=32, width=200,
+                               highlightthickness=0)
+            spark.pack(fill="x", expand=True, pady=(4, 0))
 
             popup_tiles[symbol] = {
                 "frame":      tile,
@@ -4330,15 +4424,22 @@ class InvestmentAdvisor(tk.Tk):
 
         self._market_popup_tile_widgets = popup_tiles
 
-        # Draw sparklines for instruments with current data
-        if self.current_market_data:
-            for symbol, tw in popup_tiles.items():
-                d = self.current_market_data.get(symbol, {})
-                sparkline = d.get("sparkline", [])
-                if sparkline:
-                    change_pct = d.get("change_pct", 0)
-                    color = GREEN if change_pct >= 0 else RED
-                    self._draw_sparkline(tw["spark"], sparkline, color)
+        # Draw sparklines — prefer cached timeframe data over market sparkline
+        for symbol, tw in popup_tiles.items():
+            d = self.current_market_data.get(symbol, {})
+            sparkline = self._spark_cache.get(symbol) or d.get("sparkline", [])
+            if sparkline:
+                change_pct = d.get("change_pct", 0)
+                color = GREEN if change_pct >= 0 else RED
+                self._draw_sparkline(tw["spark"], sparkline, color)
+
+        # Redraw sparklines when popup resizes so they fill available width
+        def _on_popup_resize(event):
+            if hasattr(self, '_popup_resize_after'):
+                win.after_cancel(self._popup_resize_after)
+            self._popup_resize_after = win.after(
+                150, lambda: self._redraw_all_sparklines())
+        win.bind("<Configure>", _on_popup_resize)
 
         def _on_popup_close():
             self._market_popup_tile_widgets = {}
