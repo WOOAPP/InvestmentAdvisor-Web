@@ -95,12 +95,15 @@ async def _run_analysis_task(user_id: int, config: dict):
             format_market_summary, market_data
         )
 
-        # Build macro payload
+        # Build macro payload (expects newsdata API key string, not config dict)
         macro_text = ""
         try:
-            macro_result = await asyncio.to_thread(
-                partial(build_macro_payload, config)
-            )
+            newsdata_key = get_api_key(config, "newsdata")
+            macro_result = {}
+            if newsdata_key:
+                macro_result = await asyncio.to_thread(
+                    partial(build_macro_payload, newsdata_key)
+                )
             if isinstance(macro_result, dict):
                 macro_text = macro_result.get("llm_payload", "")
         except Exception as e:

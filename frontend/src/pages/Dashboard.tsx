@@ -14,14 +14,17 @@ interface InstrumentData {
 export default function Dashboard() {
   const [instruments, setInstruments] = useState<InstrumentData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [analysisMsg, setAnalysisMsg] = useState('');
 
   const fetchInstruments = async () => {
     try {
       const res = await api.get('/market/instruments');
       setInstruments(res.data);
+      setError('');
     } catch {
-      // silent
+      setError('Nie udalo sie pobrac danych rynkowych.');
     } finally {
       setLoading(false);
     }
@@ -29,17 +32,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchInstruments();
-    // Refresh every 60s
     const interval = setInterval(fetchInstruments, 60000);
     return () => clearInterval(interval);
   }, []);
 
   const runAnalysis = async () => {
     setAnalysisRunning(true);
+    setAnalysisMsg('');
     try {
       await api.post('/reports/run');
+      setAnalysisMsg('Analiza uruchomiona — wyniki pojawia sie w zakladce Raporty.');
     } catch {
-      // silent
+      setAnalysisMsg('Blad uruchamiania analizy.');
     } finally {
       setAnalysisRunning(false);
     }
@@ -89,6 +93,16 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {analysisMsg && (
+        <div className={`mb-4 px-4 py-2 rounded text-sm ${analysisMsg.includes('Blad') ? 'bg-[var(--red)]/20 text-[var(--red)]' : 'bg-[var(--green)]/20 text-[var(--green)]'}`}>
+          {analysisMsg}
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 px-4 py-2 rounded text-sm bg-[var(--red)]/20 text-[var(--red)]">{error}</div>
+      )}
 
       {loading ? (
         <div className="text-[var(--overlay)] text-center py-12">Ladowanie danych rynkowych...</div>

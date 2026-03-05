@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
@@ -34,7 +35,7 @@ async def update_settings(
     db: AsyncSession = Depends(get_db),
 ):
     """Update user config. Merges with existing config."""
-    current = user.config or {}
+    current = dict(user.config or {})
     # Handle api_keys: don't overwrite with masked values
     if "api_keys" in body:
         for k, v in body["api_keys"].items():
@@ -43,5 +44,6 @@ async def update_settings(
         del body["api_keys"]
     current.update(body)
     user.config = current
+    flag_modified(user, "config")
     await db.commit()
     return {"status": "ok"}

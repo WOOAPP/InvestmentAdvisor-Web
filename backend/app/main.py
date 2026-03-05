@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 import sys
 import os
 from contextlib import asynccontextmanager
@@ -16,12 +17,30 @@ if _PROJECT_ROOT not in sys.path:
 from backend.app.core.config import settings
 from backend.app.api import auth, market, reports, portfolio, chat, settings as settings_api
 
+logger = logging.getLogger(__name__)
+
+
+def _run_migrations() -> None:
+    """Run Alembic migrations on startup so the DB schema is always current."""
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        alembic_cfg = Config(os.path.join(_PROJECT_ROOT, "backend", "alembic.ini"))
+        alembic_cfg.set_main_option(
+            "script_location", os.path.join(_PROJECT_ROOT, "backend", "alembic")
+        )
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied successfully")
+    except Exception:
+        logger.exception("Failed to run Alembic migrations")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: could initialize scheduler, warm caches, etc.
+    _run_migrations()
     yield
-    # Shutdown: cleanup
 
 
 app = FastAPI(
