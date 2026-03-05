@@ -2,27 +2,42 @@
 
 ## Project Overview
 
-**InvestmentAdvisor** is a Python desktop application for financial market analysis.
+**InvestmentAdvisor** is a Python desktop application for financial market analysis, currently undergoing migration to a web application.
 It fetches real-time market data, news (Newsdata.io), and web-scraped content, then sends everything
 to AI models (Anthropic / OpenAI / OpenRouter) which generate detailed investment reports.
-The GUI is built with Tkinter using the Catppuccin Mocha dark theme.
+The GUI is currently built with Tkinter using the Catppuccin Mocha dark theme.
+
+**Current status:** Web migration in progress. Backend (FastAPI) and frontend (React) scaffolded.
 
 ---
 
-## Running the Application
+## Running the Web Application
 
+### Development (Docker Compose)
+```bash
+cp .env.example .env          # Edit with your settings
+docker compose up --build      # PostgreSQL + FastAPI + Nginx
+cd frontend && npm run dev     # Vite dev server at localhost:5173
+```
+
+### Development (without Docker)
+```bash
+# Backend
+cd backend && pip install -r requirements.txt
+uvicorn backend.app.main:app --reload
+
+# Frontend
+cd frontend && npm install && npm run dev
+```
+
+### Legacy Desktop Application
 ```bash
 python main.py
 ```
 
 Requires Python 3.10+. On first run the app creates `data/advisor.db` (SQLite) and `data/config.json`.
 
-Auto-analysis mode (launched by cron):
-```bash
-python main.py --auto-analysis
-```
-
-### Installing Dependencies
+### Installing Desktop Dependencies
 
 ```bash
 pip install anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2
@@ -34,7 +49,7 @@ pip install anthropic openai yfinance requests beautifulsoup4 matplotlib pandas 
 python -m unittest discover tests/ -v
 ```
 
-There are 13 test files with 620+ test cases covering core modules.
+There are 13 test files with 242+ test cases covering core modules.
 
 ---
 
@@ -42,7 +57,7 @@ There are 13 test files with 620+ test cases covering core modules.
 
 ```
 InvestmentAdvisor/
-├── main.py                    # Tkinter application (class InvestmentAdvisor, ~4300 LOC)
+├── main.py                    # Tkinter application (class InvestmentAdvisor, ~4550 LOC)
 ├── config.py                  # Config load/save, env overrides, default instruments & prompts
 ├── constants.py               # 73 centralized tuning parameters (timeouts, limits, weights)
 ├── CLAUDE.md                  # This file
@@ -87,7 +102,7 @@ InvestmentAdvisor/
 ## Architecture & Data Flow
 
 ```
-User clicks "Uruchom Analizę"
+User clicks "Uruchom Analize"
         │
         ├── market_data.py ──→ yfinance / CoinGecko / Stooq
         │       └── http_client.py (safe_get with retry)
@@ -105,6 +120,39 @@ User clicks "Uruchom Analizę"
 ```
 
 All heavy I/O runs in daemon threads; UI updates via `self.after(0, callback)`.
+
+---
+
+## Business Logic Modules (backend-ready)
+
+These modules contain **zero Tkinter/UI dependencies** and can be reused directly as web backend:
+
+| Module | Responsibility | Web-ready? |
+|--------|---------------|------------|
+| `ai_engine.py` | AI provider dispatch, prompt building, chat | Yes |
+| `market_data.py` | yfinance/CoinGecko/Stooq data fetching | Yes |
+| `database.py` | SQLite CRUD (reports, portfolio, alerts, profiles) | Yes (consider PostgreSQL migration) |
+| `scraper.py` | Parallel web scraping with SSRF protection | Yes |
+| `http_client.py` | HTTP session with retry/backoff | Yes |
+| `url_validator.py` | SSRF protection for scraper | Yes |
+| `calendar_data.py` | Economic calendar from ForexFactory | Yes |
+| `news_store.py` | News fetching, dedup, SQLite storage | Yes |
+| `news_classifier.py` | Regex-based region/topic classification | Yes |
+| `news_of_day.py` | News scoring/selection engine | Yes |
+| `macro_trend.py` | Macro-trend orchestrator | Yes |
+| `trend_narrative.py` | Trend aggregation & comparison | Yes |
+| `openai_pricing.py` | LLM cost calculation | Yes |
+| `config.py` | Config load/save, env overrides | Needs adaptation for web (per-user config) |
+| `constants.py` | Tuning parameters | Yes |
+| `exceptions.py` | Custom exceptions | Yes |
+
+**UI-coupled modules (must be replaced for web):**
+
+| Module | Why it needs replacement |
+|--------|------------------------|
+| `main.py` (~4550 LOC) | Entire Tkinter GUI — one monolithic class |
+| `charts.py` | Matplotlib embedded in Tkinter (FigureCanvasTkAgg) |
+| `ui_helpers.py` | Tkinter-specific markdown renderer, spinners |
 
 ---
 
@@ -237,7 +285,7 @@ Applied to all scraper URLs before any HTTP request:
 
 ## Known Weak Spots / Areas Needing Attention
 
-1. **`main.py` is 4300+ LOC** — the entire UI lives in one class. Should be split into tab-specific modules.
+1. **`main.py` is 4550+ LOC** — the entire UI lives in one class. Should be split into tab-specific modules.
 2. **Synchronous AI calls** — `run_analysis()` and `run_chat()` block their worker thread; no timeout parameter passed to API clients.
 3. **Hardcoded password** — `_SETTINGS_PASSWORD = "666"` in `main.py` (plaintext, not hashed).
 4. **SSRF TOCTOU risk** — DNS is validated at check time, but the actual HTTP request happens later (hostname could resolve differently).
@@ -245,8 +293,10 @@ Applied to all scraper URLs before any HTTP request:
 6. **Matplotlib thread safety** — charts are created on the main thread but `fetch_chart_data()` inside `create_price_chart()` does blocking I/O.
 7. **Duplicate news classification** — `macro_trend.py` calls `classify_articles()` 5 times (once on raw, then again on each DB query result).
 8. **No retry on yfinance/CoinGecko** — HTTP retry exists for scraper via `http_client`, but yfinance uses its own HTTP and CoinGecko uses `safe_get` (which does retry).
-9. **`news_store.py` inits table on import** — `init_news_table()` runs at module import time, creating the DB file as a side effect.
+9. **`news_store.py` lazy init** — `_ensure_table()` creates the DB file as a side effect on first DB access.
 10. **Web pricing scrape is brittle** — `openai_pricing.py` tries to scrape the OpenAI pricing page (JS SPA); this always fails. Hardcoded fallback covers it.
+11. **Single-user architecture** — `data/config.json` is global, not per-user. Web migration needs user accounts and per-user config.
+12. **No auth system** — desktop app has no login. Web version requires proper authentication.
 
 ---
 
@@ -313,7 +363,98 @@ Add the constant to `constants.py` and import it where needed. Avoid hardcoding 
 2. **`main.py` size** — the file is huge; changes here risk merge conflicts. Keep edits minimal and targeted.
 3. **API key safety** — never log, print, or commit API keys. Use `mask_key()` for display. Use env vars.
 4. **Matplotlib** — not thread-safe. All figure creation/modification must happen on the main thread. Always close figures to avoid memory leaks.
-5. **Import side effects** — `news_store.py` creates DB tables on import. `database.py:init_db()` is called explicitly but runs migrations every time.
+5. **Import side effects** — `news_store.py` creates DB tables on first access. `database.py:init_db()` is called explicitly but runs migrations every time.
 6. **Config schema** — adding fields to config requires backward-compatible defaults in `load_config()`.
 7. **Prompt changes** — system prompts are stored in `config.json` and are large (900+ lines). Users may have customized them. Don't overwrite silently.
 8. **Test suite** — run `python -m unittest discover tests/ -v` before pushing. Tests cover AI engine, charts, database, HTTP client, market data, news pipeline, URL validator, and UI helpers.
+
+---
+
+## Web Migration Plan (Desktop → Web)
+
+### Target Architecture
+
+```
+Browser (React + TypeScript)
+        │
+        ├── REST API ──→ FastAPI (Python backend)
+        │                   ├── modules/ (reused from desktop)
+        │                   ├── auth (JWT + bcrypt)
+        │                   └── WebSocket for real-time prices
+        │
+        └── Static files served by Nginx
+                │
+                └── Docker Compose (Nginx + FastAPI + PostgreSQL)
+```
+
+### Stack Decisions
+
+- **Frontend:** React + TypeScript + Vite (rich ecosystem for dashboards, charts via Recharts/Lightweight Charts)
+- **Backend:** FastAPI (async, Python — direct reuse of existing modules)
+- **Database:** PostgreSQL (replaces SQLite for multi-user, concurrent access)
+- **Charts:** Lightweight Charts (TradingView) or Recharts (replaces Matplotlib)
+- **Communication:** REST API + WebSocket (for live price updates)
+- **Deployment:** Docker Compose + Nginx reverse proxy on VPS
+
+### What Can Be Reused Directly
+
+All `modules/` files except `charts.py` and `ui_helpers.py` — they are UI-framework-independent.
+
+### What Must Be Rewritten
+
+1. `main.py` — entire Tkinter GUI → React frontend + FastAPI endpoints
+2. `charts.py` — Matplotlib/Tkinter → Lightweight Charts (JS) or server-side chart API
+3. `ui_helpers.py` — Tkinter markdown renderer → React markdown component
+4. `config.py` — global config → per-user config stored in PostgreSQL
+5. Auth system — from scratch (JWT, bcrypt, user registration)
+
+### Web Application Structure
+
+```
+backend/
+├── app/
+│   ├── main.py            # FastAPI entry point
+│   ├── api/               # Route handlers (auth, market, reports, portfolio, chat, settings)
+│   ├── core/              # Config, database (async SQLAlchemy), security (JWT), dependencies
+│   ├── models/            # SQLAlchemy models (user, report, portfolio, alert, etc.)
+│   ├── schemas/           # Pydantic request/response schemas
+│   └── services/          # Business logic adapters (reserved)
+├── alembic/               # PostgreSQL migrations
+├── requirements.txt
+└── Dockerfile
+
+frontend/
+├── src/
+│   ├── api/client.ts      # Axios instance with JWT interceptor
+│   ├── stores/authStore.ts # Zustand auth state
+│   ├── components/        # Layout, InstrumentCard
+│   └── pages/             # Login, Dashboard, Reports, Chat, Portfolio, Settings
+├── package.json
+└── vite.config.ts
+
+docker-compose.yml          # PostgreSQL + FastAPI + Nginx
+nginx/default.conf          # Reverse proxy config
+.env.example                # All configuration options
+```
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/register` | User registration |
+| POST | `/api/auth/login` | Login (returns JWT) |
+| POST | `/api/auth/refresh` | Refresh access token |
+| GET | `/api/auth/me` | Current user info |
+| GET | `/api/market/instruments` | All instrument prices |
+| POST | `/api/market/sparkline` | Sparkline for symbol |
+| GET | `/api/reports` | List reports |
+| GET | `/api/reports/{id}` | Report detail |
+| POST | `/api/reports/run` | Start analysis (background) |
+| DELETE | `/api/reports/{id}` | Delete report |
+| GET | `/api/portfolio` | List positions |
+| POST | `/api/portfolio` | Add position |
+| DELETE | `/api/portfolio/{id}` | Delete position |
+| POST | `/api/chat` | Chat with AI |
+| GET | `/api/settings` | Get user config |
+| PUT | `/api/settings` | Update user config |
+| GET | `/api/health` | Health check |
