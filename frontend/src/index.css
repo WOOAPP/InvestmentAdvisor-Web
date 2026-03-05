@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Catppuccin Mocha theme */
+:root {
+  --bg: #1e1e2e;
+  --bg2: #181825;
+  --fg: #cdd6f4;
+  --accent: #89b4fa;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --yellow: #f9e2af;
+  --gray: #313244;
+  --surface: #1e1e2e;
+  --overlay: #6c7086;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gray);
+  border-radius: 4px;
+}
