@@ -7,24 +7,37 @@ It fetches real-time market data, news (Newsdata.io), and web-scraped content, t
 to AI models (Anthropic / OpenAI / OpenRouter) which generate detailed investment reports.
 The GUI is currently built with Tkinter using the Catppuccin Mocha dark theme.
 
-**Current status:** Desktop (Tkinter) application — web migration planned.
+**Current status:** Web migration in progress. Backend (FastAPI) and frontend (React) scaffolded.
 
 ---
 
-## Running the Application
+## Running the Web Application
 
+### Development (Docker Compose)
+```bash
+cp .env.example .env          # Edit with your settings
+docker compose up --build      # PostgreSQL + FastAPI + Nginx
+cd frontend && npm run dev     # Vite dev server at localhost:5173
+```
+
+### Development (without Docker)
+```bash
+# Backend
+cd backend && pip install -r requirements.txt
+uvicorn backend.app.main:app --reload
+
+# Frontend
+cd frontend && npm install && npm run dev
+```
+
+### Legacy Desktop Application
 ```bash
 python main.py
 ```
 
 Requires Python 3.10+. On first run the app creates `data/advisor.db` (SQLite) and `data/config.json`.
 
-Auto-analysis mode (launched by cron):
-```bash
-python main.py --auto-analysis
-```
-
-### Installing Dependencies
+### Installing Desktop Dependencies
 
 ```bash
 pip install anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2
@@ -395,4 +408,53 @@ All `modules/` files except `charts.py` and `ui_helpers.py` — they are UI-fram
 4. `config.py` — global config → per-user config stored in PostgreSQL
 5. Auth system — from scratch (JWT, bcrypt, user registration)
 
-See the full migration plan in the PR description.
+### Web Application Structure
+
+```
+backend/
+├── app/
+│   ├── main.py            # FastAPI entry point
+│   ├── api/               # Route handlers (auth, market, reports, portfolio, chat, settings)
+│   ├── core/              # Config, database (async SQLAlchemy), security (JWT), dependencies
+│   ├── models/            # SQLAlchemy models (user, report, portfolio, alert, etc.)
+│   ├── schemas/           # Pydantic request/response schemas
+│   └── services/          # Business logic adapters (reserved)
+├── alembic/               # PostgreSQL migrations
+├── requirements.txt
+└── Dockerfile
+
+frontend/
+├── src/
+│   ├── api/client.ts      # Axios instance with JWT interceptor
+│   ├── stores/authStore.ts # Zustand auth state
+│   ├── components/        # Layout, InstrumentCard
+│   └── pages/             # Login, Dashboard, Reports, Chat, Portfolio, Settings
+├── package.json
+└── vite.config.ts
+
+docker-compose.yml          # PostgreSQL + FastAPI + Nginx
+nginx/default.conf          # Reverse proxy config
+.env.example                # All configuration options
+```
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/register` | User registration |
+| POST | `/api/auth/login` | Login (returns JWT) |
+| POST | `/api/auth/refresh` | Refresh access token |
+| GET | `/api/auth/me` | Current user info |
+| GET | `/api/market/instruments` | All instrument prices |
+| POST | `/api/market/sparkline` | Sparkline for symbol |
+| GET | `/api/reports` | List reports |
+| GET | `/api/reports/{id}` | Report detail |
+| POST | `/api/reports/run` | Start analysis (background) |
+| DELETE | `/api/reports/{id}` | Delete report |
+| GET | `/api/portfolio` | List positions |
+| POST | `/api/portfolio` | Add position |
+| DELETE | `/api/portfolio/{id}` | Delete position |
+| POST | `/api/chat` | Chat with AI |
+| GET | `/api/settings` | Get user config |
+| PUT | `/api/settings` | Update user config |
+| GET | `/api/health` | Health check |
