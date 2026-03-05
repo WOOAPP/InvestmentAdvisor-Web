@@ -1,0 +1,40 @@
+# FastAPI + server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.9
+
+# Database
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+alembic>=1.14.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0
+
+# Validation / settings
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# AI providers (reused from desktop)
+anthropic>=0.40.0
+openai>=1.58.0
+
+# Market data (reused from desktop)
+yfinance>=0.2.50
+pandas>=2.2.0
+
+# HTTP / scraping (reused from desktop)
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+
+# Background tasks
+apscheduler>=3.10.0
+
+# PDF export
+fpdf2>=2.8.0
+
+# Utilities
+certifi
+tzdata
