@@ -43,7 +43,7 @@ export default function Chat() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl sm:text-2xl font-bold">Chat AI</h1>
         {calendarEvents.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-[var(--overlay)] bg-[var(--bg2)] border border-[var(--gray)] rounded-lg px-3 py-1.5">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-[var(--overlay)] bg-[var(--bg2)] border border-[var(--gray)] rounded-lg px-3 py-1.5">
             <span>📅 Kalendarz makro w kontekście:</span>
             {highImpactCount > 0 && <span className="text-[#f38ba8] font-semibold">🔴 {highImpactCount}</span>}
             {mediumImpactCount > 0 && <span className="text-[#f9e2af] font-semibold">🟡 {mediumImpactCount}</span>}

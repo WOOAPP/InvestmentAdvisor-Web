@@ -43,7 +43,7 @@ export default function History() {
               Ryzyko: {selected.risk_level}/10 | Tokeny: {selected.input_tokens} in / {selected.output_tokens} out
             </div>
           </div>
-          <div className="prose prose-invert max-w-none">
+          <div className="md-content text-sm sm:text-base">
             <ReactMarkdown>{selected.analysis || ''}</ReactMarkdown>
           </div>
         </div>
