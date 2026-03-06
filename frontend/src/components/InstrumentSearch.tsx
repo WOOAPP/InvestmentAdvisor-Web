@@ -13,7 +13,7 @@ interface Props {
   onSymbol: (v: string) => void;
   onName: (v: string) => void;
   /** Wywoływane przy wyborze sugestii — atomowe ustawienie obu pól naraz */
-  onPick?: (symbol: string, name: string) => void;
+  onPick?: (symbol: string, name: string, type?: string) => void;
   symbolPlaceholder?: string;
   namePlaceholder?: string;
   /** Klasa CSS wspólna dla obu inputów */
@@ -81,7 +81,7 @@ export default function InstrumentSearch({
   const pick = (item: InstrumentSearchResult) => {
     // Jeśli rodzic udostępnia onPick, ustawiamy oba pola atomowo (bez problemu stale closure)
     if (onPick) {
-      onPick(item.symbol, item.name);
+      onPick(item.symbol, item.name, item.type);
     } else {
       onSymbol(item.symbol);
       onName(item.name);

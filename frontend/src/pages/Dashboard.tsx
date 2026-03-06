@@ -116,8 +116,9 @@ function GaugeChart({
 
   const v = Math.max(1, Math.min(10, value || 5));
   const frac = (v - 1) / 9;
-  // Wskazówka zawsze w prawo dla wyższej wartości
-  const ndeg = frac * 180;
+  // Dla ryzyka (invertNeedle): wysoka wartość → prawo (czerwone)
+  // Dla okazji: wysoka wartość → prawo (zielone)
+  const ndeg = invertNeedle ? (1 - frac) * 180 : frac * 180;
   const tip = pt(ndeg, R - 10);
   const unknown = !value;
 
@@ -839,18 +840,18 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="absolute inset-0 flex overflow-hidden">
+    <div className="absolute inset-0 flex overflow-hidden p-4 gap-4">
 
       {/* ══ Left sidebar ══════════════════════════════════════ */}
-      <div className="w-[296px] flex-shrink-0 flex flex-col border-r border-[var(--gray)] bg-[var(--bg)] overflow-hidden">
+      <div className="w-[296px] flex-shrink-0 flex flex-col border border-[var(--gray)] bg-[var(--bg)] overflow-hidden rounded-2xl">
 
         {/* Assessment gauges — ryzyko i okazja */}
         {(() => {
           const r = assessment?.risk ?? (report?.risk_level ?? 0);
           const o = assessment?.opportunity ?? 0;
           return (
-            <div className="border-b border-[var(--gray)]">
-              <div className="flex flex-col items-center px-3 pt-2 gap-1">
+            <div className="border-b border-[var(--gray)] bg-[var(--bg2)]/30 rounded-t-2xl">
+              <div className="flex flex-col items-center px-3 pt-3 gap-1">
                 <div className="w-52">
                   <GaugeChart
                     label="Ryzyko Rynkowe"
@@ -883,7 +884,7 @@ export default function Dashboard() {
         })()}
 
         <div
-          className="px-4 py-2 border-y border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 flex items-center justify-between cursor-pointer hover:bg-[var(--gray)]/30 transition-colors select-none"
+          className="px-4 py-2.5 border-y border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 flex items-center justify-between cursor-pointer hover:bg-[var(--gray)]/30 transition-colors select-none"
           onClick={() => { setMarketExpanded((v) => !v); setSelectedInstrument(null); }}
           title="Kliknij aby rozwinąć widok instrumentów"
         >
@@ -927,12 +928,12 @@ export default function Dashboard() {
       </div>
 
       {/* ══ Right panel ═══════════════════════════════════════ */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 border border-[var(--gray)] rounded-2xl bg-[var(--bg)]">
 
         {marketExpanded && !selectedInstrument ? (
           /* ── Expanded market grid ────────────────────────── */
           <>
-            <div className="px-5 py-2.5 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 flex items-center justify-between">
+            <div className="px-5 py-2.5 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 flex items-center justify-between rounded-t-2xl">
               <span className="text-xs font-bold text-[var(--fg)] uppercase tracking-widest">Kursy Rynkowe</span>
               <span className="text-[10px] text-[var(--overlay)]">
                 Pojedynczy klik&nbsp;→&nbsp;profil
@@ -967,7 +968,7 @@ export default function Dashboard() {
           /* ── Instrument view ─────────────────────────────── */
           <>
             {/* Header */}
-            <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 rounded-t-2xl">
               <div className="flex-1 min-w-0">
                 <span className="font-bold text-base">{selectedInstrument.name}</span>
                 <span className="ml-2 text-sm text-[var(--overlay)] font-mono">{selectedInstrument.symbol}</span>
@@ -1018,7 +1019,7 @@ export default function Dashboard() {
           /* ── Analysis view ───────────────────────────────── */
           <>
             {/* Action buttons */}
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 rounded-t-2xl">
               <button
                 onClick={handleOpenPicker}
                 disabled={analysisRunning}
@@ -1212,7 +1213,7 @@ export default function Dashboard() {
                 )}
                 <div ref={chatEndRef} />
               </div>
-              <div className="flex gap-2 px-5 py-2 border-t border-[var(--gray)] flex-shrink-0">
+              <div className="flex gap-2 px-5 py-2.5 border-t border-[var(--gray)] flex-shrink-0 rounded-b-2xl">
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}

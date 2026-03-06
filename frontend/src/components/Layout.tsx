@@ -4,9 +4,9 @@ import { useAppStore } from '../stores/appStore';
 
 const navItems = [
   { to: '/', label: 'Dashboard' },
-  { to: '/portfolio', label: 'Portfel' },
-  { to: '/calendar', label: 'Kalendarz' },
   { to: '/charts', label: 'Wykresy' },
+  { to: '/calendar', label: 'Kalendarz' },
+  { to: '/portfolio', label: 'Portfel' },
   { to: '/history', label: 'Historia' },
   { to: '/settings', label: 'Ustawienia' },
 ];

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../api/client';
 import InstrumentSearch from '../components/InstrumentSearch';
 import { clearInstrumentsCache, triggerInstrumentsRefresh } from '../api/market';
@@ -38,6 +38,34 @@ const MODEL_OPTIONS: Record<string, { value: string; label: string }[]> = {
   ],
 };
 const CATEGORIES = ['Akcje / Indeksy', 'Krypto', 'Forex', 'Surowce', 'Inne'];
+
+/** Auto-detect category and source from Yahoo search result type and symbol */
+function detectCategoryAndSource(symbol: string, type?: string): { category: string; source: string } {
+  const s = symbol.toUpperCase();
+  const t = (type ?? '').toLowerCase();
+
+  // Forex
+  if (t === 'currency' || /^[A-Z]{3}[A-Z]{3}=X$/.test(s)) {
+    return { category: 'Forex', source: 'yfinance' };
+  }
+  // Crypto
+  if (t === 'cryptocurrency' || /-USD$/.test(s)) {
+    return { category: 'Krypto', source: 'yfinance' };
+  }
+  // Futures / commodities
+  if (t === 'future' || s.endsWith('=F')) {
+    return { category: 'Surowce', source: 'yfinance' };
+  }
+  // Index
+  if (t === 'index' || s.startsWith('^')) {
+    return { category: 'Akcje / Indeksy', source: 'yfinance' };
+  }
+  // Equity, ETF, Mutual Fund
+  if (t === 'equity' || t === 'etf' || t === 'mutualfund') {
+    return { category: 'Akcje / Indeksy', source: 'yfinance' };
+  }
+  return { category: 'Akcje / Indeksy', source: 'yfinance' };
+}
 
 // ── Prompt card types & components ──────────────────────────────────────────
 
@@ -159,6 +187,10 @@ export default function Settings() {
   const [newSource, setNewSource] = useState('');
   const [showAddSource, setShowAddSource] = useState(false);
 
+  // Saved server state — for detecting unsaved changes
+  const savedInstrumentsRef = useRef<string>('[]');
+  const savedSourcesRef = useRef<string>('[]');
+
   // Prompts
   const [prompt, setPrompt] = useState('');
   const [chatPrompt, setChatPrompt] = useState('');
@@ -191,8 +223,12 @@ export default function Settings() {
       setModel(d.ai_model || 'gpt-4.1-mini');
       setChatProvider(d.chat_provider || d.ai_provider || 'openai');
       setChatModel(d.chat_model || d.ai_model || 'gpt-4.1-mini');
-      setInstruments(d.instruments || []);
-      setSources(d.sources || []);
+      const inst = d.instruments || [];
+      const src = d.sources || [];
+      setInstruments(inst);
+      setSources(src);
+      savedInstrumentsRef.current = JSON.stringify(inst);
+      savedSourcesRef.current = JSON.stringify(src);
       setPrompt(d.prompt || '');
       setChatPrompt(d.chat_prompt || '');
       setChartsChatPrompt(d.charts_chat_prompt || '');
@@ -234,8 +270,10 @@ export default function Settings() {
 
   const saveCustomize = async () => {
     await api.put('/settings', { instruments, sources });
+    savedInstrumentsRef.current = JSON.stringify(instruments);
+    savedSourcesRef.current = JSON.stringify(sources);
     clearInstrumentsCache();
-    triggerInstrumentsRefresh(); // natychmiast odśwież Dashboard i Wykresy
+    triggerInstrumentsRefresh();
     notify();
   };
 
@@ -459,8 +497,20 @@ export default function Settings() {
       )}
 
       {/* ── Dostosuj ─────────────────────────────────────────── */}
-      {activeTab === 'customize' && (
+      {activeTab === 'customize' && (() => {
+        const hasChanges = JSON.stringify(instruments) !== savedInstrumentsRef.current
+          || JSON.stringify(sources) !== savedSourcesRef.current;
+        return (
         <div className="space-y-4">
+          {hasChanges && (
+            <div className="flex items-center gap-3 bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-xl px-4 py-2.5">
+              <span className="text-sm text-[var(--accent)] font-medium flex-1">Masz niezapisane zmiany</span>
+              <button onClick={saveCustomize}
+                className="px-5 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] font-semibold text-sm hover:opacity-90 transition-opacity">
+                Zapisz zmiany
+              </button>
+            </div>
+          )}
           <div className="flex gap-6 items-start">
 
             {/* ── Lewa kolumna: instrumenty ─────────────────── */}
@@ -480,7 +530,10 @@ export default function Settings() {
                     name={newInst.name}
                     onSymbol={(v) => setNewInst((p) => ({ ...p, symbol: v.toUpperCase() }))}
                     onName={(v) => setNewInst((p) => ({ ...p, name: v }))}
-                    onPick={(sym, nm) => setNewInst((p) => ({ ...p, symbol: sym.toUpperCase(), name: nm }))}
+                    onPick={(sym, nm, type) => {
+                      const detected = detectCategoryAndSource(sym, type);
+                      setNewInst((p) => ({ ...p, symbol: sym.toUpperCase(), name: nm, category: detected.category, source: detected.source }));
+                    }}
                     symbolPlaceholder="np. AAPL"
                     namePlaceholder="np. Apple Inc."
                     symbolLabel="Symbol *"
@@ -599,7 +652,8 @@ export default function Settings() {
             {saved && <span className="text-sm text-[var(--green)]">&#10003; Zapisano</span>}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Statystyki ───────────────────────────────────────── */}
       {activeTab === 'stats' && (
