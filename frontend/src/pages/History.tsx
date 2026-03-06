@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { getReports, getReport, type ReportSummary, type ReportDetail } from '../api/reports';
 import { APP_TIMEZONE } from '../config';
 
-export default function Reports() {
+export default function History() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [selected, setSelected] = useState<ReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +40,7 @@ export default function Reports() {
               </span>
             </div>
             <div className="text-sm text-[var(--overlay)]">
-              Ryzyko: {selected.risk_level}/10 | Tokeny: {selected.input_tokens} in / {selected.output_tokens} out
+              Ryzyko: {selected.risk_level}/10 &nbsp;|&nbsp; Tokeny: {selected.input_tokens} in / {selected.output_tokens} out
             </div>
           </div>
           <div className="prose prose-invert max-w-none">
@@ -53,7 +53,7 @@ export default function Reports() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Raporty</h1>
+      <h1 className="text-2xl font-bold mb-6">Historia raportow</h1>
       {loading ? (
         <div className="text-[var(--overlay)] text-center py-12">Ladowanie...</div>
       ) : reports.length === 0 ? (
@@ -72,9 +72,12 @@ export default function Reports() {
                 <span className="text-sm text-[var(--overlay)]">
                   {new Date(r.created_at).toLocaleString('pl-PL', { timeZone: APP_TIMEZONE })}
                 </span>
-                <span className="text-sm text-[var(--accent)]">
-                  {r.provider} / {r.model}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-[var(--overlay)]">Ryzyko: {r.risk_level}/10</span>
+                  <span className="text-sm text-[var(--accent)]">
+                    {r.provider} / {r.model}
+                  </span>
+                </div>
               </div>
               <div className="mt-2 text-sm text-[var(--fg)] line-clamp-2">{r.preview}</div>
             </button>

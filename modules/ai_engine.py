@@ -202,6 +202,37 @@ def run_chat(config, messages, system_prompt=""):
         return f"Błąd {provider.capitalize()}: {e}"
 
 
+def run_chat_with_usage(config, messages, system_prompt=""):
+    """Like run_chat but returns (text, usage_dict) with input_tokens/output_tokens.
+    Used by the web API to track costs without breaking desktop compatibility.
+    """
+    provider = config.get("chat_provider") or config.get("ai_provider", "openai")
+    model = config.get("chat_model") or config.get("ai_model", "gpt-4o")
+
+    pcfg = _PROVIDER_DEFAULTS.get(provider)
+    if not pcfg:
+        return "Nieznany dostawca AI dla czatu.", {"input_tokens": 0, "output_tokens": 0}
+
+    api_key = get_api_key(config, pcfg["key"])
+    if not api_key:
+        return (
+            f"Brak klucza API {provider.capitalize()}. "
+            f"Ustaw {pcfg['env']} lub dodaj klucz w Ustawieniach.",
+            {"input_tokens": 0, "output_tokens": 0},
+        )
+    try:
+        text, usage = _call_provider(
+            provider, api_key, model, system_prompt,
+            messages, max_tokens=AI_MAX_TOKENS_CHAT)
+        inp = int(getattr(usage, "input_tokens", 0) or getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+        out = int(getattr(usage, "output_tokens", 0) or getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+        return text, {"input_tokens": inp, "output_tokens": out, "provider": provider, "model": model}
+    except (anthropic.APIError, openai.OpenAIError, KeyError,
+            ValueError, ConnectionError, TimeoutError) as e:
+        logger.warning("Chat %s error: %s", provider, e)
+        return f"Błąd {provider.capitalize()}: {e}", {"input_tokens": 0, "output_tokens": 0}
+
+
 def generate_instrument_profile(config, symbol, name, category):
     """Generate a one-time AI profile for an instrument (cached by caller)."""
     system = (

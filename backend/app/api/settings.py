@@ -8,8 +8,20 @@ from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
 from backend.app.models.user import User
 from config import DEFAULT_CONFIG
+from backend.app.api import market as _market_module
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+_PROMPT_KEYS = [
+    "prompt", "chat_prompt", "charts_chat_prompt",
+    "instrument_profile_prompt", "calendar_event_prompt", "market_assessment_prompt",
+]
+
+
+@router.get("/defaults")
+async def get_prompt_defaults():
+    """Return factory-default prompt values (no auth required — they are public constants)."""
+    return {k: DEFAULT_CONFIG.get(k, "") for k in _PROMPT_KEYS}
 
 
 @router.get("")
@@ -46,4 +58,7 @@ async def update_settings(
     user.config = current
     flag_modified(user, "config")
     await db.commit()
+    # Wyczyść backend cache instrumentów jeśli lista się zmieniła
+    if "instruments" in body:
+        _market_module._inst_cache.pop(user.id, None)
     return {"status": "ok"}

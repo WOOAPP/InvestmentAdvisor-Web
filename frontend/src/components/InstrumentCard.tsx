@@ -7,7 +7,7 @@ interface InstrumentData {
   error: string | null;
 }
 
-function MiniSparkline({ data }: { data: number[] }) {
+function MiniSparkline({ data, changePct }: { data: number[]; changePct: number | null }) {
   if (data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -22,7 +22,7 @@ function MiniSparkline({ data }: { data: number[] }) {
     })
     .join(' ');
 
-  const isUp = data[data.length - 1] >= data[0];
+  const isUp = (changePct ?? 0) >= 0;
   return (
     <svg width={w} height={h} className="inline-block">
       <polyline
@@ -35,7 +35,13 @@ function MiniSparkline({ data }: { data: number[] }) {
   );
 }
 
-export default function InstrumentCard({ data }: { data: InstrumentData }) {
+interface InstrumentCardProps {
+  data: InstrumentData;
+  selected?: boolean;
+  onClick?: () => void;
+}
+
+export default function InstrumentCard({ data, selected = false, onClick }: InstrumentCardProps) {
   if (data.error) {
     return (
       <div className="bg-[var(--bg2)] rounded-lg p-4 border border-[var(--gray)]">
@@ -48,9 +54,15 @@ export default function InstrumentCard({ data }: { data: InstrumentData }) {
   const isUp = (data.change_pct ?? 0) >= 0;
   const color = isUp ? 'var(--green)' : 'var(--red)';
   const arrow = isUp ? '\u25B2' : '\u25BC';
+  const borderClass = selected
+    ? 'border-[var(--accent)]'
+    : 'border-[var(--gray)] hover:border-[var(--accent)]';
 
   return (
-    <div className="bg-[var(--bg2)] rounded-lg p-4 border border-[var(--gray)] hover:border-[var(--accent)] transition-colors">
+    <div
+      className={`bg-[var(--bg2)] rounded-lg p-4 border transition-colors cursor-pointer ${borderClass}`}
+      onClick={onClick}
+    >
       <div className="flex justify-between items-start">
         <div>
           <div className="text-sm text-[var(--overlay)]">{data.name}</div>
@@ -58,7 +70,7 @@ export default function InstrumentCard({ data }: { data: InstrumentData }) {
             {data.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
           </div>
         </div>
-        <MiniSparkline data={data.sparkline} />
+        <MiniSparkline data={data.sparkline} changePct={data.change_pct} />
       </div>
       <div className="mt-2 text-sm" style={{ color }}>
         {arrow} {data.change_pct !== null ? `${data.change_pct >= 0 ? '+' : ''}${data.change_pct.toFixed(2)}%` : '--'}

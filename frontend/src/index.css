@@ -18,7 +18,9 @@ body {
   margin: 0;
   background-color: var(--bg);
   color: var(--fg);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
 }
 
 ::-webkit-scrollbar {
@@ -31,3 +33,117 @@ body {
   background: var(--gray);
   border-radius: 4px;
 }
+
+/* Czcionka dla wiadomości chatów (assistant) */
+.chat-reply {
+  font-family: 'Newsreader', Georgia, serif;
+  font-optical-sizing: auto;
+  line-height: 1.7;
+}
+
+/* Flash animacja przy aktualizacji ceny kafelka */
+@keyframes flashUp {
+  0%, 60% { color: #a6e3a1; }
+  100%     { color: unset; }
+}
+@keyframes flashDown {
+  0%, 60% { color: #f38ba8; }
+  100%     { color: unset; }
+}
+.flash-up   { animation: flashUp   1.5s ease-out forwards; }
+.flash-down { animation: flashDown 1.5s ease-out forwards; }
+
+/* News ticker — seamless infinite loop: track = 2x items, animate -50% = one full set */
+@keyframes news-ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.news-ticker-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: news-ticker 160s linear infinite;
+}
+.news-ticker-track:hover { animation-play-state: paused; }
+
+/* Markdown prose styling (używane zamiast @tailwindcss/typography) */
+.md-content { line-height: 1.65; }
+.md-content > *:first-child { margin-top: 0 !important; }
+.md-content > *:last-child  { margin-bottom: 0 !important; }
+
+.md-content h1 {
+  font-size: 1.4rem; font-weight: 800; margin: 1.4rem 0 0.6rem;
+  color: #ffffff; border-bottom: 1px solid var(--gray); padding-bottom: 0.4rem;
+}
+.md-content h2 {
+  font-size: 1.15rem; font-weight: 800; margin: 1.1rem 0 0.45rem;
+  color: #cba6f7;
+}
+.md-content h3 {
+  font-size: 1rem; font-weight: 700; margin: 0.9rem 0 0.35rem;
+  color: #89dceb;
+}
+.md-content h4, .md-content h5, .md-content h6 {
+  font-size: 0.9rem; font-weight: 700; margin: 0.75rem 0 0.3rem;
+  color: #b4befe;
+}
+.md-content p { margin: 0.5rem 0; }
+.md-content ul { list-style-type: disc;    margin: 0.5rem 0 0.5rem 1.4rem; }
+.md-content ol { list-style-type: decimal; margin: 0.5rem 0 0.5rem 1.4rem; }
+.md-content li { margin: 0.2rem 0; }
+.md-content li > p { margin: 0; }
+.md-content strong { color: var(--fg); font-weight: 600; }
+.md-content em     { color: var(--overlay); font-style: italic; }
+.md-content code {
+  background: var(--bg2); padding: 0.1rem 0.35rem; border-radius: 4px;
+  font-family: monospace; font-size: 0.85em; color: var(--accent);
+  border: 1px solid var(--gray);
+}
+.md-content pre {
+  background: var(--bg2); border: 1px solid var(--gray); border-radius: 8px;
+  padding: 0.75rem 1rem; margin: 0.75rem 0; overflow-x: auto;
+}
+.md-content pre code { background: none; border: none; padding: 0; }
+.md-content blockquote {
+  border-left: 3px solid var(--accent); padding-left: 1rem; margin: 0.75rem 0;
+  color: var(--overlay); font-style: italic;
+}
+.md-content hr { border: none; border-top: 1px solid var(--gray); margin: 1rem 0; }
+.md-content table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.875rem; }
+.md-content th {
+  background: var(--bg2); padding: 0.4rem 0.75rem; text-align: left;
+  font-weight: 600; border: 1px solid var(--gray);
+}
+.md-content td { padding: 0.35rem 0.75rem; border: 1px solid var(--gray); }
+.md-content tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.md-content a { color: var(--accent); text-decoration: underline; }
+.md-content a:hover { opacity: 0.8; }
+
+/* Wariant dla panelu analizy instrumentu — cieplejsze kolory nagłówków */
+.md-profile h1 {
+  font-size: 1.15rem; font-weight: 800; margin: 1.2rem 0 0.5rem;
+  color: var(--accent); border-bottom: 1px solid var(--gray); padding-bottom: 0.3rem;
+}
+.md-profile h2 {
+  font-size: 1.05rem; font-weight: 700; margin: 1rem 0 0.4rem;
+  color: var(--accent);
+}
+.md-profile h3 {
+  font-size: 0.95rem; font-weight: 700; margin: 0.8rem 0 0.3rem;
+  color: var(--yellow);
+}
+.md-profile h4, .md-profile h5, .md-profile h6 {
+  font-size: 0.875rem; font-weight: 600; margin: 0.6rem 0 0.25rem;
+  color: var(--green);
+}
+.md-profile strong { color: var(--fg); font-weight: 600; }
+.md-profile ol { list-style-type: decimal; margin: 0.5rem 0 0.5rem 1.4rem; }
+.md-profile ul { list-style-type: disc; margin: 0.5rem 0 0.5rem 1.4rem; }
+.md-profile li { margin: 0.25rem 0; }
+.md-profile li > p { margin: 0; }
+.md-profile p { margin: 0.45rem 0; }
+.md-profile em { color: var(--overlay); font-style: italic; }
+.md-profile blockquote {
+  border-left: 3px solid var(--accent); padding-left: 1rem; margin: 0.75rem 0;
+  color: var(--overlay); font-style: italic;
+}
+.md-profile hr { border: none; border-top: 1px solid var(--gray); margin: 0.75rem 0; }

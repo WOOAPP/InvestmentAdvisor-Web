@@ -4,9 +4,10 @@ import { useAuthStore } from './stores/authStore';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Reports from './pages/Reports';
 import Portfolio from './pages/Portfolio';
-import Chat from './pages/Chat';
+import Calendar from './pages/Calendar';
+import Charts from './pages/Charts';
+import History from './pages/History';
 import Settings from './pages/Settings';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -35,9 +36,10 @@ export default function App() {
           }
         >
           <Route path="/" element={<Dashboard />} />
-          <Route path="/reports" element={<Reports />} />
           <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/chat" element={<Chat />} />
+          <Route path="/calendar" element={<Calendar />} />
+          <Route path="/charts" element={<Charts />} />
+          <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

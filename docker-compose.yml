@@ -5,6 +5,7 @@ services:
       POSTGRES_USER: advisor
       POSTGRES_PASSWORD: advisor
       POSTGRES_DB: advisor
+      TZ: Europe/Warsaw
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -22,6 +23,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://advisor:advisor@postgres:5432/advisor
+      TZ: Europe/Warsaw
     ports:
       - "8000:8000"
     depends_on:

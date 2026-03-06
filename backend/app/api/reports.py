@@ -5,14 +5,17 @@ import logging
 from functools import partial
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
 from backend.app.models.report import Report
+from backend.app.models.token_usage import TokenUsage
 from backend.app.models.user import User
 from backend.app.schemas.report import ReportDetail, ReportSummary
+from backend.app.services.pricing import calculate_cost
 
 # Desktop business logic
 from config import DEFAULT_CONFIG, get_api_key
@@ -20,6 +23,7 @@ from modules.ai_engine import run_analysis
 from modules.market_data import get_all_instruments, format_market_summary
 from modules.scraper import scrape_all
 from modules.macro_trend import build_macro_payload
+from modules.calendar_data import fetch_calendar_14d, format_calendar_for_ai
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +77,24 @@ async def get_report(
     return report
 
 
+class RunRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+
+
 @router.post("/run", status_code=202)
 async def run_analysis_endpoint(
     background_tasks: BackgroundTasks,
+    body: RunRequest = RunRequest(),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Start an analysis in the background. Returns immediately."""
     config = _merge_config(user)
+    if body.provider:
+        config["ai_provider"] = body.provider
+    if body.model:
+        config["ai_model"] = body.model
     background_tasks.add_task(_run_analysis_task, user.id, config)
     return {"status": "analysis_started"}
 
@@ -109,6 +123,15 @@ async def _run_analysis_task(user_id: int, config: dict):
         except Exception as e:
             logger.warning("Macro payload build failed: %s", e)
 
+        # Fetch economic calendar for upcoming week and append to macro context
+        try:
+            cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
+            calendar_text = format_calendar_for_ai(cal_events, days=7)
+            if calendar_text:
+                macro_text = (macro_text + "\n\n" + calendar_text) if macro_text else calendar_text
+        except Exception as e:
+            logger.warning("Calendar fetch for analysis failed: %s", e)
+
         # Scrape sources
         scraped_text = ""
         sources = config.get("sources", [])
@@ -129,17 +152,32 @@ async def _run_analysis_task(user_id: int, config: dict):
         async with async_session() as db:
             risk_level = 0
             text = result.get("text", "") if isinstance(result, dict) else str(result)
+            inp = result.get("input_tokens", 0) if isinstance(result, dict) else 0
+            out = result.get("output_tokens", 0) if isinstance(result, dict) else 0
+            provider = config.get("ai_provider", "openai")
+            model = config.get("ai_model", "")
             report = Report(
                 user_id=user_id,
-                provider=config.get("ai_provider"),
-                model=config.get("ai_model"),
+                provider=provider,
+                model=model,
                 market_summary=market_summary,
                 analysis=text,
                 risk_level=risk_level,
-                input_tokens=result.get("input_tokens", 0) if isinstance(result, dict) else 0,
-                output_tokens=result.get("output_tokens", 0) if isinstance(result, dict) else 0,
+                input_tokens=inp,
+                output_tokens=out,
             )
             db.add(report)
+            if inp > 0 or out > 0:
+                cost = calculate_cost(provider, model, inp, out)
+                db.add(TokenUsage(
+                    user_id=user_id,
+                    provider=provider,
+                    model=model,
+                    input_tokens=inp,
+                    output_tokens=out,
+                    cost_usd=cost,
+                    request_type="analysis",
+                ))
             await db.commit()
             logger.info("Analysis complete for user %d, report saved", user_id)
     except Exception:

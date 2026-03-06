@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import logging
 import threading
 from modules.http_client import safe_get
+
+_WARSAW = ZoneInfo("Europe/Warsaw")
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +203,111 @@ def _fetch_thisweek():
         return [], str(exc)
 
 
+def _fetch_nextweek():
+    """Fetch next week from ForexFactory.
+
+    Returns: (events_list, error_str_or_None)
+    """
+    url = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
+    try:
+        r = safe_get(url, timeout=(8, 15))
+        r.raise_for_status()
+        data = r.json()
+        return _parse_ff_json(data), None
+    except Exception as exc:
+        logger.warning("Calendar nextweek fetch failed: %s", exc)
+        return [], str(exc)
+
+
+_calendar_14d_cache: dict = {"events": [], "ts": None}
+_calendar_14d_lock = threading.Lock()
+
+
+def fetch_calendar_14d():
+    """Fetch economic calendar for today + next 14 days (thisweek + nextweek).
+
+    Returns: (events_list, error_str_or_None)
+    Each event dict has keys:
+        date, time, flag, country, event, impact_icon, impact_label,
+        impact_raw, forecast, previous, significance
+    """
+    now = datetime.now(_WARSAW).timestamp()
+    with _calendar_14d_lock:
+        if (_calendar_14d_cache["ts"] is not None
+                and now - _calendar_14d_cache["ts"] < _CALENDAR_CACHE_TTL
+                and _calendar_14d_cache["events"]):
+            cached = list(_calendar_14d_cache["events"])
+            cutoff = (datetime.now(_WARSAW).date() + timedelta(days=14)).strftime("%Y-%m-%d")
+            today_str = datetime.now(_WARSAW).date().strftime("%Y-%m-%d")
+            return [e for e in cached if today_str <= e["date"] <= cutoff], None
+
+    this_events, this_err = _fetch_thisweek()
+    next_events, next_err = _fetch_nextweek()
+
+    all_events = this_events + next_events
+    if not all_events:
+        return [], this_err or next_err
+
+    # Deduplicate by (date, time, event, country)
+    seen = set()
+    unique = []
+    for e in all_events:
+        key = (e["date"], e["time"], e["event"], e["country"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(e)
+
+    unique.sort(key=lambda x: (x["date"], x["time"]))
+
+    with _calendar_14d_lock:
+        _calendar_14d_cache["events"] = unique
+        _calendar_14d_cache["ts"] = datetime.now(_WARSAW).timestamp()
+
+    today_str = datetime.now(_WARSAW).date().strftime("%Y-%m-%d")
+    cutoff = (datetime.now(_WARSAW).date() + timedelta(days=14)).strftime("%Y-%m-%d")
+    return [e for e in unique if today_str <= e["date"] <= cutoff], None
+
+
+def format_calendar_for_ai(events, days=7):
+    """Format calendar events into a compact text block for AI context.
+
+    Filters to the next `days` days, High+Medium impact only.
+    Returns a ready-to-inject string (empty string if no relevant events).
+    """
+    if not events:
+        return ""
+    from datetime import timedelta
+    today = datetime.now(_WARSAW).date()
+    today_str = today.strftime("%Y-%m-%d")
+    cutoff_str = (today + timedelta(days=days)).strftime("%Y-%m-%d")
+
+    filtered = [
+        e for e in events
+        if today_str <= e.get("date", "") <= cutoff_str
+        and e.get("impact_raw", "") in ("High", "Medium")
+    ]
+    if not filtered:
+        return ""
+
+    lines = [f"=== KALENDARZ MAKROEKONOMICZNY (najbliższe {days} dni, wpływ Wysoki/Średni) ==="]
+    current_date = None
+    for e in filtered:
+        if e["date"] != current_date:
+            current_date = e["date"]
+            lines.append(f"\n{e['date']}:")
+        impact_str = f"{e.get('impact_icon', '')} {e.get('impact_label', '')}".strip()
+        parts = [f"  {e.get('time', ''):5}  {e.get('flag', '')} {e.get('country', ''):4}  [{impact_str}]  {e.get('event', '')}"]
+        if e.get("forecast"):
+            parts[0] += f"  Prognoza: {e['forecast']}"
+        if e.get("previous"):
+            parts[0] += f"  Poprz: {e['previous']}"
+        lines.append(parts[0])
+        sig = e.get("significance", "")
+        if sig and sig != "Dane makroekonomiczne":
+            lines.append(f"         → {sig}")
+    return "\n".join(lines)
+
+
 def fetch_calendar():
     """Fetch economic calendar — events from today to end of week.
 
@@ -209,13 +317,13 @@ def fetch_calendar():
         date, time, flag, country, event, impact_icon, impact_label,
         impact_raw, forecast, previous, significance
     """
-    now = datetime.now().timestamp()
+    now = datetime.now(_WARSAW).timestamp()
     with _calendar_cache_lock:
         if (_calendar_cache["ts"] is not None
                 and now - _calendar_cache["ts"] < _CALENDAR_CACHE_TTL
                 and _calendar_cache["events"]):
             cached = list(_calendar_cache["events"])
-            today_str = datetime.now().date().strftime("%Y-%m-%d")
+            today_str = datetime.now(_WARSAW).date().strftime("%Y-%m-%d")
             return [e for e in cached if e["date"] >= today_str], None
 
     events, err = _fetch_thisweek()
@@ -235,8 +343,8 @@ def fetch_calendar():
 
     with _calendar_cache_lock:
         _calendar_cache["events"] = unique
-        _calendar_cache["ts"] = datetime.now().timestamp()
+        _calendar_cache["ts"] = datetime.now(_WARSAW).timestamp()
 
     # Filter from today onward
-    today_str = datetime.now().date().strftime("%Y-%m-%d")
+    today_str = datetime.now(_WARSAW).date().strftime("%Y-%m-%d")
     return [e for e in unique if e["date"] >= today_str], None

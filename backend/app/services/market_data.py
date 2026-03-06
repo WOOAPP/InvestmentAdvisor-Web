@@ -1,55 +1,57 @@
+"""Pobieranie danych rynkowych — wersja web, niezależna od aplikacji desktopowej.
+
+Kopia z modules/market_data.py z dostosowanymi importami.
+Źródła danych: yfinance, CoinGecko, Stooq.
+"""
+
 import re
 import yfinance as yf
 import requests
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from backend.app.services.constants import APP_TIMEZONE
 import logging
 import threading as _threading
 import time as _time
 import pandas as pd
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import get_api_key
-from modules.http_client import safe_get
-from constants import (
+
+from .http_client import safe_get
+from .constants import (
     FX_CACHE_TTL, YFINANCE_HISTORY_PERIOD,
     PRICE_ROUND_DECIMALS, CHANGE_PCT_ROUND_DECIMALS,
     NEWS_DEFAULT_PAGE_SIZE,
 )
 
-# Allowed pattern for financial symbols used in URL construction.
-# Covers yfinance (e.g. ^GDAXI, EURUSD=X, GC=F, WIG20.WA), CoinGecko
-# slug (e.g. bitcoin, ethereum), and Stooq (e.g. wig20).
+# Dozwolony wzorzec dla symboli finansowych (używany w URL).
+# Obejmuje yfinance (^GDAXI, EURUSD=X, GC=F, WIG20.WA),
+# CoinGecko slug (bitcoin, ethereum) i Stooq (wig20).
 _SYMBOL_RE = re.compile(r'^[\w\-\.\^=]+$', re.ASCII)
 
 
 def _validate_symbol(symbol: str, source: str = "") -> bool:
-    """Return True if symbol is safe to interpolate into a URL path/query."""
+    """Zwraca True jeśli symbol jest bezpieczny do wstawienia w URL."""
     if not symbol or len(symbol) > 50:
         return False
     return bool(_SYMBOL_RE.match(symbol))
 
+
 # ── COINGECKO CACHE ──
-_CG_PRICE_TTL      = 600   # 10 min — free tier ~30 req/min, nie bijemy zbyt często
-_CG_SPARKLINE_TTL  = 3600  # 1 h  — sparkline zmienia się wolno (interwał dzienny)
-_cg_price_cache     = {}   # {coin_id: (data_dict, ts)}
-_cg_sparkline_cache = {}   # {coin_id: (list,      ts)}
-_cg_lock            = _threading.Lock()
+_CG_PRICE_TTL     = 600   # 10 min
+_CG_SPARKLINE_TTL = 3600  # 1 h
+_cg_price_cache    = {}   # {coin_id: (data_dict, ts)}
+_cg_sparkline_cache = {}  # {coin_id: (list, ts)}
+_cg_lock           = _threading.Lock()
 
 # ── COINGECKO RATE LIMITER ──
-# Free tier: ~30 req/min = 1 req/2s. Używamy 2.5s marginesu bezpieczeństwa.
-_CG_MIN_INTERVAL    = 2.5  # sekundy między requestami do CoinGecko
-_cg_last_req_ts     = 0.0
-_cg_req_lock        = _threading.Lock()
+_CG_MIN_INTERVAL = 2.5  # sekundy między requestami (free tier ~30 req/min)
+_cg_last_req_ts  = 0.0
+_cg_req_lock     = _threading.Lock()
 
 # ── COINGECKO 429 BACKOFF ──
-# Po 429 nie próbujemy ponownie przez _CG_BACKOFF_SECONDS.
 _CG_BACKOFF_SECONDS = 60
-_cg_backoff_until   = 0.0  # timestamp do którego nie robimy requestów
+_cg_backoff_until   = 0.0
 
 
 def _cg_rate_wait():
-    """Serializuje requesty do CoinGecko i pilnuje minimalnego odstępu."""
     global _cg_last_req_ts
     with _cg_req_lock:
         now = _time.time()
@@ -58,9 +60,11 @@ def _cg_rate_wait():
             _time.sleep(wait)
         _cg_last_req_ts = _time.time()
 
+
 logger = logging.getLogger(__name__)
 
-# ── YAHOO FINANCE ──
+
+# ── YAHOO FINANCE ──────────────────────────────────────────────────
 def get_yfinance_data(symbol, name=""):
     try:
         ticker = yf.Ticker(symbol)
@@ -68,7 +72,6 @@ def get_yfinance_data(symbol, name=""):
         if hist.empty:
             return {"name": name or symbol, "error": "brak danych"}
 
-        # Robust conversion - handle NaN, strings, and non-numeric values
         closes = pd.to_numeric(hist["Close"], errors="coerce").dropna()
         if closes.empty:
             return {"name": name or symbol, "error": "brak danych cenowych"}
@@ -78,7 +81,6 @@ def get_yfinance_data(symbol, name=""):
         change = current - prev
         change_pct = (change / prev) * 100 if prev != 0 else 0
 
-        # Handle volume safely (indices often have NaN volume)
         vol = 0
         if "Volume" in hist.columns:
             last_vol = hist["Volume"].iloc[-1]
@@ -105,42 +107,37 @@ def get_yfinance_data(symbol, name=""):
             "low_5d": round(float(closes.min()), PRICE_ROUND_DECIMALS),
             "sparkline": sparkline,
             "source": "yfinance",
-            "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
+            "timestamp": datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d %H:%M"),
         }
     except (requests.RequestException, KeyError, ValueError, TypeError) as e:
         logger.warning("yfinance %s failed: %s", symbol, e)
         return {"name": name or symbol, "error": str(e)}
 
-# ── COINGECKO ──
+
+# ── COINGECKO ──────────────────────────────────────────────────────
 def _cg_is_backed_off():
-    """Sprawdza czy jesteśmy w okresie backoff po 429."""
     return _time.time() < _cg_backoff_until
 
 
 def _cg_fetch_prices_batch(coin_ids):
-    """Pobiera ceny wielu monet jednym żądaniem do CoinGecko.
-
-    Zwraca dict {coin_id: {usd, usd_24h_change, usd_24h_vol}} lub {} przy błędzie.
-    Wyniki trafiają do _cg_price_cache.
-    Przy 429 ustawia backoff i zwraca {} (caller powinien użyć stale cache).
-    """
     global _cg_backoff_until
     if _cg_is_backed_off():
         logger.debug("CoinGecko backoff active, skipping request")
         return {}
     _cg_rate_wait()
     ids_str = ",".join(coin_ids)
-    url = (f"https://api.coingecko.com/api/v3/simple/price"
-           f"?ids={ids_str}&vs_currencies=usd"
-           f"&include_24hr_change=true&include_24hr_vol=true")
+    url = (
+        f"https://api.coingecko.com/api/v3/simple/price"
+        f"?ids={ids_str}&vs_currencies=usd"
+        f"&include_24hr_change=true&include_24hr_vol=true"
+    )
     try:
         r = safe_get(url)
     except requests.RequestException as exc:
         status = getattr(getattr(exc, "response", None), "status_code", None)
         if status == 429:
             _cg_backoff_until = _time.time() + _CG_BACKOFF_SECONDS
-            logger.warning("CoinGecko 429 — backoff %ds, using cached data",
-                           _CG_BACKOFF_SECONDS)
+            logger.warning("CoinGecko 429 — backoff %ds", _CG_BACKOFF_SECONDS)
             return {}
         raise
     batch = r.json()
@@ -152,27 +149,22 @@ def _cg_fetch_prices_batch(coin_ids):
 
 
 def _cg_get_sparkline(coin_id):
-    """Zwraca sparkline z cache lub pobiera (TTL 1 h).
-
-    Przy backoff zwraca stale cache (lub []).
-    """
     with _cg_lock:
         cached = _cg_sparkline_cache.get(coin_id)
     if cached and (_time.time() - cached[1]) < _CG_SPARKLINE_TTL:
         return cached[0]
-    # Nie robimy nowych requestów podczas backoff
     if _cg_is_backed_off():
         return cached[0] if cached else []
     try:
         _cg_rate_wait()
-        chart_url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
-                     f"/market_chart?vs_currency=usd&days=5&interval=daily")
+        chart_url = (
+            f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+            f"/market_chart?vs_currency=usd&days=5&interval=daily"
+        )
         cr = safe_get(chart_url)
-        sparkline = [round(p[1], PRICE_ROUND_DECIMALS)
-                     for p in cr.json().get("prices", [])]
+        sparkline = [round(p[1], PRICE_ROUND_DECIMALS) for p in cr.json().get("prices", [])]
     except (requests.RequestException, KeyError, ValueError) as e:
         logger.debug("CoinGecko sparkline for %s unavailable: %s", coin_id, e)
-        # Zwróć stale cache zamiast pustej listy
         return cached[0] if cached else []
     with _cg_lock:
         _cg_sparkline_cache[coin_id] = (sparkline, _time.time())
@@ -180,7 +172,6 @@ def _cg_get_sparkline(coin_id):
 
 
 def _cg_build_result(coin_id, name, data, sparkline):
-    """Buduje dict wyniku z surowych danych CoinGecko."""
     price = data.get("usd", 0)
     change_pct = round(data.get("usd_24h_change", 0), CHANGE_PCT_ROUND_DECIMALS)
     change = high_5d = low_5d = 0
@@ -199,15 +190,11 @@ def _cg_build_result(coin_id, name, data, sparkline):
         "low_5d": low_5d,
         "sparkline": sparkline,
         "source": "coingecko",
-        "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M"),
+        "timestamp": datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d %H:%M"),
     }
 
 
 def get_coingecko_data(coin_id, name=""):
-    """Pobiera dane jednej monety (z cache lub przez batch-fetch).
-
-    Przy błędzie 429 zwraca przeterminowane dane z cache (graceful degradation).
-    """
     with _cg_lock:
         cached = _cg_price_cache.get(coin_id)
     if cached and (_time.time() - cached[1]) < _CG_PRICE_TTL:
@@ -218,12 +205,10 @@ def get_coingecko_data(coin_id, name=""):
             data = batch.get(coin_id, {})
         except (requests.RequestException, KeyError, ValueError, TypeError) as e:
             logger.warning("CoinGecko %s failed: %s", coin_id, e)
-            # Graceful degradation: zwróć stale cache jeśli dostępny
             if cached:
                 data = cached[0]
             else:
                 return {"name": name or coin_id, "error": str(e)}
-        # batch zwróciło {} (np. backoff) — użyj stale cache
         if not data and cached:
             data = cached[0]
     if not data:
@@ -231,7 +216,8 @@ def get_coingecko_data(coin_id, name=""):
     sparkline = _cg_get_sparkline(coin_id)
     return _cg_build_result(coin_id, name, data, sparkline)
 
-# ── STOOQ ──
+
+# ── STOOQ ──────────────────────────────────────────────────────────
 def get_stooq_data(symbol, name=""):
     try:
         url = f"https://stooq.pl/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
@@ -255,37 +241,31 @@ def get_stooq_data(symbol, name=""):
             "low_5d": round(float(parts[4]), PRICE_ROUND_DECIMALS),
             "sparkline": [round(open_, PRICE_ROUND_DECIMALS), round(close, PRICE_ROUND_DECIMALS)],
             "source": "stooq",
-            "timestamp": datetime.now(ZoneInfo("Europe/Warsaw")).strftime("%Y-%m-%d %H:%M")
+            "timestamp": datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d %H:%M"),
         }
     except (requests.RequestException, ValueError, IndexError) as e:
         logger.warning("Stooq %s failed: %s", symbol, e)
         return {"name": name or symbol, "error": str(e)}
 
-# ── FX RATES CACHE ──
-_fx_cache = {}       # {"PLNUSD": (rate, timestamp), ...}
-_fx_lock = _threading.Lock()
+
+# ── FX RATES CACHE ─────────────────────────────────────────────────
+_fx_cache = {}
+_fx_lock  = _threading.Lock()
 _FX_CACHE_TTL = FX_CACHE_TTL
 
-def get_fx_to_usd(currency):
-    """Return the multiplier that converts *currency* → USD.
 
-    E.g. for PLN it returns ~0.25 (1 PLN = 0.25 USD).
-    USD returns 1.0 immediately.  On failure returns None.
-    """
+def get_fx_to_usd(currency):
+    """Zwraca kurs currency → USD. USD = 1.0. None przy błędzie."""
     currency = currency.upper()
     if currency == "USD":
         return 1.0
-
     cache_key = f"{currency}USD"
     with _fx_lock:
         cached = _fx_cache.get(cache_key)
         if cached and (_time.time() - cached[1]) < _FX_CACHE_TTL:
             return cached[0]
-
-    # yfinance ticker format: PLNUSD=X, EURUSD=X
-    ticker_symbol = f"{currency}USD=X"
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = yf.Ticker(f"{currency}USD=X")
         hist = ticker.history(period=YFINANCE_HISTORY_PERIOD)
         if hist.empty:
             return None
@@ -297,25 +277,25 @@ def get_fx_to_usd(currency):
             _fx_cache[cache_key] = (rate, _time.time())
         return rate
     except (requests.RequestException, KeyError, ValueError, TypeError) as e:
-        logger.warning("FX fetch %s failed: %s", ticker_symbol, e)
+        logger.warning("FX fetch %sUSD=X failed: %s", currency, e)
         return None
 
 
-# ── POBIERZ WSZYSTKIE INSTRUMENTY ──
+# ── WSZYSTKIE INSTRUMENTY ──────────────────────────────────────────
 def get_all_instruments(instruments_config):
     """
-    instruments_config to lista słowników:
-    [{"symbol": "BTC-USD", "name": "Bitcoin", "category": "crypto", "source": "coingecko"}, ...]
+    instruments_config: [{"symbol": "BTC-USD", "name": "Bitcoin",
+                           "category": "crypto", "source": "coingecko"}, ...]
 
-    Instrumenty CoinGecko są pobierane jednym zbiorczym żądaniem (batch),
-    co drastycznie redukuje liczbę requestów i ryzyko 429.
+    CoinGecko: pobierane jednym zbiorczym żądaniem (batch).
+    yfinance/stooq: osobny request per instrument.
     """
     results = {}
-    cg_pending = []   # [(symbol, coin_id, name), ...]
+    cg_pending = []
 
     for inst in instruments_config:
         symbol = inst.get("symbol", "")
-        name = inst.get("name", symbol)
+        name   = inst.get("name", symbol)
         source = inst.get("source", "yfinance")
         if not symbol:
             continue
@@ -330,9 +310,7 @@ def get_all_instruments(instruments_config):
         else:
             results[symbol] = get_yfinance_data(symbol, name)
 
-    # ── Batch-fetch wszystkich CoinGecko monet jednym requestem ──
     if cg_pending:
-        # Pomiń monety, których cache jest aktualny
         to_fetch = []
         now = _time.time()
         with _cg_lock:
@@ -340,15 +318,11 @@ def get_all_instruments(instruments_config):
                 cached = _cg_price_cache.get(coin_id)
                 if not (cached and (now - cached[1]) < _CG_PRICE_TTL):
                     to_fetch.append(coin_id)
-
         if to_fetch:
             try:
                 _cg_fetch_prices_batch(to_fetch)
             except (requests.RequestException, KeyError, ValueError, TypeError) as e:
                 logger.warning("CoinGecko batch failed: %s", e)
-
-        # Zbuduj wyniki z cache (wypełnionego przez batch lub wcześniej).
-        # Przy 429/backoff używamy stale cache (przeterminowanych danych).
         for symbol, coin_id, name in cg_pending:
             with _cg_lock:
                 cached = _cg_price_cache.get(coin_id)
@@ -360,24 +334,22 @@ def get_all_instruments(instruments_config):
 
     return results
 
-# ── SPARKLINE PO PRZEDZIALE CZASOWYM ──
-_SPARK_CFG = {
-    "1m":  {"yf_period": "1d",  "yf_interval": "1m",  "cg_days": "1"},
+
+# ── SPARKLINE PO PRZEDZIALE CZASOWYM ──────────────────────────────
+_SPARK_CFG: dict[str, dict] = {
+    # Granularność świec (web frontend)
+    "5m":  {"yf_period": "1d",  "yf_interval": "5m",  "cg_days": "1"},
     "15m": {"yf_period": "5d",  "yf_interval": "15m", "cg_days": "1"},
     "1h":  {"yf_period": "5d",  "yf_interval": "1h",  "cg_days": "1"},
-    "6h":  {"yf_period": "30d", "yf_interval": "1h",  "cg_days": "7"},
     "24h": {"yf_period": "60d", "yf_interval": "1d",  "cg_days": "30"},
-    # Timeframe'y używane przez web frontend (granularność świec)
-    "5m":  {"yf_period": "1d",  "yf_interval": "5m",  "cg_days": "1"},
     "72h": {"yf_period": "1y",  "yf_interval": "1d",  "cg_days": "90"},
+    # Zachowane dla kompatybilności
+    "1m":  {"yf_period": "1d",  "yf_interval": "1m",  "cg_days": "1"},
 }
 
-def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
-    """Zwraca listę cen (sparkline) dla danego przedziału czasowego.
 
-    source: 'yfinance', 'coingecko', 'stooq'
-    timeframe: '1m', '15m', '1h', '6h', '24h'
-    """
+def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
+    """Zwraca listę cen dla danego interwału czasowego."""
     cfg = _SPARK_CFG.get(timeframe, _SPARK_CFG["1h"])
     try:
         if source == "coingecko":
@@ -386,13 +358,14 @@ def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
                 logger.debug("CoinGecko backoff, skipping sparkline for %s", coin_id)
                 return []
             _cg_rate_wait()
-            url = (f"https://api.coingecko.com/api/v3/coins/{coin_id}"
-                   f"/market_chart?vs_currency=usd&days={cfg['cg_days']}")
+            url = (
+                f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+                f"/market_chart?vs_currency=usd&days={cfg['cg_days']}"
+            )
             r = safe_get(url)
-            return [round(float(p[1]), PRICE_ROUND_DECIMALS)
-                    for p in r.json().get("prices", [])]
+            return [round(float(p[1]), PRICE_ROUND_DECIMALS) for p in r.json().get("prices", [])]
         elif source == "stooq":
-            return []   # stooq nie wspiera danych intraday
+            return []  # stooq nie wspiera danych intraday
         else:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=cfg["yf_period"], interval=cfg["yf_interval"])
@@ -404,51 +377,6 @@ def get_sparkline_by_timeframe(symbol, timeframe, source="yfinance"):
         logger.warning("sparkline_by_timeframe %s %s failed: %s", symbol, timeframe, e)
         return []
 
-# ── LEGACY (zachowane dla kompatybilności) ──
-def get_market_data(symbols):
-    results = {}
-    for s in symbols:
-        results[s] = get_yfinance_data(s)
-    return results
-
-def get_crypto_data(coins=None):
-    if coins is None:
-        coins = ["bitcoin", "ethereum"]
-    results = {}
-    sym_map = {"bitcoin": "BTC-USD", "ethereum": "ETH-USD"}
-    for coin in coins:
-        results[sym_map.get(coin, coin)] = get_coingecko_data(coin, coin.capitalize())
-    return results
-
-def get_news(api_key, query="economy geopolitics markets", language="pl", page_size=10):
-    """Fetch latest news from Newsdata.io (legacy/fallback function)."""
-    if not api_key:
-        return []
-    try:
-        url = (f"https://newsdata.io/api/1/latest?"
-               f"apikey={api_key}&q={query}&language={language}"
-               f"&size={min(page_size, NEWS_DEFAULT_PAGE_SIZE)}")
-        r = safe_get(url)
-        data = r.json()
-        if data.get("status") == "error":
-            err = data.get("results", {})
-            msg = err.get("message", "") if isinstance(err, dict) else str(err)
-            logger.error("Newsdata.io error: %s", msg)
-            return [{"error": msg}]
-        return [
-            {
-                "title": a.get("title", ""),
-                "description": a.get("description", ""),
-                "source": a.get("source_id") or "",
-                "url": a.get("link") or "",
-                "published": a.get("pubDate", "")
-            }
-            for a in data.get("results", [])
-            if isinstance(a, dict) and a.get("title")
-        ]
-    except (requests.RequestException, ValueError, KeyError) as e:
-        logger.error("Błąd pobierania newsów: %s", e)
-        return [{"error": str(e)}]
 
 def format_market_summary(market_data, crypto_data=None):
     """Formatuje dane rynkowe do tekstu dla AI."""
@@ -461,7 +389,7 @@ def format_market_summary(market_data, crypto_data=None):
         "🪙 Kryptowaluty": [],
         "💱 Forex": [],
         "🛢️ Surowce": [],
-        "📊 Inne": []
+        "📊 Inne": [],
     }
 
     for symbol, d in all_data.items():
@@ -469,8 +397,10 @@ def format_market_summary(market_data, crypto_data=None):
             line = f"{d.get('name', symbol)}: błąd - {d['error']}"
         else:
             arrow = "▲" if d.get("change_pct", 0) >= 0 else "▼"
-            line = (f"{d.get('name', symbol)}: {d.get('price', 0)} "
-                    f"{arrow} {d.get('change_pct', 0):+.2f}%")
+            line = (
+                f"{d.get('name', symbol)}: {d.get('price', 0)} "
+                f"{arrow} {d.get('change_pct', 0):+.2f}%"
+            )
             if d.get("high_5d") and d.get("low_5d"):
                 line += f" (5d H:{d['high_5d']} L:{d['low_5d']})"
 
