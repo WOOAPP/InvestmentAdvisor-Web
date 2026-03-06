@@ -116,9 +116,8 @@ function GaugeChart({
 
   const v = Math.max(1, Math.min(10, value || 5));
   const frac = (v - 1) / 9;
-  // Dla ryzyka (invertNeedle): wysoka wartość → prawo (czerwone)
-  // Dla okazji: wysoka wartość → prawo (zielone)
-  const ndeg = invertNeedle ? (1 - frac) * 180 : frac * 180;
+  // Wysoka wartość → igła w prawo (dla ryzyka: prawo=czerwone, dla okazji: prawo=zielone)
+  const ndeg = (1 - frac) * 180;
   const tip = pt(ndeg, R - 10);
   const unknown = !value;
 
