@@ -76,8 +76,25 @@ def get_yfinance_data(symbol, name=""):
         if closes.empty:
             return {"name": name or symbol, "error": "brak danych cenowych"}
 
-        current = float(closes.iloc[-1])
-        prev = float(closes.iloc[-2]) if len(closes) >= 2 else current
+        # Użyj fast_info dla aktualnej ceny (real-time) zamiast wczorajszego close
+        current = None
+        prev = None
+        try:
+            fast = ticker.fast_info
+            lp = fast.last_price
+            pc = fast.previous_close
+            if lp is not None and not pd.isna(lp):
+                current = float(lp)
+            if pc is not None and not pd.isna(pc):
+                prev = float(pc)
+        except Exception:
+            pass
+
+        if current is None:
+            current = float(closes.iloc[-1])
+        if prev is None:
+            prev = float(closes.iloc[-2]) if len(closes) >= 2 else current
+
         change = current - prev
         change_pct = (change / prev) * 100 if prev != 0 else 0
 
@@ -237,8 +254,8 @@ def get_stooq_data(symbol, name=""):
             "change": round(close - open_, PRICE_ROUND_DECIMALS),
             "change_pct": round(change_pct, CHANGE_PCT_ROUND_DECIMALS),
             "volume": int(float(parts[7])) if len(parts) > 7 else 0,
-            "high_5d": round(float(parts[5]), PRICE_ROUND_DECIMALS),
-            "low_5d": round(float(parts[4]), PRICE_ROUND_DECIMALS),
+            "high_5d": round(float(parts[4]), PRICE_ROUND_DECIMALS),
+            "low_5d": round(float(parts[5]), PRICE_ROUND_DECIMALS),
             "sparkline": [round(open_, PRICE_ROUND_DECIMALS), round(close, PRICE_ROUND_DECIMALS)],
             "source": "stooq",
             "timestamp": datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d %H:%M"),

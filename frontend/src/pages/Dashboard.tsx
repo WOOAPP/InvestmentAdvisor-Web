@@ -291,6 +291,7 @@ export default function Dashboard() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [chatCtxOpen, setChatCtxOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [chatPrompt, setChatPrompt] = useState('');
   const [sources, setSources] = useState<string[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
@@ -940,6 +941,44 @@ export default function Dashboard() {
           </span>
         </div>
 
+        {/* Mobile: mini assessment bar — gauges ukryte w desktop sidebarze */}
+        {!selectedInstrument && (() => {
+          const r = assessment?.risk ?? (report?.risk_level ?? 0);
+          const o = assessment?.opportunity ?? 0;
+          const rColor = r === 0 ? '#6c7086' : r <= 3 ? '#a6e3a1' : r <= 6 ? '#f9e2af' : r <= 8 ? '#fab387' : '#f38ba8';
+          const oColor = o === 0 ? '#6c7086' : o >= 7 ? '#a6e3a1' : o >= 4 ? '#f9e2af' : '#f38ba8';
+          return (
+            <div className="md:hidden flex items-center gap-2 px-3 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)]/50 flex-shrink-0">
+              <button
+                onClick={() => setAssessmentModal('risk')}
+                className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
+              >
+                <span className="text-[var(--overlay)]">Ryzyko</span>
+                <span className="font-bold font-mono" style={{ color: rColor }}>
+                  {assessmentLoading && !assessment ? '…' : r > 0 ? `${r}/10` : '?'}
+                </span>
+              </button>
+              <button
+                onClick={() => setAssessmentModal('opportunity')}
+                className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
+              >
+                <span className="text-[var(--overlay)]">Okazja</span>
+                <span className="font-bold font-mono" style={{ color: oColor }}>
+                  {assessmentLoading && !assessment ? '…' : o > 0 ? `${o}/10` : '?'}
+                </span>
+              </button>
+              <button
+                onClick={() => fetchAssessment()}
+                disabled={assessmentLoading}
+                className="p-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 text-[var(--accent)] text-sm disabled:opacity-40 transition-colors active:bg-[var(--accent)]/20"
+                title="Odśwież ocenę"
+              >
+                ↻
+              </button>
+            </div>
+          );
+        })()}
+
         {marketExpanded && !selectedInstrument ? (
           /* ── Expanded market grid ────────────────────────── */
           <>
@@ -950,7 +989,7 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-4 min-h-0">
-              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
                 {orderedInstruments.map((inst, idx) => (
                   <div
                     key={inst.symbol}
@@ -1078,7 +1117,7 @@ export default function Dashboard() {
                   </span>
                 )}
                 {tickerSources.length > 0 && !analysisRunning && (
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--yellow)]/10 border border-[var(--yellow)]/35 select-none"
+                  <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--yellow)]/10 border border-[var(--yellow)]/35 select-none"
                     title={`${tickerSources.length} aktualnych newsów`}>
                     <span className="text-sm animate-bounce" style={{ animationDuration: '1.8s' }}>🔥</span>
                     <span className="text-[10px] font-bold text-[var(--yellow)] tracking-widest uppercase">Hot News</span>
@@ -1166,8 +1205,8 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Chat */}
-            <div className="border-t border-[var(--gray)] flex flex-col flex-shrink-0" style={{ height: `${chatHeight}px` }}>
+            {/* Chat — desktop only, mobile uses floating bubble */}
+            <div className="hidden md:flex border-t border-[var(--gray)] flex-col flex-shrink-0" style={{ height: `${chatHeight}px` }}>
               {/* Drag handle */}
               <div
                 onMouseDown={startResize}
@@ -1497,6 +1536,54 @@ export default function Dashboard() {
                 {portAdding ? 'Dodawanie…' : `Dodaj do ${portModal.tabType === 'zakupione' ? 'Long' : 'Short'}`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Mobile: floating chat bubble ══════════════════════════ */}
+      <button
+        className="md:hidden fixed bottom-5 right-4 z-40 w-14 h-14 rounded-full bg-[var(--accent)] text-[var(--bg)] shadow-2xl flex items-center justify-center text-2xl active:scale-95 transition-transform"
+        onClick={() => setChatOpen(true)}
+        title="Czat z AI"
+      >
+        💬
+      </button>
+
+      {/* ══ Mobile: chat overlay ═══════════════════════════════════ */}
+      {chatOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col bg-[var(--bg)]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+            <span className="text-sm font-bold uppercase tracking-widest">Czat z AI</span>
+            <button onClick={() => setChatOpen(false)} className="text-[var(--overlay)] hover:text-[var(--fg)] text-xl leading-none transition-colors">✕</button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 min-h-0">
+            {chatMessages.length === 0 && (
+              <p className="text-xs text-[var(--overlay)] text-center py-4">Zadaj pytanie o rynki i analizy...</p>
+            )}
+            {chatMessages.map((m, i) => (
+              <div key={i} className={`text-sm max-w-[85%] py-1 ${m.role === 'user' ? 'text-[#f9e2af] ml-auto text-right font-medium' : 'text-[#a6e3a1] chat-reply'}`}>
+                {m.content}
+              </div>
+            ))}
+            {chatLoading && <div className="text-sm text-[#a6e3a1] animate-pulse">Myślę...</div>}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="flex gap-2 px-4 py-3 border-t border-[var(--gray)] flex-shrink-0">
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+              placeholder="Napisz wiadomość..."
+              className="flex-1 bg-[var(--bg2)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm text-[var(--fg)] focus:border-[var(--accent)] outline-none transition-colors"
+              autoFocus
+            />
+            <button
+              onClick={sendChat}
+              disabled={chatLoading}
+              className="px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              Wyślij
+            </button>
           </div>
         </div>
       )}
