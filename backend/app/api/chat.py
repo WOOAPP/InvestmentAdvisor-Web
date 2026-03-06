@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -21,6 +22,25 @@ from modules.calendar_data import fetch_calendar_14d, format_calendar_for_ai
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# Cache kalendarza — TTL 1 godzina, współdzielony między wszystkimi userami
+_calendar_cache: tuple[str, float] | None = None  # (calendar_text, timestamp)
+_CALENDAR_TTL = 3600  # sekund
+
+
+async def _get_calendar_text() -> str:
+    global _calendar_cache
+    now = time.monotonic()
+    if _calendar_cache is not None and now - _calendar_cache[1] < _CALENDAR_TTL:
+        return _calendar_cache[0]
+    try:
+        cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
+        text = format_calendar_for_ai(cal_events, days=7)
+        _calendar_cache = (text, now)
+        return text
+    except Exception as e:
+        logger.warning("Calendar fetch for chat failed: %s", e)
+        return _calendar_cache[0] if _calendar_cache else ""
 
 
 class ChatMessage(BaseModel):
@@ -44,14 +64,10 @@ async def chat(body: ChatRequest, user: User = Depends(get_current_user)):
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     system = body.system_prompt or config.get("chat_prompt", "")
 
-    # Append upcoming-week macroeconomic calendar to system prompt
-    try:
-        cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
-        calendar_text = format_calendar_for_ai(cal_events, days=7)
-        if calendar_text:
-            system = (system + "\n\n" + calendar_text) if system else calendar_text
-    except Exception as e:
-        logger.warning("Calendar fetch for chat failed: %s", e)
+    # Append upcoming-week macroeconomic calendar to system prompt (cached 1h)
+    calendar_text = await _get_calendar_text()
+    if calendar_text:
+        system = (system + "\n\n" + calendar_text) if system else calendar_text
 
     reply, usage = await asyncio.to_thread(run_chat_with_usage, config, messages, system)
 

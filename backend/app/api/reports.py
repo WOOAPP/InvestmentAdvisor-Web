@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
+# Track users with a running analysis task (prevents duplicate concurrent runs)
+_running_analyses: set[int] = set()
+
 
 def _merge_config(user: User) -> dict:
     """Merge user config over default config (like desktop's load_config)."""
@@ -91,6 +94,8 @@ async def run_analysis_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """Start an analysis in the background. Returns immediately."""
+    if user.id in _running_analyses:
+        raise HTTPException(status_code=429, detail="Analiza już trwa. Poczekaj na zakończenie.")
     config = _merge_config(user)
     if body.provider:
         config["ai_provider"] = body.provider
@@ -102,45 +107,57 @@ async def run_analysis_endpoint(
 
 async def _run_analysis_task(user_id: int, config: dict):
     """Background task that runs the full analysis pipeline."""
+    _running_analyses.add(user_id)
     try:
         instruments_config = config.get("instruments", [])
-        # Fetch market data (blocking I/O)
-        market_data = await asyncio.to_thread(get_all_instruments, instruments_config)
-        market_summary = await asyncio.to_thread(
-            format_market_summary, market_data
-        )
+        sources = config.get("sources", [])
+        trusted = config.get("trusted_domains")
+        newsdata_key = get_api_key(config, "newsdata")
 
-        # Build macro payload (expects newsdata API key string, not config dict)
-        macro_text = ""
-        try:
-            newsdata_key = get_api_key(config, "newsdata")
-            macro_result = {}
-            if newsdata_key:
+        # Fetch all independent data sources in parallel
+        async def _fetch_macro() -> str:
+            if not newsdata_key:
+                return ""
+            try:
                 macro_result = await asyncio.to_thread(
                     partial(build_macro_payload, newsdata_key)
                 )
-            if isinstance(macro_result, dict):
-                macro_text = macro_result.get("llm_payload", "")
-        except Exception as e:
-            logger.warning("Macro payload build failed: %s", e)
+                if isinstance(macro_result, dict):
+                    return macro_result.get("llm_payload", "")
+            except Exception as e:
+                logger.warning("Macro payload build failed: %s", e)
+            return ""
 
-        # Fetch economic calendar for upcoming week and append to macro context
-        try:
-            cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
-            calendar_text = format_calendar_for_ai(cal_events, days=7)
-            if calendar_text:
-                macro_text = (macro_text + "\n\n" + calendar_text) if macro_text else calendar_text
-        except Exception as e:
-            logger.warning("Calendar fetch for analysis failed: %s", e)
+        async def _fetch_calendar() -> str:
+            try:
+                cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
+                return format_calendar_for_ai(cal_events, days=7)
+            except Exception as e:
+                logger.warning("Calendar fetch for analysis failed: %s", e)
+            return ""
 
-        # Scrape sources
-        scraped_text = ""
-        sources = config.get("sources", [])
-        if sources:
-            trusted = config.get("trusted_domains")
-            scraped_text = await asyncio.to_thread(
-                scrape_all, sources[:20], trusted_domains=trusted
-            )
+        async def _fetch_scrape() -> str:
+            if not sources:
+                return ""
+            try:
+                return await asyncio.to_thread(
+                    scrape_all, sources[:20], trusted_domains=trusted
+                )
+            except Exception as e:
+                logger.warning("Scrape failed: %s", e)
+            return ""
+
+        market_data, macro_text, calendar_text, scraped_text = await asyncio.gather(
+            asyncio.to_thread(get_all_instruments, instruments_config),
+            _fetch_macro(),
+            _fetch_calendar(),
+            _fetch_scrape(),
+        )
+
+        market_summary = await asyncio.to_thread(format_market_summary, market_data)
+
+        if calendar_text:
+            macro_text = (macro_text + "\n\n" + calendar_text) if macro_text else calendar_text
 
         # Run AI analysis (blocking)
         result = await asyncio.to_thread(
@@ -184,6 +201,8 @@ async def _run_analysis_task(user_id: int, config: dict):
             logger.info("Analysis complete for user %d, report saved", user_id)
     except Exception:
         logger.exception("Analysis task failed for user %d", user_id)
+    finally:
+        _running_analyses.discard(user_id)
 
 
 @router.delete("/{report_id}", status_code=204)

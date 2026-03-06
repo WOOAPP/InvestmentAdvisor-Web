@@ -30,6 +30,28 @@ _PROVIDER_DEFAULTS = {
 }
 
 
+# ── Client singletons (keyed by api_key to handle per-user keys) ──────────
+_anthropic_clients: dict[str, anthropic.Anthropic] = {}
+_openai_clients: dict[tuple, openai.OpenAI] = {}  # (api_key, base_url)
+
+
+def _get_anthropic_client(api_key: str) -> anthropic.Anthropic:
+    if api_key not in _anthropic_clients:
+        _anthropic_clients[api_key] = anthropic.Anthropic(
+            api_key=api_key, timeout=AI_PROVIDER_TIMEOUT)
+    return _anthropic_clients[api_key]
+
+
+def _get_openai_client(api_key: str, base_url: str | None = None) -> openai.OpenAI:
+    cache_key = (api_key, base_url)
+    if cache_key not in _openai_clients:
+        kwargs = {"api_key": api_key, "timeout": AI_PROVIDER_TIMEOUT}
+        if base_url:
+            kwargs["base_url"] = base_url
+        _openai_clients[cache_key] = openai.OpenAI(**kwargs)
+    return _openai_clients[cache_key]
+
+
 # ── Unified provider call ─────────────────────────────────────────
 def _openai_token_kwarg(model: str, max_tokens: int) -> dict:
     """Return the correct token-limit kwarg for the given OpenAI model.
@@ -49,18 +71,14 @@ def _call_provider(provider, api_key, model, system_prompt,
                    messages, max_tokens=AI_MAX_TOKENS_ANALYSIS):
     """Call Anthropic or OpenAI-compatible API. Returns (text, usage)."""
     if provider == "anthropic":
-        client = anthropic.Anthropic(
-            api_key=api_key, timeout=AI_PROVIDER_TIMEOUT)
+        client = _get_anthropic_client(api_key)
         response = client.messages.create(
             model=model, max_tokens=max_tokens,
             system=system_prompt, messages=messages)
         return response.content[0].text, getattr(response, "usage", None)
     else:
-        kwargs = {"api_key": api_key, "timeout": AI_PROVIDER_TIMEOUT}
         base_url = _PROVIDER_DEFAULTS.get(provider, {}).get("base_url")
-        if base_url:
-            kwargs["base_url"] = base_url
-        client = openai.OpenAI(**kwargs)
+        client = _get_openai_client(api_key, base_url)
         oai_messages = []
         if system_prompt:
             oai_messages.append({"role": "system", "content": system_prompt})
@@ -325,13 +343,13 @@ def get_available_models(provider):
             "gpt-4.1-mini",
         ],
         "openrouter": [
-            "anthropic/claude-sonnet-4",
-            "anthropic/claude-haiku-4",
-            "openai/gpt-4o",
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4-5",
             "openai/gpt-4.1",
+            "openai/gpt-4o",
             "openai/gpt-4o-mini",
-            "google/gemini-2.0-flash-001",
             "google/gemini-2.5-pro-preview",
+            "google/gemini-2.0-flash-001",
             "meta-llama/llama-3.3-70b-instruct",
             "deepseek/deepseek-chat-v3-0324",
             "mistralai/mistral-large-latest",

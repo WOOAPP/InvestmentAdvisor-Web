@@ -80,8 +80,8 @@ async def search_instruments(
     return [InstrumentSearchResult(**r) for r in results]
 
 
-# ── In-memory cache: per user, TTL 15 s ───────────────────────
-_INST_TTL = 15.0  # seconds
+# ── In-memory cache: per user, TTL 25 s (matches 30s polling interval) ───
+_INST_TTL = 25.0  # seconds
 _inst_cache: dict[int, tuple[list, float]] = {}  # user_id → (results, timestamp)
 
 
@@ -200,10 +200,17 @@ async def save_profile(
     await db.commit()
     return ProfileResponse(symbol=sym, profile_text=body.profile_text, created_at=now.isoformat())
 
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
 import json as _json
 import re as _re
 
 from backend.app.api.reports import _merge_config
+from backend.app.core.database import async_session
+from backend.app.models.token_usage import TokenUsage
+from backend.app.services.pricing import calculate_cost
 from modules.ai_engine import run_chat_with_usage
 
 
@@ -227,7 +234,8 @@ async def assess_market(body: AssessmentRequest, user: User = Depends(get_curren
     system = config.get("market_assessment_prompt", "")
 
     messages = [{"role": "user", "content": body.context or "Brak danych rynkowych."}]
-    reply, _ = await asyncio.to_thread(run_chat_with_usage, config, messages, system)
+    reply, usage = await asyncio.to_thread(run_chat_with_usage, config, messages, system)
+    asyncio.ensure_future(_log_assess_usage(user.id, usage))
 
     # Extract JSON from reply (AI may wrap it in markdown)
     m = _re.search(r'{[^{}]+}', reply, _re.DOTALL)
@@ -245,3 +253,27 @@ async def assess_market(body: AssessmentRequest, user: User = Depends(get_curren
         opportunity=max(1, min(10, int(data.get("opportunity", 5)))),
         opportunity_reason=str(data.get("opportunity_reason", "")),
     )
+
+
+async def _log_assess_usage(user_id: int, usage: dict) -> None:
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    if inp == 0 and out == 0:
+        return
+    provider = usage.get("provider", "unknown")
+    model = usage.get("model", "unknown")
+    cost = calculate_cost(provider, model, inp, out)
+    try:
+        async with async_session() as db:
+            db.add(TokenUsage(
+                user_id=user_id,
+                provider=provider,
+                model=model,
+                input_tokens=inp,
+                output_tokens=out,
+                cost_usd=cost,
+                request_type="assessment",
+            ))
+            await db.commit()
+    except Exception:
+        _logger.exception("Failed to log assess token usage for user %d", user_id)

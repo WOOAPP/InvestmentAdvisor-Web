@@ -426,7 +426,7 @@ export default function Dashboard() {
       setPickerProvider(defaultProvider);
       setPickerModel(defaultModel);
     }).catch(() => {});
-    const iv = setInterval(fetchInstruments, 5_000);
+    const iv = setInterval(() => { if (!document.hidden) fetchInstruments(); }, 30_000);
     const reportIv = setInterval(loadLatestReport, 120_000);
     // Natychmiastowy refresh po zmianie listy instrumentów w Ustawieniach
     window.addEventListener('instruments-changed', fetchInstruments);
@@ -1583,3 +1583,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
