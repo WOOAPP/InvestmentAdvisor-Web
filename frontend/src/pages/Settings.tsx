@@ -204,6 +204,11 @@ export default function Settings() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [ctxOpen, setCtxOpen] = useState<Record<string, boolean>>({});
 
+  // Prompt tab password gate
+  const [promptsUnlocked, setPromptsUnlocked] = useState(false);
+  const [promptPassword, setPromptPassword] = useState('');
+  const [promptPwdError, setPromptPwdError] = useState(false);
+
   // Stats
   const loginTime = useAuthStore((s) => s.loginTime);
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -701,7 +706,37 @@ export default function Settings() {
       )}
 
       {/* ── Prompty ──────────────────────────────────────────── */}
-      {activeTab === 'prompts' && (
+      {activeTab === 'prompts' && !promptsUnlocked && (
+        <div className="flex items-center justify-center py-20">
+          <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] p-6 w-full max-w-xs text-center">
+            <p className="text-sm text-[var(--overlay)] mb-4">Podaj hasło aby uzyskać dostęp do promptów</p>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (promptPassword === '666') {
+                setPromptsUnlocked(true);
+                setPromptPwdError(false);
+              } else {
+                setPromptPwdError(true);
+              }
+            }} className="space-y-3">
+              <input
+                type="password"
+                value={promptPassword}
+                onChange={(e) => { setPromptPassword(e.target.value); setPromptPwdError(false); }}
+                placeholder="Hasło"
+                autoFocus
+                className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm text-center focus:border-[var(--accent)] outline-none transition-colors"
+              />
+              {promptPwdError && <p className="text-xs text-[var(--red)]">Nieprawidłowe hasło</p>}
+              <button type="submit"
+                className="w-full px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] font-semibold text-sm hover:opacity-90 transition-opacity">
+                Odblokuj
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {activeTab === 'prompts' && promptsUnlocked && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
             {promptDefs.map((def) => (
