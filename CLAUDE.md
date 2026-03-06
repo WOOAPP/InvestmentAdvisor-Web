@@ -5,7 +5,7 @@
 **InvestmentAdvisor** is a financial market analysis platform that fetches real-time market data, news (Newsdata.io), and web-scraped content, then sends everything to AI models (Anthropic / OpenAI / OpenRouter) which generate detailed investment reports.
 
 **Architecture:** Web application (FastAPI + React) with legacy desktop app (Tkinter) still present.
-**Current status:** Web migration actively in progress — backend and frontend are functional, desktop app (`main.py`) preserved for reference.
+**Current status:** Web v1.0 deployed and live at `http://iadvisors-web.rafaldebski.com`. Desktop app (`main.py`) preserved for reference.
 
 ---
 
@@ -32,6 +32,26 @@ cd frontend && npm install && npm run dev
 ```bash
 pip install anthropic openai yfinance requests beautifulsoup4 matplotlib pandas schedule fpdf2
 python main.py
+```
+
+### Production (Hetzner VPS)
+```
+Server:  65.108.211.80 (Hetzner CX23, Ubuntu 24.04, Helsinki)
+Domain:  iadvisors-web.rafaldebski.com (GoDaddy DNS → A record)
+URL:     http://iadvisors-web.rafaldebski.com
+Path:    /opt/InvestmentAdvisor-Web
+```
+
+Deploy workflow:
+```bash
+# 1. Local: commit & push
+git add . && git commit -m "description" && git push origin main
+
+# 2. Server (ssh root@65.108.211.80):
+cd /opt/InvestmentAdvisor-Web && git pull
+cd frontend && npm run build && cd ..
+docker compose up --build -d
+docker compose exec backend alembic -c /app/backend/alembic.ini upgrade head  # if DB changes
 ```
 
 ### Running Tests (desktop modules)
@@ -442,14 +462,16 @@ Migrations auto-run on backend startup.
 ## Known Issues / TODO
 
 1. **Chat and Reports pages not routed** — `Chat.tsx` and `Reports.tsx` exist but are not in `App.tsx` routes
-2. **Desktop `main.py` is 4550+ LOC** — monolithic Tkinter class, preserved for reference
-3. **Synchronous AI calls** — `run_analysis()` / `run_chat()` block; no timeout to API clients
-4. **SSRF TOCTOU risk** — DNS validated at check time, HTTP request happens later
-5. **No SSRF on non-scraper HTTP** — CoinGecko/Stooq calls don't go through URL validator
-6. **Mixed module usage** — some backend routes use desktop `modules/` directly, others use `services/`
-7. **No WebSocket yet** — planned for real-time price updates, not implemented
-8. **Web pricing scrape brittle** — `openai_pricing.py` SPA scrape always fails, hardcoded fallback works
-9. **No web tests yet** — only desktop module tests exist
+2. **No HTTPS yet** — currently HTTP only; need Certbot/Let's Encrypt for SSL
+3. **Desktop `main.py` is 4550+ LOC** — monolithic Tkinter class, preserved for reference
+4. **Synchronous AI calls** — `run_analysis()` / `run_chat()` block; no timeout to API clients
+5. **SSRF TOCTOU risk** — DNS validated at check time, HTTP request happens later
+6. **No SSRF on non-scraper HTTP** — CoinGecko/Stooq calls don't go through URL validator
+7. **Mixed module usage** — some backend routes use desktop `modules/` directly, others use `services/`
+8. **No WebSocket yet** — planned for real-time price updates, not implemented
+9. **Web pricing scrape brittle** — `openai_pricing.py` SPA scrape always fails, hardcoded fallback works
+10. **No web tests yet** — only desktop module tests exist
+11. **PostgreSQL password** — default `advisor:advisor` in docker-compose; change for production
 
 ---
 
