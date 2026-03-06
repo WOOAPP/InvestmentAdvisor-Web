@@ -43,7 +43,6 @@ export default function Layout() {
         </div>
         <div className="flex items-center gap-3 text-sm">
           {statusMsg && (() => {
-            const isRunning = statusMsg !== 'Gotowy' && !statusMsg.toLowerCase().includes('blad') && !statusMsg.toLowerCase().includes('błąd');
             const isError   = statusMsg.toLowerCase().includes('blad') || statusMsg.toLowerCase().includes('błąd');
             const isReady   = statusMsg === 'Gotowy';
             return (
