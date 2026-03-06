@@ -66,7 +66,7 @@ export default function InstrumentCard({ data, selected = false, onClick }: Inst
       <div className="flex justify-between items-start">
         <div>
           <div className="text-sm text-[var(--overlay)]">{data.name}</div>
-          <div className="text-xl font-semibold mt-1">
+          <div className="text-lg sm:text-xl font-semibold mt-1">
             {data.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
           </div>
         </div>

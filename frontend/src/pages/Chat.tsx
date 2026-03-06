@@ -39,9 +39,9 @@ export default function Chat() {
   const mediumImpactCount = calendarEvents.filter((e) => e.impact_raw === 'Medium').length;
 
   return (
-    <div className="absolute inset-0 flex flex-col p-6">
+    <div className="absolute inset-0 flex flex-col p-3 sm:p-6">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Chat AI</h1>
+        <h1 className="text-xl sm:text-2xl font-bold">Chat AI</h1>
         {calendarEvents.length > 0 && (
           <div className="flex items-center gap-2 text-xs text-[var(--overlay)] bg-[var(--bg2)] border border-[var(--gray)] rounded-lg px-3 py-1.5">
             <span>📅 Kalendarz makro w kontekście:</span>
@@ -68,23 +68,23 @@ export default function Chat() {
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-[80%] py-1 ${
+            className={`max-w-[92%] sm:max-w-[80%] py-1 ${
               m.role === 'user'
                 ? 'text-[#f9e2af] ml-auto text-right font-medium'
                 : 'text-[#a6e3a1]'
             }`}
           >
             {m.role === 'assistant' ? (
-              <div className="md-content text-lg">
+              <div className="md-content text-base sm:text-lg">
                 <ReactMarkdown>{m.content}</ReactMarkdown>
               </div>
             ) : (
-              <p className="text-lg">{m.content}</p>
+              <p className="text-base sm:text-lg">{m.content}</p>
             )}
           </div>
         ))}
         {loading && (
-          <div className="text-[#a6e3a1] text-lg animate-pulse">
+          <div className="text-[#a6e3a1] text-base sm:text-lg animate-pulse">
             Mysle...
           </div>
         )}

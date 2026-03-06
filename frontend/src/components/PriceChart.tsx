@@ -160,7 +160,7 @@ export default function PriceChart({
           <button
             key={tf.value}
             onClick={() => setTimeframe(tf.value)}
-            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+            className={`px-3 py-2 sm:py-1 rounded text-xs font-medium transition-colors ${
               timeframe === tf.value
                 ? 'bg-[var(--accent)] text-[var(--bg)]'
                 : 'bg-[var(--gray)] text-[var(--fg)] hover:bg-[var(--overlay)]/60'

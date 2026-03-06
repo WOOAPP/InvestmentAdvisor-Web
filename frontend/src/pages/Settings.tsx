@@ -572,24 +572,24 @@ export default function Settings() {
                 {instruments.length === 0 ? (
                   <p className="text-sm text-[var(--overlay)] text-center py-8">Brak instrumentow. Dodaj pierwszy powyzej.</p>
                 ) : (
-                  <table className="w-full text-sm min-w-[500px]">
+                  <table className="w-full text-sm min-w-[340px]">
                     <thead>
                       <tr className="border-b border-[var(--gray)] bg-[var(--bg)]">
-                        <th className="text-left px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Symbol</th>
-                        <th className="text-left px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Nazwa</th>
-                        <th className="text-left px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Kategoria</th>
-                        <th className="text-left px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Zrodlo</th>
-                        <th className="px-4 py-2.5"></th>
+                        <th className="text-left px-3 sm:px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Symbol</th>
+                        <th className="text-left px-3 sm:px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold hidden sm:table-cell">Nazwa</th>
+                        <th className="text-left px-3 sm:px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Kategoria</th>
+                        <th className="text-left px-3 sm:px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold hidden md:table-cell">Zrodlo</th>
+                        <th className="px-3 sm:px-4 py-2.5"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {instruments.map((inst, i) => (
                         <tr key={i} className="border-b border-[var(--gray)] last:border-0 hover:bg-[var(--gray)]/20 transition-colors">
-                          <td className="px-4 py-3 font-mono font-semibold text-[var(--accent)]">{inst.symbol}</td>
-                          <td className="px-4 py-3">{inst.name}</td>
-                          <td className="px-4 py-3 text-xs text-[var(--overlay)]">{inst.category}</td>
-                          <td className="px-4 py-3 text-xs text-[var(--overlay)]">{inst.source}</td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-3 sm:px-4 py-3 font-mono font-semibold text-[var(--accent)]">{inst.symbol}</td>
+                          <td className="px-3 sm:px-4 py-3 hidden sm:table-cell">{inst.name}</td>
+                          <td className="px-3 sm:px-4 py-3 text-xs text-[var(--overlay)]">{inst.category}</td>
+                          <td className="px-3 sm:px-4 py-3 text-xs text-[var(--overlay)] hidden md:table-cell">{inst.source}</td>
+                          <td className="px-3 sm:px-4 py-3 text-right">
                             <button onClick={() => setInstruments(instruments.filter((_, j) => j !== i))}
                               className="text-xs text-[var(--red)] hover:underline">Usun</button>
                           </td>
@@ -766,12 +766,12 @@ export default function Settings() {
         if (!def) return null;
         return (
           <div
-            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3 sm:p-6"
             onClick={() => setExpandedKey(null)}
           >
             <div
               className="bg-[var(--bg2)] rounded-2xl border border-[var(--gray)] w-full max-w-5xl flex flex-col shadow-2xl"
-              style={{ height: '88vh' }}
+              style={{ height: '85vh', maxHeight: '85vh' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--gray)] flex-shrink-0">

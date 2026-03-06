@@ -87,7 +87,7 @@ export default function InstrumentProfilePanel({ symbol, name, systemPrompt }: P
         <button
           onClick={generate}
           disabled={generating || checking}
-          className="ml-3 px-4 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
+          className="ml-3 px-4 py-2 sm:py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
         >
           {generating ? 'Generuje...' : profile ? 'Regeneruj' : 'Generuj opis AI'}
         </button>

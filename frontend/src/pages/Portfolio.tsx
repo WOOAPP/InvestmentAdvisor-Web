@@ -252,7 +252,7 @@ export default function Portfolio() {
             className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-28" />
           <div className="relative">
             <input placeholder="Cena kupna" type="number" step="any" value={form.buy_price} onChange={(e) => setForm({ ...form, buy_price: e.target.value })} required
-              className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-32 pr-16" />
+              className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-32 pr-16" />
             {formPriceUsdRef.current != null && (
               <button
                 type="button"
@@ -285,13 +285,13 @@ export default function Portfolio() {
         <div className="text-[var(--overlay)] text-center py-8">Brak pozycji w tej zakladce.</div>
       ) : (
         <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0">
-        <table className="w-full text-sm min-w-[700px]">
+        <table className="w-full text-sm min-w-[480px]">
           <thead>
             <tr className="text-[var(--overlay)] border-b border-[var(--gray)]">
-              <th className="text-left py-2 pr-3">Data dodania</th>
-              <th className="text-left">Symbol</th><th className="text-left">Nazwa</th>
-              <th className="text-right">Ilosc</th><th className="text-right">Cena kupna</th>
-              <th className="text-right">Wartosc</th>
+              <th className="text-left py-2 pr-3 hidden sm:table-cell">Data dodania</th>
+              <th className="text-left">Symbol</th><th className="text-left hidden sm:table-cell">Nazwa</th>
+              <th className="text-right">Ilosc</th><th className="text-right hidden md:table-cell">Cena kupna</th>
+              <th className="text-right hidden md:table-cell">Wartosc</th>
               <th className="text-right">Akt. cena</th>
               <th className="text-right">Bilans</th>
               <th></th>
@@ -319,16 +319,16 @@ export default function Portfolio() {
               const toAlt = (usd: number) => altRate ? usd * altRate : null;
               return (
                 <tr key={p.id} className="border-b border-[var(--gray)] hover:bg-[var(--gray)]/30">
-                  <td className="py-2 pr-3 text-[var(--overlay)] text-xs whitespace-nowrap">{dateStr}</td>
-                  <td className="font-mono">{p.symbol}</td><td>{p.name}</td>
+                  <td className="py-2 pr-3 text-[var(--overlay)] text-xs whitespace-nowrap hidden sm:table-cell">{dateStr}</td>
+                  <td className="font-mono">{p.symbol}</td><td className="hidden sm:table-cell">{p.name}</td>
                   <td className="text-right">{p.quantity}</td>
-                  <td className="text-right">
+                  <td className="text-right hidden md:table-cell">
                     <div>{p.buy_price_usd.toFixed(2)} <span className="text-[var(--overlay)] text-xs">USD</span></div>
                     {hasAltCurrency && (
                       <div className="text-[var(--overlay)] text-xs">{p.buy_price.toFixed(2)} {p.buy_currency}</div>
                     )}
                   </td>
-                  <td className="text-right">
+                  <td className="text-right hidden md:table-cell">
                     <div>{costUsd.toFixed(2)} <span className="text-[var(--overlay)] text-xs">USD</span></div>
                     {hasAltCurrency && (
                       <div className="text-[var(--overlay)] text-xs">{(p.buy_price * p.quantity).toFixed(2)} {p.buy_currency}</div>
@@ -395,7 +395,7 @@ export default function Portfolio() {
       {forexInstruments.length > 0 && (
         <div className="mt-8">
           <h2 className="text-xs font-bold text-[var(--fg)] uppercase tracking-widest mb-3">Kursy walut</h2>
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
             {forexInstruments.map((inst) => (
               <ForexCard key={inst.symbol} data={inst} />
             ))}

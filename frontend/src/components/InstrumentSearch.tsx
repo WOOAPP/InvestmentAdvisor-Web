@@ -158,7 +158,7 @@ function Dropdown({
   onPick: (item: InstrumentSearchResult) => void;
 }) {
   return (
-    <div className="absolute z-50 top-full mt-1 left-0 min-w-[240px] bg-[var(--bg2)] border border-[var(--accent)]/40 rounded-xl shadow-xl overflow-hidden">
+    <div className="absolute z-50 top-full mt-1 left-0 w-[min(320px,calc(100vw-2rem))] bg-[var(--bg2)] border border-[var(--accent)]/40 rounded-xl shadow-xl overflow-hidden">
       {items.map((item) => (
         <button
           key={item.symbol}
@@ -166,11 +166,11 @@ function Dropdown({
           onMouseDown={(e) => { e.preventDefault(); onPick(item); }}
           className="w-full text-left px-3 py-2 hover:bg-[var(--gray)]/40 transition-colors flex items-center gap-2"
         >
-          <span className="font-mono text-xs font-bold text-[var(--accent)] w-20 flex-shrink-0 truncate">
+          <span className="font-mono text-xs font-bold text-[var(--accent)] w-16 sm:w-20 flex-shrink-0 truncate">
             {item.symbol}
           </span>
           <span className="text-sm text-[var(--fg)] truncate flex-1">{item.name}</span>
-          <span className="text-[10px] text-[var(--overlay)] flex-shrink-0">{item.type}</span>
+          <span className="text-[10px] text-[var(--overlay)] flex-shrink-0 hidden sm:inline">{item.type}</span>
         </button>
       ))}
     </div>

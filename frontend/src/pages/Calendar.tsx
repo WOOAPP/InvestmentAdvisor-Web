@@ -159,15 +159,15 @@ export default function Calendar() {
 
           {/* Events table */}
           <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm min-w-[600px]">
+            <table className="w-full text-sm min-w-[360px]">
               <thead>
                 <tr className="border-b border-[var(--gray)] bg-[var(--bg)]">
-                  <th className="text-left px-4 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-16">Czas</th>
-                  <th className="text-left px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-24">Kraj</th>
-                  <th className="text-left px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold">Wydarzenie</th>
-                  <th className="text-center px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-24">Waga</th>
-                  <th className="text-right px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-24">Prognoza</th>
-                  <th className="text-right px-4 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-24">Poprzednio</th>
+                  <th className="text-left px-2 sm:px-4 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-12 sm:w-16">Czas</th>
+                  <th className="text-left px-2 sm:px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold hidden sm:table-cell w-24">Kraj</th>
+                  <th className="text-left px-2 sm:px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold">Wydarzenie</th>
+                  <th className="text-center px-2 sm:px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-16 sm:w-24">Waga</th>
+                  <th className="text-right px-2 sm:px-3 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold hidden sm:table-cell w-24">Prognoza</th>
+                  <th className="text-right px-2 sm:px-4 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold hidden md:table-cell w-24">Poprzednio</th>
                 </tr>
               </thead>
               <tbody>
@@ -183,36 +183,37 @@ export default function Calendar() {
                           isExpanded ? 'bg-[var(--gray)]/30' : 'hover:bg-[var(--gray)]/20'
                         }`}
                       >
-                        <td className="px-4 py-3 font-mono text-xs text-[var(--overlay)] whitespace-nowrap">
+                        <td className="px-2 sm:px-4 py-3 font-mono text-xs text-[var(--overlay)] whitespace-nowrap">
                           {ev.time || '—'}
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
+                        <td className="px-2 sm:px-3 py-3 whitespace-nowrap hidden sm:table-cell">
                           <span className="mr-1.5">{ev.flag}</span>
                           <span className="text-xs text-[var(--overlay)] font-mono">{ev.country}</span>
                         </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2">
+                        <td className="px-2 sm:px-3 py-3">
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <span className="sm:hidden mr-0.5">{ev.flag}</span>
                             <span
                               className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${IMPACT_DOT[ev.impact_raw] ?? 'bg-[var(--overlay)]'}`}
                             />
                             <span className="font-medium text-[var(--fg)] leading-tight">{ev.event}</span>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-2 sm:px-3 py-3 text-center">
                           <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${IMPACT_COLORS[ev.impact_raw] ?? ''}`}>
                             {ev.impact_icon} {ev.impact_label}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right font-mono text-xs">
+                        <td className="px-2 sm:px-3 py-3 text-right font-mono text-xs hidden sm:table-cell">
                           {ev.forecast || <span className="text-[var(--overlay)]">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-[var(--overlay)]">
+                        <td className="px-2 sm:px-4 py-3 text-right font-mono text-xs text-[var(--overlay)] hidden md:table-cell">
                           {ev.previous || '—'}
                         </td>
                       </tr>
                       {isExpanded && (
                         <tr key={`${rowKey}-exp`} className="bg-[var(--bg)]/60 border-b border-[var(--gray)]">
-                          <td colSpan={6} className="px-4 py-4 space-y-3">
+                          <td colSpan={6} className="px-3 sm:px-4 py-3 sm:py-4 space-y-3">
                             {/* Znaczenie */}
                             <p className="text-xs text-[var(--overlay)] leading-relaxed">
                               <span className="text-[var(--accent)] font-semibold">Znaczenie: </span>
