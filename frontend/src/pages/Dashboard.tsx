@@ -538,6 +538,7 @@ export default function Dashboard() {
 
       // Pollujemy co 4s aż pojawi się nowy raport (max 6 minut)
       const deadline = Date.now() + 6 * 60_000;
+      let found = false;
       while (Date.now() < deadline) {
         await new Promise<void>((r) => setTimeout(r, 4000));
         const list = await getReports(1);
@@ -545,12 +546,14 @@ export default function Dashboard() {
           const newRep = await getReport(list[0].id);
           setReport(newRep);
           reportIdRef.current = newRep.id;
+          found = true;
+          // Build context with the fresh report (state not flushed yet)
+          setTimeout(() => fetchAssessment(), 500);
           break;
         }
       }
-      setStatusMsg('Gotowy');
+      setStatusMsg(found ? 'Gotowy' : 'Timeout — spróbuj ponownie');
       fetchSessionCost();
-      fetchAssessment();
     } catch {
       setStatusMsg('Blad analizy');
     } finally {
@@ -1130,6 +1133,8 @@ export default function Dashboard() {
             {/* Report info bar */}
             {report && (
               <div className="px-3 md:px-5 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 text-[10px] md:text-xs text-[var(--overlay)] flex items-center gap-2 md:gap-3 flex-wrap">
+                <span className="text-[var(--accent)] font-semibold mr-1">Aktualny raport</span>
+                <span className="text-[var(--gray)]">|</span>
                 <span>
                   <span className="text-[var(--fg)]/60 mr-1">Model:</span>
                   <span className="font-mono text-[var(--fg)]">{report.provider}/{report.model}</span>
@@ -1146,7 +1151,7 @@ export default function Dashboard() {
                   <>
                     <span className="text-[var(--gray)]">|</span>
                     <span>
-                      <span className="text-[var(--fg)]/60 mr-1">raport:</span>
+                      <span className="text-[var(--fg)]/60 mr-1">cena:</span>
                       <span className="font-mono text-[var(--green)]">{fmtUsd(c)}</span>
                     </span>
                   </>
@@ -1542,11 +1547,11 @@ export default function Dashboard() {
 
       {/* ══ Mobile: floating chat bubble ══════════════════════════ */}
       <button
-        className="md:hidden fixed bottom-5 right-4 z-40 w-14 h-14 rounded-full bg-[var(--accent)] text-[var(--bg)] shadow-2xl flex items-center justify-center text-2xl active:scale-95 transition-transform"
+        className="md:hidden fixed bottom-5 right-4 z-40 px-4 py-2.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] shadow-lg font-semibold text-xs tracking-wide active:scale-95 transition-all hover:opacity-90"
         onClick={() => setChatOpen(true)}
         title="Czat z AI"
       >
-        💬
+        Chat z IA
       </button>
 
       {/* ══ Mobile: chat overlay ═══════════════════════════════════ */}

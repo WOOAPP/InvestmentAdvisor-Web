@@ -38,9 +38,9 @@ export default function Layout() {
               <span className={`block w-5 h-0.5 bg-[var(--fg)] transition-transform ${menuOpen ? '-rotate-45 -translate-y-[3px]' : ''}`} />
             </button>
 
-            <div className="flex flex-col leading-tight">
-              <span className="text-[var(--accent)] font-bold text-lg md:text-2xl tracking-tight">InvestmentAdvisor</span>
-              <span className="text-[var(--overlay)] text-[10px] md:text-xs tracking-wide hidden sm:block">by R.Dębski inc.</span>
+            <div className="flex items-center gap-1.5">
+              <img src="/logo.png" alt="IAdvisor" className="h-12 md:h-[84px]" />
+              <span className="text-[var(--overlay)] text-[10px] md:text-xs tracking-wide">by R.Dębski inc.</span>
             </div>
 
             {/* Desktop nav links */}

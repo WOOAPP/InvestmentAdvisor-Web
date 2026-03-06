@@ -24,11 +24,11 @@ _REWRITE_MODEL = "gpt-4.1-nano"
 _REWRITE_PROVIDER = "openai"
 
 _SYSTEM_PROMPT = (
-    "Jestes redaktorem wiadomosci finansowych. "
-    "Otrzymasz liste tytulow newsow (po jednym w linii). "
-    "Dla kazdego tytulu napisz chwytliwy, zwiezly naglowek po polsku (maks 80 znakow). "
-    "Zachowaj sens i kluczowe fakty. Uzyj mocnych czasownikow. "
-    "Odpowiedz TYLKO lista przepisanych tytulow — po jednym w linii, w tej samej kolejnosci. "
+    "Jesteś redaktorem wiadomości finansowych. "
+    "Otrzymasz listę tytułów newsów (po jednym w linii). "
+    "Dla każdego tytułu napisz chwytliwy, zwięzły nagłówek po polsku (maks 80 znaków). "
+    "Zachowaj sens i kluczowe fakty. Użyj mocnych czasowników. "
+    "Odpowiedz TYLKO listą przepisanych tytułów — po jednym w linii, w tej samej kolejności. "
     "Bez numeracji, bez dodatkowego tekstu."
 )
 

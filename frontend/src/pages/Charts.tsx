@@ -7,7 +7,6 @@ import { sendMessage, type ChatMessage } from '../api/chat';
 import { getCalendar, type CalendarEvent } from '../api/calendar';
 import PriceChart from '../components/PriceChart';
 import InstrumentProfilePanel from '../components/InstrumentProfilePanel';
-import AdvisorAvatar from '../components/AdvisorAvatar';
 import api from '../api/client';
 import { useChatStorage } from '../hooks/useChatStorage';
 import { APP_TIMEZONE } from '../config';
@@ -556,11 +555,7 @@ export default function Charts() {
                 : 'text-[var(--overlay)]'
             }`}
           >
-            {tab === 'instruments' ? 'Instrumenty' : tab === 'chart' ? 'Wykres' : (
-              <span className="inline-flex items-center gap-1">
-                <AdvisorAvatar size={18} /> Chat
-              </span>
-            )}
+            {tab === 'instruments' ? 'Instrumenty' : tab === 'chart' ? 'Wykres' : 'Chat'}
           </button>
         ))}
       </div>

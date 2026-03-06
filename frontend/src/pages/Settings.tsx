@@ -200,7 +200,7 @@ export default function Settings() {
   const [assessmentPrompt, setAssessmentPrompt] = useState('');
 
   // Prompt editor state
-  const [defaults, setDefaults] = useState<Record<string, string>>({});
+  const [defaults, setDefaults] = useState<Record<string, any>>({});
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [ctxOpen, setCtxOpen] = useState<Record<string, boolean>>({});
 
@@ -520,12 +520,24 @@ export default function Settings() {
 
             {/* ── Lewa kolumna: instrumenty ─────────────────── */}
             <div className="flex-1 min-w-0 space-y-3 w-full">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-[var(--overlay)]">Obserwowane instrumenty ({instruments.length})</p>
-                <button onClick={() => setShowAddForm(!showAddForm)}
-                  className="px-4 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-semibold hover:opacity-90 transition-opacity">
-                  {showAddForm ? 'Anuluj' : '+ Dodaj instrument'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {instruments.length > 0 && (
+                    <button onClick={() => setInstruments([])}
+                      className="px-3 py-1.5 rounded-lg bg-[var(--red)]/15 text-[var(--red)] text-xs font-semibold hover:bg-[var(--red)]/25 transition-colors">
+                      Wyczyść wszystko
+                    </button>
+                  )}
+                  <button onClick={() => { const d = defaults?.instruments; if (Array.isArray(d)) setInstruments(d); }}
+                    className="px-3 py-1.5 rounded-lg bg-[var(--yellow)]/15 text-[var(--yellow)] text-xs font-semibold hover:bg-[var(--yellow)]/25 transition-colors">
+                    Przywróć domyślne
+                  </button>
+                  <button onClick={() => setShowAddForm(!showAddForm)}
+                    className="px-4 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-semibold hover:opacity-90 transition-opacity">
+                    {showAddForm ? 'Anuluj' : '+ Dodaj instrument'}
+                  </button>
+                </div>
               </div>
 
               {showAddForm && (
@@ -603,7 +615,7 @@ export default function Settings() {
 
             {/* ── Prawa kolumna: źródła ─────────────────────── */}
             <div className="w-full md:w-64 flex-shrink-0 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-[var(--overlay)]">Źródła web ({sources.length})</p>
                 <button onClick={() => setShowAddSource(!showAddSource)}
                   className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-semibold hover:opacity-90 transition-opacity">
@@ -645,6 +657,18 @@ export default function Settings() {
                     ))}
                   </ul>
                 )}
+              </div>
+              <div className="flex items-center gap-2">
+                {sources.length > 0 && (
+                  <button onClick={() => setSources([])}
+                    className="px-3 py-1.5 rounded-lg bg-[var(--red)]/15 text-[var(--red)] text-xs font-semibold hover:bg-[var(--red)]/25 transition-colors">
+                    Wyczyść wszystko
+                  </button>
+                )}
+                <button onClick={() => { const d = defaults?.sources; if (Array.isArray(d)) setSources(d); }}
+                  className="px-3 py-1.5 rounded-lg bg-[var(--yellow)]/15 text-[var(--yellow)] text-xs font-semibold hover:bg-[var(--yellow)]/25 transition-colors">
+                  Przywróć domyślne
+                </button>
               </div>
             </div>
           </div>

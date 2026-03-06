@@ -60,7 +60,7 @@ async def list_reports(
             func.substr(Report.analysis, 1, 200).label("preview"),
         )
         .where(Report.user_id == user.id)
-        .order_by(Report.created_at.desc())
+        .order_by(Report.created_at.desc(), Report.id.desc())
         .limit(limit)
     )
     return [ReportSummary.model_validate(row._mapping) for row in result]

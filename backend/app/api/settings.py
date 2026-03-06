@@ -7,7 +7,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
 from backend.app.models.user import User
-from config import DEFAULT_CONFIG
+from config import DEFAULT_CONFIG, DEFAULT_INSTRUMENTS
 from backend.app.api import market as _market_module
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -20,8 +20,11 @@ _PROMPT_KEYS = [
 
 @router.get("/defaults")
 async def get_prompt_defaults():
-    """Return factory-default prompt values (no auth required — they are public constants)."""
-    return {k: DEFAULT_CONFIG.get(k, "") for k in _PROMPT_KEYS}
+    """Return factory-default prompt values, instruments, and sources (no auth required)."""
+    result = {k: DEFAULT_CONFIG.get(k, "") for k in _PROMPT_KEYS}
+    result["instruments"] = DEFAULT_INSTRUMENTS
+    result["sources"] = DEFAULT_CONFIG.get("sources", [])
+    return result
 
 
 @router.get("")
