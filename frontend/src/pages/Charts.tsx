@@ -157,6 +157,7 @@ export default function Charts() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [chatCtxOpen, setChatCtxOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<'chart' | 'instruments' | 'chat'>('chart');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; html: string } | null>(null);
   const [selectedMsg, setSelectedMsg] = useState<number | null>(null);
 
@@ -283,6 +284,7 @@ export default function Charts() {
 
   const handleSelect = (inst: InstrumentData) => {
     setSelected(inst);
+    setMobilePanel('chart');
   };
 
   // ── Kontekst do wyświetlenia w panelu (bez base promptu) ─────
@@ -535,10 +537,27 @@ export default function Charts() {
   }
 
   return (
-    <div className="absolute inset-0 flex overflow-hidden">
+    <div className="absolute inset-0 flex flex-col md:flex-row overflow-hidden">
+
+      {/* ── Mobile tab bar ──────────────────────────────────── */}
+      <div className="md:hidden flex border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+        {(['instruments', 'chart', 'chat'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setMobilePanel(tab)}
+            className={`flex-1 px-3 py-2 text-xs font-bold uppercase tracking-widest transition-colors ${
+              mobilePanel === tab
+                ? 'text-[var(--accent)] border-b-2 border-[var(--accent)]'
+                : 'text-[var(--overlay)]'
+            }`}
+          >
+            {tab === 'instruments' ? 'Instrumenty' : tab === 'chart' ? 'Wykres' : 'Chat'}
+          </button>
+        ))}
+      </div>
 
       {/* ── Lista instrumentów (kafelki jak na Dashboard) ───── */}
-      <div className="w-64 flex-shrink-0 border-r border-[var(--gray)] flex flex-col bg-[var(--bg)] overflow-hidden">
+      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:flex w-full md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden`}>
         <div className="px-3 py-2 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)]">
           <input
             value={instSearch}
@@ -580,11 +599,11 @@ export default function Charts() {
       </div>
 
       {/* ── Obszar wykresu ────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0 border-r border-[var(--gray)]">
+      <div className={`${mobilePanel === 'chart' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden min-w-0 border-r border-[var(--gray)]`}>
         {selected ? (
           <>
             {/* Nagłówek */}
-            <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+            <div className="flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2 md:py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 flex-wrap">
               <div className="flex-1 min-w-0 flex items-baseline gap-2">
                 <span className="font-bold">{selected.name}</span>
                 {getInstrumentUnit(selected.symbol, selected.source) && (
@@ -649,7 +668,7 @@ export default function Charts() {
       </div>
 
       {/* ── Panel chatu ──────────────────────────────────────── */}
-      <div className="w-[340px] flex-shrink-0 flex flex-col bg-[var(--bg)] overflow-hidden">
+      <div className={`${mobilePanel === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-[340px] flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden`}>
         {/* Nagłówek chatu */}
         <div
           className="px-4 py-2.5 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)] cursor-pointer hover:bg-[var(--gray)]/30 transition-colors select-none"

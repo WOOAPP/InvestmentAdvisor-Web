@@ -28,7 +28,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="bg-[var(--bg2)] p-8 rounded-xl border border-[var(--gray)] w-full max-w-md">
+      <div className="bg-[var(--bg2)] p-4 sm:p-8 rounded-xl border border-[var(--gray)] w-full max-w-md mx-3 sm:mx-0">
         <h1 className="text-2xl font-bold text-[var(--accent)] mb-6 text-center">
           InvestmentAdvisor
         </h1>

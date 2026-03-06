@@ -29,18 +29,18 @@ export default function History() {
         >
           Wstecz
         </button>
-        <div className="bg-[var(--bg2)] rounded-lg p-6 border border-[var(--gray)]">
-          <div className="flex justify-between items-center mb-4">
+        <div className="bg-[var(--bg2)] rounded-lg p-4 md:p-6 border border-[var(--gray)]">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4">
             <div>
-              <span className="text-[var(--overlay)] text-sm">
+              <span className="text-[var(--overlay)] text-xs md:text-sm">
                 {new Date(selected.created_at).toLocaleString('pl-PL', { timeZone: APP_TIMEZONE })}
               </span>
-              <span className="ml-3 text-sm text-[var(--accent)]">
+              <span className="ml-2 text-xs md:text-sm text-[var(--accent)]">
                 {selected.provider} / {selected.model}
               </span>
             </div>
-            <div className="text-sm text-[var(--overlay)]">
-              Ryzyko: {selected.risk_level}/10 &nbsp;|&nbsp; Tokeny: {selected.input_tokens} in / {selected.output_tokens} out
+            <div className="text-xs md:text-sm text-[var(--overlay)]">
+              Ryzyko: {selected.risk_level}/10 | Tokeny: {selected.input_tokens} in / {selected.output_tokens} out
             </div>
           </div>
           <div className="prose prose-invert max-w-none">
@@ -53,7 +53,7 @@ export default function History() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Historia raportow</h1>
+      <h1 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">Historia raportow</h1>
       {loading ? (
         <div className="text-[var(--overlay)] text-center py-12">Ladowanie...</div>
       ) : reports.length === 0 ? (
@@ -68,13 +68,13 @@ export default function History() {
               onClick={() => openReport(r.id)}
               className="bg-[var(--bg2)] rounded-lg p-4 border border-[var(--gray)] hover:border-[var(--accent)] transition-colors text-left w-full"
             >
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-[var(--overlay)]">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+                <span className="text-xs sm:text-sm text-[var(--overlay)]">
                   {new Date(r.created_at).toLocaleString('pl-PL', { timeZone: APP_TIMEZONE })}
                 </span>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-[var(--overlay)]">Ryzyko: {r.risk_level}/10</span>
-                  <span className="text-sm text-[var(--accent)]">
+                  <span className="text-xs sm:text-sm text-[var(--accent)]">
                     {r.provider} / {r.model}
                   </span>
                 </div>

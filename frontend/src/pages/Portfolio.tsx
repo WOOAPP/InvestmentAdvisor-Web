@@ -208,8 +208,8 @@ export default function Portfolio() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Portfel</h1>
+      <div className="flex justify-between items-center mb-4 md:mb-6">
+        <h1 className="text-xl md:text-2xl font-bold">Portfel</h1>
         <button
           onClick={() => setShowForm(!showForm)}
           className="px-4 py-2 rounded bg-[var(--accent)] text-[var(--bg)] font-semibold text-sm"
@@ -218,7 +218,7 @@ export default function Portfolio() {
         </button>
       </div>
 
-      <div className="flex gap-1 mb-6">
+      <div className="flex gap-1 mb-4 md:mb-6">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -235,7 +235,7 @@ export default function Portfolio() {
       </div>
 
       {showForm && (
-        <form onSubmit={addPosition} className="bg-[var(--bg2)] rounded-lg p-4 border border-[var(--gray)] mb-6 flex flex-wrap gap-3 items-end">
+        <form onSubmit={addPosition} className="bg-[var(--bg2)] rounded-lg p-3 md:p-4 border border-[var(--gray)] mb-4 md:mb-6 flex flex-wrap gap-2 md:gap-3 items-end">
           <InstrumentSearch
             symbol={form.symbol}
             name={form.name}
@@ -245,11 +245,11 @@ export default function Portfolio() {
             symbolPlaceholder="Symbol"
             namePlaceholder="Nazwa"
             inputClassName="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
-            symbolWrapClassName="w-32"
-            nameWrapClassName="w-40"
+            symbolWrapClassName="w-full sm:w-32"
+            nameWrapClassName="w-full sm:w-40"
           />
           <input placeholder="Ilosc" type="number" step="any" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required
-            className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-28" />
+            className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-28" />
           <div className="relative">
             <input placeholder="Cena kupna" type="number" step="any" value={form.buy_price} onChange={(e) => setForm({ ...form, buy_price: e.target.value })} required
               className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-32 pr-16" />
@@ -284,7 +284,8 @@ export default function Portfolio() {
       ) : positions.length === 0 ? (
         <div className="text-[var(--overlay)] text-center py-8">Brak pozycji w tej zakladce.</div>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0">
+        <table className="w-full text-sm min-w-[700px]">
           <thead>
             <tr className="text-[var(--overlay)] border-b border-[var(--gray)]">
               <th className="text-left py-2 pr-3">Data dodania</th>
@@ -387,13 +388,14 @@ export default function Portfolio() {
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* ── Forex tiles ──────────────────────────────── */}
       {forexInstruments.length > 0 && (
         <div className="mt-8">
           <h2 className="text-xs font-bold text-[var(--fg)] uppercase tracking-widest mb-3">Kursy walut</h2>
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
             {forexInstruments.map((inst) => (
               <ForexCard key={inst.symbol} data={inst} />
             ))}

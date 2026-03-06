@@ -104,8 +104,8 @@ export default function Calendar() {
 
   return (
     <div className="max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Kalendarz ekonomiczny</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 md:mb-6">
+        <h1 className="text-xl md:text-2xl font-bold">Kalendarz ekonomiczny</h1>
         <div className="flex items-center gap-1 text-xs">
           {(['all', 'High', 'Medium'] as ImpactFilter[]).map((f) => (
             <button
@@ -120,8 +120,8 @@ export default function Calendar() {
               {f === 'all' ? 'Wszystkie' : f === 'High' ? 'Wysokie' : 'Srednie'}
             </button>
           ))}
-          <span className="ml-3 text-[var(--overlay)]">
-            {filtered.length} wydarzen · dzis + 14 dni
+          <span className="ml-2 text-[var(--overlay)]">
+            {filtered.length} wyd.
           </span>
         </div>
       </div>
@@ -158,8 +158,8 @@ export default function Calendar() {
           </div>
 
           {/* Events table */}
-          <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className="border-b border-[var(--gray)] bg-[var(--bg)]">
                   <th className="text-left px-4 py-2 text-[10px] text-[var(--overlay)] uppercase tracking-wide font-semibold w-16">Czas</th>

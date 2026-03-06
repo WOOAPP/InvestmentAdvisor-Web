@@ -840,10 +840,10 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="absolute inset-0 flex overflow-hidden p-4 gap-4">
+    <div className="absolute inset-0 flex overflow-hidden p-2 md:p-4 gap-2 md:gap-4">
 
       {/* ══ Left sidebar ══════════════════════════════════════ */}
-      <div className="w-[296px] flex-shrink-0 flex flex-col border border-[var(--gray)] bg-[var(--bg)] overflow-hidden rounded-2xl">
+      <div className="hidden md:flex w-[296px] flex-shrink-0 flex-col border border-[var(--gray)] bg-[var(--bg)] overflow-hidden rounded-2xl">
 
         {/* Assessment gauges — ryzyko i okazja */}
         {(() => {
@@ -930,6 +930,17 @@ export default function Dashboard() {
       {/* ══ Right panel ═══════════════════════════════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 border border-[var(--gray)] rounded-2xl bg-[var(--bg)]">
 
+        {/* Mobile: instruments toggle */}
+        <div
+          className="md:hidden px-3 py-2 border-b border-[var(--gray)] bg-[var(--bg2)] flex items-center justify-between cursor-pointer select-none"
+          onClick={() => { setMarketExpanded((v) => !v); setSelectedInstrument(null); }}
+        >
+          <span className="text-xs font-bold uppercase tracking-widest">Instrumenty</span>
+          <span className={`text-xs font-bold ${marketExpanded ? 'text-[var(--accent)]' : 'text-[var(--overlay)]'}`}>
+            {marketExpanded ? '▲' : '▼'}
+          </span>
+        </div>
+
         {marketExpanded && !selectedInstrument ? (
           /* ── Expanded market grid ────────────────────────── */
           <>
@@ -940,7 +951,7 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-4 min-h-0">
-              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
                 {orderedInstruments.map((inst, idx) => (
                   <div
                     key={inst.symbol}
@@ -968,10 +979,10 @@ export default function Dashboard() {
           /* ── Instrument view ─────────────────────────────── */
           <>
             {/* Header */}
-            <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 rounded-t-2xl">
+            <div className="flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2 md:py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 rounded-t-2xl flex-wrap">
               <div className="flex-1 min-w-0">
-                <span className="font-bold text-base">{selectedInstrument.name}</span>
-                <span className="ml-2 text-sm text-[var(--overlay)] font-mono">{selectedInstrument.symbol}</span>
+                <span className="font-bold text-sm md:text-base">{selectedInstrument.name}</span>
+                <span className="ml-2 text-xs md:text-sm text-[var(--overlay)] font-mono">{selectedInstrument.symbol}</span>
               </div>
               {selectedInstrument.price != null && (
                 <span className="text-lg font-bold font-mono tabular-nums flex-shrink-0">
@@ -1019,7 +1030,7 @@ export default function Dashboard() {
           /* ── Analysis view ───────────────────────────────── */
           <>
             {/* Action buttons */}
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 rounded-t-2xl">
+            <div className="flex items-center gap-2 px-3 md:px-5 py-2 md:py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 rounded-t-2xl flex-wrap">
               <button
                 onClick={handleOpenPicker}
                 disabled={analysisRunning}
@@ -1040,7 +1051,7 @@ export default function Dashboard() {
               {tickerSources.length > 0 && (() => {
                 const items = [...tickerSources, ...tickerSources];
                 return (
-                  <div key={report?.id} className="flex-1 overflow-hidden mx-3 relative" style={{ minWidth: 0 }}>
+                  <div key={report?.id} className="hidden sm:block flex-1 overflow-hidden mx-3 relative" style={{ minWidth: 0 }}>
                     <div className="absolute inset-y-0 left-0 w-6 z-10 pointer-events-none" style={{ background: 'linear-gradient(to right, var(--bg2), transparent)' }} />
                     <div className="absolute inset-y-0 right-0 w-6 z-10 pointer-events-none" style={{ background: 'linear-gradient(to left, var(--bg2), transparent)' }} />
                     <div className="news-ticker-track">
@@ -1080,7 +1091,7 @@ export default function Dashboard() {
 
             {/* Report info bar */}
             {report && (
-              <div className="px-5 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 text-xs text-[var(--overlay)] flex items-center gap-3 flex-wrap">
+              <div className="px-3 md:px-5 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 text-[10px] md:text-xs text-[var(--overlay)] flex items-center gap-2 md:gap-3 flex-wrap">
                 <span>
                   <span className="text-[var(--fg)]/60 mr-1">Model:</span>
                   <span className="font-mono text-[var(--fg)]">{report.provider}/{report.model}</span>
@@ -1117,7 +1128,7 @@ export default function Dashboard() {
             )}
 
             {/* Analysis content */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 min-h-0">
+            <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0">
               {analysisRunning ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-5">
                   <div className="flex gap-2">
@@ -1213,7 +1224,7 @@ export default function Dashboard() {
                 )}
                 <div ref={chatEndRef} />
               </div>
-              <div className="flex gap-2 px-5 py-2.5 border-t border-[var(--gray)] flex-shrink-0 rounded-b-2xl">
+              <div className="flex gap-2 px-3 md:px-5 py-2 md:py-2.5 border-t border-[var(--gray)] flex-shrink-0 rounded-b-2xl">
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}

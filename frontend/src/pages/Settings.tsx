@@ -392,15 +392,15 @@ export default function Settings() {
 
   return (
     <div className="max-w-5xl">
-      <h1 className="text-2xl font-bold mb-6">Ustawienia</h1>
+      <h1 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">Ustawienia</h1>
 
       {/* Tab bar */}
-      <div className="flex border-b border-[var(--gray)] mb-6">
+      <div className="flex border-b border-[var(--gray)] mb-4 md:mb-6 overflow-x-auto">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
-            className={`px-6 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`px-3 md:px-6 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
               activeTab === t.key
                 ? 'border-[var(--accent)] text-[var(--accent)]'
                 : 'border-transparent text-[var(--overlay)] hover:text-[var(--fg)]'
@@ -432,7 +432,7 @@ export default function Settings() {
             </div>
           </section>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
             <section className="bg-[var(--bg2)] rounded-xl p-5 border border-[var(--gray)]">
               <h2 className="text-xs font-semibold text-[var(--overlay)] uppercase tracking-widest mb-4">Model — Analiza</h2>
               <div className="space-y-3">
@@ -511,10 +511,10 @@ export default function Settings() {
               </button>
             </div>
           )}
-          <div className="flex gap-6 items-start">
+          <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
 
             {/* ── Lewa kolumna: instrumenty ─────────────────── */}
-            <div className="flex-1 min-w-0 space-y-3">
+            <div className="flex-1 min-w-0 space-y-3 w-full">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-[var(--overlay)]">Obserwowane instrumenty ({instruments.length})</p>
                 <button onClick={() => setShowAddForm(!showAddForm)}
@@ -539,8 +539,8 @@ export default function Settings() {
                     symbolLabel="Symbol *"
                     nameLabel="Nazwa"
                     inputClassName="bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none"
-                    symbolWrapClassName="w-28"
-                    nameWrapClassName="w-44"
+                    symbolWrapClassName="w-full sm:w-28"
+                    nameWrapClassName="w-full sm:w-44"
                   />
                   <div>
                     <label className="text-xs text-[var(--overlay)] block mb-1">Kategoria</label>
@@ -563,11 +563,11 @@ export default function Settings() {
                 </div>
               )}
 
-              <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden">
+              <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden overflow-x-auto">
                 {instruments.length === 0 ? (
                   <p className="text-sm text-[var(--overlay)] text-center py-8">Brak instrumentow. Dodaj pierwszy powyzej.</p>
                 ) : (
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm min-w-[500px]">
                     <thead>
                       <tr className="border-b border-[var(--gray)] bg-[var(--bg)]">
                         <th className="text-left px-4 py-2.5 text-xs text-[var(--overlay)] uppercase tracking-wide font-semibold">Symbol</th>
@@ -597,7 +597,7 @@ export default function Settings() {
             </div>
 
             {/* ── Prawa kolumna: źródła ─────────────────────── */}
-            <div className="w-64 flex-shrink-0 space-y-3">
+            <div className="w-full md:w-64 flex-shrink-0 space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-[var(--overlay)]">Źródła web ({sources.length})</p>
                 <button onClick={() => setShowAddSource(!showAddSource)}
@@ -703,7 +703,7 @@ export default function Settings() {
       {/* ── Prompty ──────────────────────────────────────────── */}
       {activeTab === 'prompts' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
             {promptDefs.map((def) => (
               <PromptCard
                 key={def.key}
