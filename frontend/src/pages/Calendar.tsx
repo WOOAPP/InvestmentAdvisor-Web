@@ -242,9 +242,9 @@ export default function Calendar() {
                             )}
 
                             {analyses[eventKey(ev)] && (
-                              <div className="bg-[var(--bg2)] border border-[var(--accent)]/20 rounded-lg p-3">
-                                <p className="text-[10px] font-semibold text-[var(--accent)] uppercase tracking-widest mb-2">Analiza AI</p>
-                                <div className="md-content md-profile text-xs">
+                              <div className="bg-[var(--bg2)] border border-[var(--accent)]/20 rounded-lg p-2 sm:p-3">
+                                <p className="text-[9px] sm:text-[10px] font-semibold text-[var(--accent)] uppercase tracking-widest mb-1.5 sm:mb-2">Analiza AI</p>
+                                <div className="md-content md-profile text-[11px] sm:text-xs">
                                   <ReactMarkdown>{analyses[eventKey(ev)]}</ReactMarkdown>
                                 </div>
                               </div>

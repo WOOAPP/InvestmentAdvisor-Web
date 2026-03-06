@@ -54,8 +54,8 @@ export function getInstrumentUnit(symbol: string, source: string): string | null
   if (symbol === 'PL=F' || symbol === 'PA=F') return 'USD/oz';
   if (symbol.endsWith('=F')) return 'USD';
 
-  // Indices
-  if (symbol.startsWith('^')) return 'pts';
+  // Indices (^GDAXI, ^DJI, etc. + WIG20.WA)
+  if (symbol.startsWith('^') || /^WIG\d*\.WA$/.test(symbol)) return 'pts';
 
   // Crypto via yfinance (BTC-USD, ETH-USD, etc.)
   if (source === 'yfinance' && /-USD$/.test(symbol)) return 'USD';

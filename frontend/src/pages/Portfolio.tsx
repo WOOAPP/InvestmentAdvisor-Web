@@ -58,7 +58,7 @@ function ForexCard({ data }: { data: InstrumentData }) {
           </div>
         )}
       </div>
-      <div className="text-xl font-bold font-mono mt-1.5 tabular-nums">
+      <div className="text-lg sm:text-xl font-bold font-mono mt-1.5 tabular-nums">
         {data.price != null
           ? data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
           : data.error ? (
@@ -135,14 +135,23 @@ export default function Portfolio() {
   // Pobierz instrumenty forex na kafelki (+ odśwież po zmianie w Ustawieniach)
   const fetchForex = () => {
     getInstruments().then((all) => {
-      setForexInstruments(all.filter((i) => /^[A-Z]{3}[A-Z]{3}=X$/.test(i.symbol)));
+      const forex = all.filter((i) => /^[A-Z]{3}[A-Z]{3}=X$/.test(i.symbol));
+      // Nie nadpisuj istniejących kafelków pustą listą (np. przy chwilowym błędzie API)
+      if (forex.length > 0 || forexInstruments.length === 0) {
+        setForexInstruments(forex);
+      }
     }).catch(() => {});
   };
 
   useEffect(() => {
     fetchForex();
+    // Odśwież forex co 30s (zbieżne ze stabilnością Dashboard)
+    const interval = setInterval(fetchForex, 30_000);
     window.addEventListener('instruments-changed', fetchForex);
-    return () => window.removeEventListener('instruments-changed', fetchForex);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('instruments-changed', fetchForex);
+    };
   }, []);
 
   const addPosition = async (e: React.FormEvent) => {
@@ -395,7 +404,7 @@ export default function Portfolio() {
       {forexInstruments.length > 0 && (
         <div className="mt-8">
           <h2 className="text-xs font-bold text-[var(--fg)] uppercase tracking-widest mb-3">Kursy walut</h2>
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))' }}>
             {forexInstruments.map((inst) => (
               <ForexCard key={inst.symbol} data={inst} />
             ))}

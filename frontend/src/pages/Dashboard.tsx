@@ -227,7 +227,7 @@ function InstCard({
       </div>
       <div
         key={flash}
-        className={`text-xl font-bold font-mono mt-1.5 tabular-nums ${
+        className={`text-lg sm:text-xl font-bold font-mono mt-1.5 tabular-nums ${
           flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : ''
         }`}
       >
@@ -989,7 +989,7 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-4 min-h-0">
-              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+              <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))' }}>
                 {orderedInstruments.map((inst, idx) => (
                   <div
                     key={inst.symbol}
@@ -1287,11 +1287,11 @@ export default function Dashboard() {
       {analysisExpanded && report && (
         <div className="absolute inset-0 z-50 flex flex-col bg-[var(--bg)]">
           {/* Header */}
-          <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
             <span className="text-xs font-bold text-[var(--fg)] uppercase tracking-widest flex-1">
               Analiza rynkowa
             </span>
-            <span className="text-xs text-[var(--overlay)]">
+            <span className="text-xs text-[var(--overlay)] hidden sm:inline">
               {report.provider}/{report.model}
               &nbsp;&bull;&nbsp;
               {report.input_tokens + report.output_tokens} tokenów
@@ -1311,7 +1311,7 @@ export default function Dashboard() {
             </button>
           </div>
           {/* Content */}
-          <div className="flex-1 overflow-y-auto px-10 py-8 min-h-0">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-10 py-4 sm:py-8 min-h-0">
             <div
               ref={analysisRef}
               className="md-content max-w-4xl mx-auto"

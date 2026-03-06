@@ -135,7 +135,7 @@ InvestmentAdvisor-Web/
 │   │   ├── hooks/
 │   │   │   └── useChatStorage.ts
 │   │   ├── components/
-│   │   │   ├── Layout.tsx     # Navbar + Outlet
+│   │   │   ├── Layout.tsx     # Responsive navbar + hamburger menu + Outlet
 │   │   │   ├── InstrumentCard.tsx
 │   │   │   ├── InstrumentSearch.tsx
 │   │   │   ├── InstrumentProfilePanel.tsx
@@ -216,12 +216,14 @@ InvestmentAdvisor-Web/
 | Path | Page | Description |
 |------|------|-------------|
 | `/login` | Login | Auth (unprotected) |
-| `/` | Dashboard | Instruments grid + analysis |
-| `/portfolio` | Portfolio | Portfolio positions |
-| `/calendar` | Calendar | Economic calendar |
-| `/charts` | Charts | TradingView charts |
+| `/` | Dashboard | Instruments grid + analysis + AI assessment gauges |
+| `/charts` | Charts | TradingView charts + AI chat (3-panel) |
+| `/calendar` | Calendar | Economic calendar + AI event analysis |
+| `/portfolio` | Portfolio | Portfolio positions + FX converter + forex tiles |
 | `/history` | History | Report history |
-| `/settings` | Settings | User config |
+| `/settings` | Settings | User config (4 tabs: Ogólne, Dostosuj, Prompty, Statystyki) |
+
+**Nav order:** Dashboard → Wykresy → Kalendarz → Portfel → Historia → Ustawienia
 
 **Not yet routed:** Chat.tsx, Reports.tsx (pages exist in `src/pages/` but not in App.tsx routes).
 
@@ -391,6 +393,20 @@ Env var overrides: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, 
 
 Fonts: Plus Jakarta Sans (UI), Newsreader (chat replies).
 
+### Mobile Responsive Design
+
+All pages are fully responsive (mobile-first with `sm:` / `md:` breakpoints):
+
+- **Layout.tsx** — Hamburger menu (animated 3-bar icon) on mobile, horizontal nav on `md:+`
+- **Dashboard.tsx** — Left sidebar hidden on mobile with toggle button, responsive instrument grid (`minmax(160px, 1fr)`)
+- **Charts.tsx** — 3-panel layout switches to tab-based panel selector on mobile (`mobilePanel` state)
+- **Portfolio.tsx** — Table wrapped in `overflow-x-auto` with `min-w-[700px]`, form inputs go full-width
+- **Calendar.tsx** — Events table scrollable horizontally on mobile
+- **History.tsx** — Report cards stack vertically with responsive text sizes
+- **Settings.tsx** — Grid columns stack on mobile, instruments table scrollable
+- **Login.tsx** — Adaptive padding (`p-4 sm:p-8`) with horizontal margin on small screens
+- **index.css** — Markdown tables use `display: block; overflow-x: auto` for mobile scroll
+
 ---
 
 ## Security
@@ -407,6 +423,10 @@ Fonts: Plus Jakarta Sans (UI), Newsreader (chat replies).
 ### HTTP Client (`modules/http_client.py`)
 - Retry with exponential backoff (429/5xx)
 - URL masking in logs (apiKey, token, secret, password params)
+
+### Settings Prompts Tab
+- Password-protected (hardcoded `"666"`, client-side only)
+- Prompts hidden behind password form until unlocked; lock resets on page reload
 
 ### API Keys
 - Env vars override config file (desktop)
@@ -459,6 +479,44 @@ Migrations auto-run on backend startup.
 
 ---
 
+## Frontend Features (detailed)
+
+### Dashboard (`Dashboard.tsx`)
+- Instrument grid with sparklines and real-time price flash animations
+- AI assessment gauges (risk + opportunity) with SVG semicircular charts
+  - Risk gauge: high value → needle right → red zone
+  - Opportunity gauge: high value → needle right → green zone
+- News ticker (infinite scroll, hidden on mobile)
+- AI analysis generation with step-by-step progress
+- Inline AI chat panel
+- Mobile: sidebar hidden with toggle, responsive grid
+
+### Portfolio (`Portfolio.tsx`)
+- Portfolio positions table with FX currency converter (PLN/EUR/USD)
+- FX rates fetched on page load (not just on instrument pick)
+- Forex instrument tiles at bottom (same style as Dashboard cards)
+- Listens for `instruments-changed` custom event to refresh forex tiles
+- Add position form with InstrumentSearch autocomplete
+
+### Settings (`Settings.tsx`)
+- 4 tabs: Ogólne (API keys, models), Dostosuj (instruments, sources), Prompty, Statystyki
+- **Dostosuj tab:** Auto-detect category/source when picking instruments via Yahoo search type
+- **Dostosuj tab:** "Masz niezapisane zmiany" banner when instruments/sources differ from server state
+- **Prompty tab:** Password-protected (hardcoded `"666"`), prompts hidden until unlocked
+- **Prompty tab:** 6 prompt cards with context info, expand modal, reset to default
+- **Statystyki tab:** Token usage per session and historical, cost breakdown by request type
+
+### Charts (`Charts.tsx`)
+- 3-panel layout: instruments list | TradingView chart | AI chat
+- Mobile: tab-based panel switching (auto-switches to chart on instrument pick)
+
+### InstrumentSearch (`InstrumentSearch.tsx`)
+- Dual-input autocomplete (symbol + name) powered by Yahoo Finance search API
+- `onPick` callback includes `type` param (Currency, Cryptocurrency, Equity, etc.)
+- Debounced search (300ms), dropdown closes on outside click
+
+---
+
 ## Known Issues / TODO
 
 1. **Chat and Reports pages not routed** — `Chat.tsx` and `Reports.tsx` exist but are not in `App.tsx` routes
@@ -472,6 +530,7 @@ Migrations auto-run on backend startup.
 9. **Web pricing scrape brittle** — `openai_pricing.py` SPA scrape always fails, hardcoded fallback works
 10. **No web tests yet** — only desktop module tests exist
 11. **PostgreSQL password** — default `advisor:advisor` in docker-compose; change for production
+12. **Prompts tab password is client-side only** — not a real security measure, just a UI gate
 
 ---
 

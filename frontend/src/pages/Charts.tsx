@@ -7,6 +7,7 @@ import { sendMessage, type ChatMessage } from '../api/chat';
 import { getCalendar, type CalendarEvent } from '../api/calendar';
 import PriceChart from '../components/PriceChart';
 import InstrumentProfilePanel from '../components/InstrumentProfilePanel';
+import AdvisorAvatar from '../components/AdvisorAvatar';
 import api from '../api/client';
 import { useChatStorage } from '../hooks/useChatStorage';
 import { APP_TIMEZONE } from '../config';
@@ -249,13 +250,17 @@ export default function Charts() {
     ).then((results) => {
       const data: Record<string, TfStats> = {};
       for (const { tf, prices } of results) {
-        if (prices.length >= 2) {
+        if (prices.length >= 1) {
+          const open = prices[0];
+          const close = prices[prices.length - 1];
           data[tf] = {
-            open: prices[0],
-            close: prices[prices.length - 1],
+            open,
+            close,
             high: Math.max(...prices),
             low: Math.min(...prices),
-            changePct: ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100,
+            changePct: prices.length >= 2 && open !== 0
+              ? ((close - open) / open) * 100
+              : 0,
             points: prices.length,
           };
         }
@@ -296,12 +301,12 @@ export default function Charts() {
         lines.push(`Cena: ${selected.price.toLocaleString('en-US', { maximumFractionDigits: 4 })}`);
       if (selected.change_pct != null)
         lines.push(`Zmiana: ${selected.change_pct >= 0 ? '+' : ''}${selected.change_pct.toFixed(2)}%`);
-      if (Object.keys(tfData).length > 0) {
+      if (Object.keys(tfData).length > 0 || !tfLoading) {
         lines.push('');
         lines.push('Dane historyczne:');
         for (const tf of ALL_TIMEFRAMES) {
           const d = tfData[tf];
-          if (!d) continue;
+          if (!d) { lines.push(`  ${tf.padEnd(4)} | brak danych`); continue; }
           const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 4 });
           lines.push(`  ${tf.padEnd(4)} | O=${fmt(d.open)} H=${fmt(d.high)} L=${fmt(d.low)} C=${fmt(d.close)} | ${d.changePct >= 0 ? '+' : ''}${d.changePct.toFixed(2)}%`);
         }
@@ -551,13 +556,17 @@ export default function Charts() {
                 : 'text-[var(--overlay)]'
             }`}
           >
-            {tab === 'instruments' ? 'Instrumenty' : tab === 'chart' ? 'Wykres' : 'Chat'}
+            {tab === 'instruments' ? 'Instrumenty' : tab === 'chart' ? 'Wykres' : (
+              <span className="inline-flex items-center gap-1">
+                <AdvisorAvatar size={18} /> Chat
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {/* ── Lista instrumentów (kafelki jak na Dashboard) ───── */}
-      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:flex w-full md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden`}>
+      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden min-h-0`}>
         <div className="px-3 py-2 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)]">
           <input
             value={instSearch}
@@ -599,20 +608,20 @@ export default function Charts() {
       </div>
 
       {/* ── Obszar wykresu ────────────────────────────────────── */}
-      <div className={`${mobilePanel === 'chart' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden min-w-0 border-r border-[var(--gray)]`}>
+      <div className={`${mobilePanel === 'chart' ? 'flex' : 'hidden'} md:flex flex-1 flex-col overflow-hidden min-w-0 min-h-0 border-r border-[var(--gray)]`}>
         {selected ? (
           <>
             {/* Nagłówek */}
             <div className="flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2 md:py-3 border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0 flex-wrap">
-              <div className="flex-1 min-w-0 flex items-baseline gap-2">
-                <span className="font-bold">{selected.name}</span>
+              <div className="flex-1 min-w-0 flex items-baseline gap-1.5 sm:gap-2">
+                <span className="font-bold text-sm sm:text-base truncate">{selected.name}</span>
                 {getInstrumentUnit(selected.symbol, selected.source) && (
-                  <span className="text-xs font-mono text-[var(--overlay)] opacity-80">{getInstrumentUnit(selected.symbol, selected.source)}</span>
+                  <span className="text-[10px] sm:text-xs font-mono text-[var(--overlay)] opacity-80 flex-shrink-0">{getInstrumentUnit(selected.symbol, selected.source)}</span>
                 )}
-                <span className="text-sm text-[var(--overlay)] font-mono">{selected.symbol}</span>
+                <span className="text-xs sm:text-sm text-[var(--overlay)] font-mono flex-shrink-0">{selected.symbol}</span>
               </div>
               {selected.price != null && (
-                <span className="font-bold font-mono tabular-nums">
+                <span className="font-bold font-mono tabular-nums text-sm sm:text-base">
                   {selected.price.toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 4,
@@ -621,7 +630,7 @@ export default function Charts() {
               )}
               {selected.change_pct != null && (
                 <span
-                  className={`text-sm font-bold px-2 py-0.5 rounded-md ${
+                  className={`text-xs sm:text-sm font-bold px-1.5 sm:px-2 py-0.5 rounded-md ${
                     selected.change_pct >= 0
                       ? 'bg-[#a6e3a1]/15 text-[#a6e3a1]'
                       : 'bg-[#f38ba8]/15 text-[#f38ba8]'
@@ -633,10 +642,11 @@ export default function Charts() {
               )}
               <button
                 onClick={() => selected && openPortModal(selected, 'zakupione')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)]/15 border border-[var(--accent)]/50 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors flex-shrink-0"
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-[var(--accent)]/15 border border-[var(--accent)]/50 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors flex-shrink-0"
                 title="Dodaj do portfela"
               >
-                + Dodaj do portfela
+                <span className="hidden sm:inline">+ Dodaj do portfela</span>
+                <span className="sm:hidden">+ Portfel</span>
               </button>
               {tfLoading && (
                 <span className="text-xs text-[var(--overlay)] animate-pulse ml-1">
@@ -645,14 +655,91 @@ export default function Charts() {
               )}
             </div>
 
-            {/* Wykres + profil */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0 space-y-4">
+            {/* Wykres + statystyki + profil */}
+            <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 sm:py-4 min-h-0 space-y-3 sm:space-y-4">
               <PriceChart
                 symbol={selected.symbol}
                 source={selected.source}
                 sparkline={selected.sparkline}
                 height={340}
               />
+
+              {/* ── Panel statystyk (wzór: Stooq) ─────────────── */}
+              {(() => {
+                const unit = getInstrumentUnit(selected.symbol, selected.source) || '';
+                const fmt = (n: number | null | undefined) =>
+                  n != null ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—';
+                const fmtVol = (n: number | null | undefined) => {
+                  if (n == null || n === 0) return '—';
+                  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+                  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+                  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+                  return n.toLocaleString('en-US');
+                };
+                const tf5m = tfData['5m'];
+                const tf24h = tfData['24h'];
+                const tf72h = tfData['72h'];
+                const change = selected.change;
+                const changePct = selected.change_pct;
+                const isUp = (changePct ?? 0) >= 0;
+                const changeColor = isUp ? 'text-[var(--green)]' : 'text-[var(--red)]';
+
+                const StatCell = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[9px] sm:text-[10px] text-[var(--overlay)] uppercase tracking-wider leading-none mb-1 truncate">{label}</span>
+                    <span className={`text-xs sm:text-sm font-mono font-semibold tabular-nums truncate ${color || 'text-[var(--fg)]'}`}>{value}</span>
+                    {sub && <span className={`text-[9px] sm:text-[10px] font-mono truncate ${color || 'text-[var(--overlay)]'}`}>{sub}</span>}
+                  </div>
+                );
+
+                return (
+                  <div className="rounded-xl border border-[var(--gray)] bg-[var(--bg2)] p-2.5 sm:p-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 sm:gap-x-4 gap-y-2.5 sm:gap-y-3">
+                      <StatCell
+                        label="Zmiana"
+                        value={change != null ? `${isUp ? '+' : ''}${fmt(change)}` : '—'}
+                        sub={changePct != null ? `(${isUp ? '+' : ''}${changePct.toFixed(2)}%)` : undefined}
+                        color={change != null ? changeColor : undefined}
+                      />
+                      <StatCell
+                        label="Otwarcie"
+                        value={fmt(tf5m?.open)}
+                      />
+                      <StatCell
+                        label="Max / Min (dziś)"
+                        value={tf5m ? `${fmt(tf5m.high)} / ${fmt(tf5m.low)}` : '—'}
+                      />
+                      <StatCell
+                        label="Max / Min (5d)"
+                        value={selected.high_5d != null ? `${fmt(selected.high_5d)} / ${fmt(selected.low_5d)}` : '—'}
+                      />
+                      <StatCell
+                        label="Wolumen"
+                        value={fmtVol(selected.volume)}
+                      />
+                      {tf24h && tf24h.points > 1 && (
+                        <StatCell
+                          label="Zmiana (60d)"
+                          value={`${tf24h.changePct >= 0 ? '+' : ''}${tf24h.changePct.toFixed(2)}%`}
+                          color={tf24h.changePct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}
+                        />
+                      )}
+                      {tf72h && tf72h.points > 1 && (
+                        <StatCell
+                          label="Zmiana (1r)"
+                          value={`${tf72h.changePct >= 0 ? '+' : ''}${tf72h.changePct.toFixed(2)}%`}
+                          sub={`${fmt(tf72h.low)} – ${fmt(tf72h.high)}`}
+                          color={tf72h.changePct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}
+                        />
+                      )}
+                    </div>
+                    {unit && (
+                      <div className="mt-2 text-[10px] text-[var(--overlay)] text-right">{unit}</div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <InstrumentProfilePanel
                 symbol={selected.symbol}
                 name={selected.name}
@@ -668,7 +755,7 @@ export default function Charts() {
       </div>
 
       {/* ── Panel chatu ──────────────────────────────────────── */}
-      <div className={`${mobilePanel === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-[340px] flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden`}>
+      <div className={`${mobilePanel === 'chat' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-[340px] flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden min-h-0`}>
         {/* Nagłówek chatu */}
         <div
           className="px-4 py-2.5 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)] cursor-pointer hover:bg-[var(--gray)]/30 transition-colors select-none"

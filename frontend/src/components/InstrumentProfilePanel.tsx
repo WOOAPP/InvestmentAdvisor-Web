@@ -73,10 +73,10 @@ export default function InstrumentProfilePanel({ symbol, name, systemPrompt }: P
   return (
     <div className="rounded-xl border border-[var(--gray)] bg-[var(--bg2)] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--gray)]">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[var(--gray)]">
         <div className="min-w-0">
-          <h3 className="text-base font-bold">Analiza instrumentu</h3>
-          <p className="text-sm text-[var(--overlay)] mt-0.5">
+          <h3 className="text-sm sm:text-base font-bold">Analiza instrumentu</h3>
+          <p className="text-xs sm:text-sm text-[var(--overlay)] mt-0.5 truncate">
             {checking
               ? 'Sprawdzam cache...'
               : profile
@@ -87,14 +87,14 @@ export default function InstrumentProfilePanel({ symbol, name, systemPrompt }: P
         <button
           onClick={generate}
           disabled={generating || checking}
-          className="ml-3 px-4 py-2 sm:py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
+          className="ml-2 sm:ml-3 px-3 sm:px-4 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-xs sm:text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity flex-shrink-0"
         >
           {generating ? 'Generuje...' : profile ? 'Regeneruj' : 'Generuj opis AI'}
         </button>
       </div>
 
       {/* Body */}
-      <div className="px-4 py-4 min-h-[80px]">
+      <div className="px-3 sm:px-4 py-3 sm:py-4 min-h-[80px]">
         {checking && (
           <p className="text-sm text-[var(--overlay)] text-center py-3 animate-pulse">
             Sprawdzam cache...
@@ -111,7 +111,7 @@ export default function InstrumentProfilePanel({ symbol, name, systemPrompt }: P
           </p>
         )}
         {profile && !generating && (
-          <div className="md-content md-profile text-sm leading-relaxed">
+          <div className="md-content md-profile text-xs sm:text-sm leading-relaxed">
             <ReactMarkdown>{profile.text}</ReactMarkdown>
           </div>
         )}
