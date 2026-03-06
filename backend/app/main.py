@@ -16,7 +16,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from backend.app.core.config import settings
-from backend.app.api import auth, market, reports, portfolio, chat, settings as settings_api, calendar as calendar_api, stats as stats_api, news as news_api
+from backend.app.api import admin, auth, market, reports, portfolio, chat, settings as settings_api, calendar as calendar_api, stats as stats_api, news as news_api
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ app.include_router(settings_api.router, prefix="/api")
 app.include_router(calendar_api.router, prefix="/api")
 app.include_router(stats_api.router, prefix="/api")
 app.include_router(news_api.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 
 @app.get("/api/health")

@@ -60,6 +60,20 @@ export default function Layout() {
                   {item.label}
                 </NavLink>
               ))}
+              {user?.is_admin && (
+                <NavLink
+                  to="/admin"
+                  className={({ isActive }) =>
+                    `px-5 py-2 rounded-lg text-base font-medium transition-colors ${
+                      isActive
+                        ? 'bg-[var(--red)] text-[var(--bg)]'
+                        : 'text-[var(--red)] hover:bg-[var(--gray)]'
+                    }`
+                  }
+                >
+                  Admin
+                </NavLink>
+              )}
             </div>
           </div>
 
@@ -110,6 +124,19 @@ export default function Layout() {
                 {item.label}
               </NavLink>
             ))}
+            {user?.is_admin && (
+              <NavLink
+                to="/admin"
+                onClick={closeMenu}
+                className={`block px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  location.pathname === '/admin'
+                    ? 'bg-[var(--red)] text-[var(--bg)]'
+                    : 'text-[var(--red)] hover:bg-[var(--gray)]'
+                }`}
+              >
+                Admin
+              </NavLink>
+            )}
             <div className="mt-2 pt-2 border-t border-[var(--gray)] text-xs text-[var(--overlay)]">
               {user?.display_name || user?.email}
             </div>

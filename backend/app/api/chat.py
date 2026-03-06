@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db, async_session
 from backend.app.core.deps import get_current_user
+from backend.app.models.activity_log import ActivityLog
 from backend.app.models.user import User
 from backend.app.models.token_usage import TokenUsage
 from backend.app.api.reports import _merge_config
@@ -79,6 +80,7 @@ async def _log_usage(user_id: int, usage: dict, request_type: str) -> None:
                 cost_usd=cost,
                 request_type=request_type,
             ))
+            db.add(ActivityLog(user_id=user_id, action=request_type, detail=f"{provider}/{model}"))
             await db.commit()
     except Exception:
         logger.exception("Failed to log token usage for user %d", user_id)

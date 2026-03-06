@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
+from backend.app.models.activity_log import ActivityLog
 from backend.app.models.report import Report
 from backend.app.models.token_usage import TokenUsage
 from backend.app.models.user import User
@@ -178,6 +179,7 @@ async def _run_analysis_task(user_id: int, config: dict):
                     cost_usd=cost,
                     request_type="analysis",
                 ))
+            db.add(ActivityLog(user_id=user_id, action="analysis", detail=f"{provider}/{model}"))
             await db.commit()
             logger.info("Analysis complete for user %d, report saved", user_id)
     except Exception:

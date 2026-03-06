@@ -9,6 +9,7 @@ import Calendar from './pages/Calendar';
 import Charts from './pages/Charts';
 import History from './pages/History';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuthStore();
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/charts" element={<Charts />} />
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/admin" element={<Admin />} />
         </Route>
       </Routes>
     </BrowserRouter>

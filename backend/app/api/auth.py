@@ -1,6 +1,6 @@
 """Auth endpoints: register, login, refresh, me."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from backend.app.core.security import (
     hash_password,
     verify_password,
 )
+from backend.app.models.activity_log import ActivityLog
 from backend.app.models.user import User
 from backend.app.schemas.auth import (
     LoginRequest,
@@ -46,11 +47,17 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    db.add(ActivityLog(
+        user_id=user.id,
+        action="login",
+        ip_address=request.client.host if request.client else None,
+    ))
+    await db.commit()
     return TokenResponse(
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(user.id),

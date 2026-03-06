@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,3 +24,4 @@ class User(Base):
     # Stores: api_keys, ai_provider, ai_model, instruments, sources,
     #         trusted_domains, prompt, chat_prompt, schedule, etc.
     config: Mapped[dict] = mapped_column(JSONB, default=dict)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
