@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown from 'react-markdown';
 import { getCachedInstruments, getInstruments, getSparkline, getInstrumentUnit, type InstrumentData, assessMarket, type MarketAssessment } from '../api/market';
 import { getReports, getReport, runAnalysis, type ReportDetail } from '../api/reports';
 import { sendMessage } from '../api/chat';
@@ -15,49 +15,104 @@ import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
-// ─── Kolorowanie wartości kwotowych i procentowych ────────────
+// ─── Kolorowanie wartości kwotowych/procentowych + nazw instrumentów ──
 const VALUE_RE = /([−–\-+]?\d[\d,.]*\d?\s*%|[−–\-+]?\$\s?\d[\d,.]*|[−–\-+]?€\s?\d[\d,.]*|[−–\-+]?\d[\d,.]*\s?(?:USD|PLN|EUR|zł)\b)/g;
 
-function colorizeText(text: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  let last = 0;
+type InstrumentColorMap = Map<string, number>; // keyword → change_pct
+
+function buildInstrumentColorMap(instruments: InstrumentData[]): InstrumentColorMap {
+  const map: InstrumentColorMap = new Map();
+  for (const inst of instruments) {
+    if (inst.change_pct == null) continue;
+    // symbol without suffix (e.g. "^GSPC" → "GSPC", "BTC-USD" → "BTC", "EURUSD=X" → "EURUSD")
+    const cleanSym = inst.symbol.replace(/^[\^]/, '').replace(/[=\-.].*$/, '');
+    if (cleanSym.length >= 2) map.set(cleanSym.toUpperCase(), inst.change_pct);
+    // name keywords (split on spaces, take words ≥3 chars)
+    if (inst.name) {
+      for (const word of inst.name.split(/[\s/,.()\-]+/)) {
+        const w = word.trim();
+        if (w.length >= 3) map.set(w.toUpperCase(), inst.change_pct);
+      }
+    }
+  }
+  return map;
+}
+
+function buildInstrumentRegex(colorMap: InstrumentColorMap): RegExp | null {
+  if (colorMap.size === 0) return null;
+  // Sort by length descending so longer names match first
+  const keys = [...colorMap.keys()].sort((a, b) => b.length - a.length);
+  const escaped = keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi');
+}
+
+function colorizeText(text: string, colorMap: InstrumentColorMap, instRe: RegExp | null): React.ReactNode[] {
+  // First pass: find all value matches and instrument matches, then merge by position
+  const spans: { start: number; end: number; node: React.ReactNode }[] = [];
+  let keyCounter = 0;
+
+  // Value matches (percentages, currencies)
   VALUE_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = VALUE_RE.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
     const raw = m[0];
     const neg = /^[−–\-]/.test(raw.trimStart());
-    parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
-    last = VALUE_RE.lastIndex;
+    spans.push({
+      start: m.index, end: m.index + raw.length,
+      node: <span key={`v${keyCounter++}`} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>,
+    });
+  }
+
+  // Instrument name matches
+  if (instRe) {
+    instRe.lastIndex = 0;
+    while ((m = instRe.exec(text)) !== null) {
+      const raw = m[0];
+      const start = m.index;
+      const end = start + raw.length;
+      // Skip if overlapping with an existing span
+      if (spans.some(s => start < s.end && end > s.start)) continue;
+      const chg = colorMap.get(m[1].toUpperCase());
+      if (chg == null) continue;
+      const color = chg < 0 ? '#f38ba8' : chg > 0 ? '#a6e3a1' : 'var(--fg)';
+      spans.push({
+        start, end,
+        node: <span key={`i${keyCounter++}`} style={{ color, fontWeight: 600 }}>{raw}</span>,
+      });
+    }
+  }
+
+  if (spans.length === 0) return [text];
+
+  // Sort by position
+  spans.sort((a, b) => a.start - b.start);
+
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  for (const s of spans) {
+    if (s.start > last) parts.push(text.slice(last, s.start));
+    parts.push(s.node);
+    last = s.end;
   }
   if (last < text.length) parts.push(text.slice(last));
   return parts;
 }
 
-function colorizeChildren(children: React.ReactNode): React.ReactNode {
-  return React.Children.map(children, (child, i) => {
-    if (typeof child === 'string') {
-      const colored = colorizeText(child);
-      return colored.length === 1 && typeof colored[0] === 'string' ? child : <React.Fragment key={i}>{colored}</React.Fragment>;
-    }
-    if (React.isValidElement(child) && (child.props as Record<string, unknown>)?.children != null) {
-      return React.cloneElement(child as React.ReactElement<{ children?: React.ReactNode }>, {}, colorizeChildren((child.props as Record<string, unknown>).children as React.ReactNode));
-    }
-    return child;
-  });
+function makeColorizeChildren(colorMap: InstrumentColorMap, instRe: RegExp | null) {
+  const colorize = (children: React.ReactNode): React.ReactNode => {
+    return React.Children.map(children, (child, i) => {
+      if (typeof child === 'string') {
+        const colored = colorizeText(child, colorMap, instRe);
+        return colored.length === 1 && typeof colored[0] === 'string' ? child : <React.Fragment key={i}>{colored}</React.Fragment>;
+      }
+      if (React.isValidElement(child) && (child.props as Record<string, unknown>)?.children != null) {
+        return React.cloneElement(child as React.ReactElement<{ children?: React.ReactNode }>, {}, colorize((child.props as Record<string, unknown>).children as React.ReactNode));
+      }
+      return child;
+    });
+  };
+  return colorize;
 }
-
-const mdColorComponents: Components = {
-  p: ({ children, ...props }) => <p {...props}>{colorizeChildren(children)}</p>,
-  li: ({ children, ...props }) => <li {...props}>{colorizeChildren(children)}</li>,
-  td: ({ children, ...props }) => <td {...props}>{colorizeChildren(children)}</td>,
-  th: ({ children, ...props }) => <th {...props}>{colorizeChildren(children)}</th>,
-  h1: ({ children, ...props }) => <h1 {...props}>{colorizeChildren(children)}</h1>,
-  h2: ({ children, ...props }) => <h2 {...props}>{colorizeChildren(children)}</h2>,
-  h3: ({ children, ...props }) => <h3 {...props}>{colorizeChildren(children)}</h3>,
-  h4: ({ children, ...props }) => <h4 {...props}>{colorizeChildren(children)}</h4>,
-  blockquote: ({ children, ...props }) => <blockquote {...props}>{colorizeChildren(children)}</blockquote>,
-};
 
 // ─── Cennik LLM (USD / 1M tokenów) ───────────────────────────
 const _PRICING: Record<string, Record<string, [number, number]>> = {
@@ -343,6 +398,24 @@ export default function Dashboard() {
 
   const { loginTime, user } = useAuthStore();
   const [sessionCost, setSessionCost] = useState<number | null>(null);
+
+  // Markdown colorize — instrument names + value colors
+  const mdColorComponents = useMemo(() => {
+    const colorMap = buildInstrumentColorMap(instruments);
+    const instRe = buildInstrumentRegex(colorMap);
+    const colorizeChildren = makeColorizeChildren(colorMap, instRe);
+    return {
+      p: ({ children, ...props }: React.ComponentProps<'p'>) => <p {...props}>{colorizeChildren(children)}</p>,
+      li: ({ children, ...props }: React.ComponentProps<'li'>) => <li {...props}>{colorizeChildren(children)}</li>,
+      td: ({ children, ...props }: React.ComponentProps<'td'>) => <td {...props}>{colorizeChildren(children)}</td>,
+      th: ({ children, ...props }: React.ComponentProps<'th'>) => <th {...props}>{colorizeChildren(children)}</th>,
+      h1: ({ children, ...props }: React.ComponentProps<'h1'>) => <h1 {...props}>{colorizeChildren(children)}</h1>,
+      h2: ({ children, ...props }: React.ComponentProps<'h2'>) => <h2 {...props}>{colorizeChildren(children)}</h2>,
+      h3: ({ children, ...props }: React.ComponentProps<'h3'>) => <h3 {...props}>{colorizeChildren(children)}</h3>,
+      h4: ({ children, ...props }: React.ComponentProps<'h4'>) => <h4 {...props}>{colorizeChildren(children)}</h4>,
+      blockquote: ({ children, ...props }: React.ComponentProps<'blockquote'>) => <blockquote {...props}>{colorizeChildren(children)}</blockquote>,
+    };
+  }, [instruments]);
 
   // Instrument panel
   const [selectedInstrument, setSelectedInstrument] = useState<InstrumentData | null>(null);
