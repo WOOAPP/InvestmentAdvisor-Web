@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getPositions, addPosition as apiAddPosition, deletePosition as apiDeletePosition, type Position } from '../api/portfolio';
 import { getPrices, getInstruments, getInstrumentUnit, type InstrumentData } from '../api/market';
 import InstrumentSearch from '../components/InstrumentSearch';
 import { APP_TIMEZONE } from '../config';
+import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 const TABS = [
   { key: 'zakupione', label: 'Long' },
@@ -71,6 +73,7 @@ function ForexCard({ data }: { data: InstrumentData }) {
 }
 
 export default function Portfolio() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('zakupione');
   const [positions, setPositions] = useState<Position[]>([]);
   const [prices, setPrices] = useState<Record<string, number | null>>({});
@@ -89,6 +92,15 @@ export default function Portfolio() {
 
   // Forex instruments for bottom tiles
   const [forexInstruments, setForexInstruments] = useState<InstrumentData[]>([]);
+
+  // Intro tour
+  useEffect(() => {
+    if (loading) return;
+    if (getTourPhase() === 'portfolio') {
+      const timer = setTimeout(() => runTourPhase('portfolio', navigate), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, navigate]);
 
   // Synchronizuj fxRatesRef z fxRates (formularz zawsze ma aktualne kursy)
   useEffect(() => {
@@ -244,7 +256,7 @@ export default function Portfolio() {
       </div>
 
       {showForm && (
-        <form onSubmit={addPosition} className="bg-[var(--bg2)] rounded-lg p-3 md:p-4 border border-[var(--gray)] mb-4 md:mb-6 flex flex-wrap gap-2 md:gap-3 items-end">
+        <form onSubmit={addPosition} data-tour="portfolio-add" className="bg-[var(--bg2)] rounded-lg p-3 md:p-4 border border-[var(--gray)] mb-4 md:mb-6 flex flex-wrap gap-2 md:gap-3 items-end">
           <InstrumentSearch
             symbol={form.symbol}
             name={form.name}
@@ -293,7 +305,7 @@ export default function Portfolio() {
       ) : positions.length === 0 ? (
         <div className="text-[var(--overlay)] text-center py-8">Brak pozycji w tej zakladce.</div>
       ) : (
-        <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0">
+        <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0" data-tour="portfolio-table">
         <table className="w-full text-sm min-w-[480px]">
           <thead>
             <tr className="text-[var(--overlay)] border-b border-[var(--gray)]">
@@ -402,7 +414,7 @@ export default function Portfolio() {
 
       {/* ── Forex tiles ──────────────────────────────── */}
       {forexInstruments.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-8" data-tour="portfolio-forex">
           <h2 className="text-xs font-bold text-[var(--fg)] uppercase tracking-widest mb-3">Kursy walut</h2>
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))' }}>
             {forexInstruments.map((inst) => (

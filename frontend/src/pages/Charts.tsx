@@ -10,6 +10,8 @@ import InstrumentProfilePanel from '../components/InstrumentProfilePanel';
 import api from '../api/client';
 import { useChatStorage } from '../hooks/useChatStorage';
 import { APP_TIMEZONE } from '../config';
+import { useNavigate } from 'react-router-dom';
+import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 // ── Mini sparkline SVG (identyczny jak na Dashboard) ──────────
 function Sparkline({ data, changePct }: { data: number[]; changePct: number | null }) {
@@ -166,6 +168,16 @@ export default function Charts() {
   const [portModal, setPortModal] = useState<{ inst: InstrumentData; tabType: string; basePriceUSD: number } | null>(null);
   const [portForm, setPortForm] = useState({ quantity: '', price: '', currency: 'USD' });
   const [portAdding, setPortAdding] = useState(false);
+
+  const navigate = useNavigate();
+
+  // Intro tour
+  useEffect(() => {
+    if (getTourPhase() === 'charts') {
+      const timer = setTimeout(() => runTourPhase('charts', navigate), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [navigate]);
 
   // ── Inicjalny load ─────────────────────────────────────────
   useEffect(() => {
@@ -561,7 +573,7 @@ export default function Charts() {
       </div>
 
       {/* ── Lista instrumentów (kafelki jak na Dashboard) ───── */}
-      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden min-h-0`}>
+      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden min-h-0`} data-tour="charts-instruments">
         <div className="px-3 py-2 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)]">
           <input
             value={instSearch}
@@ -651,7 +663,7 @@ export default function Charts() {
             </div>
 
             {/* Wykres + statystyki + profil */}
-            <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 sm:py-4 min-h-0 space-y-3 sm:space-y-4">
+            <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 sm:py-4 min-h-0 space-y-3 sm:space-y-4" data-tour="charts-chart">
               <PriceChart
                 symbol={selected.symbol}
                 source={selected.source}
@@ -750,7 +762,7 @@ export default function Charts() {
       </div>
 
       {/* ── Panel chatu ──────────────────────────────────────── */}
-      <div className={`${mobilePanel === 'chat' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-[340px] flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden min-h-0`}>
+      <div className={`${mobilePanel === 'chat' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-[340px] flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden min-h-0`} data-tour="charts-chat">
         {/* Nagłówek chatu */}
         <div
           className="px-4 py-2.5 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)] cursor-pointer hover:bg-[var(--gray)]/30 transition-colors select-none"

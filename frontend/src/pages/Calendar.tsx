@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { getCalendar, analyzeCalendarEvent, type CalendarEvent } from '../api/calendar';
 import { APP_TIMEZONE } from '../config';
+import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 const CACHE_KEY = 'cal_analyses_v1';
 
@@ -49,6 +51,7 @@ function isToday(dateStr: string): boolean {
 }
 
 export default function Calendar() {
+  const navigate = useNavigate();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +59,15 @@ export default function Calendar() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, string>>(loadCache);
   const [analyzing, setAnalyzing] = useState<Record<string, boolean>>({});
+
+  // Intro tour
+  useEffect(() => {
+    if (loading) return;
+    if (getTourPhase() === 'calendar') {
+      const timer = setTimeout(() => runTourPhase('calendar', navigate), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, navigate]);
 
   useEffect(() => {
     getCalendar()
@@ -158,7 +170,7 @@ export default function Calendar() {
           </div>
 
           {/* Events table */}
-          <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden overflow-x-auto">
+          <div className="bg-[var(--bg2)] rounded-xl border border-[var(--gray)] overflow-hidden overflow-x-auto" data-tour="calendar-events">
             <table className="w-full text-sm min-w-[360px]">
               <thead>
                 <tr className="border-b border-[var(--gray)] bg-[var(--bg)]">
@@ -224,6 +236,7 @@ export default function Calendar() {
                             {!analyses[eventKey(ev)] && !analyzing[rowKey] && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleAnalyze(rowKey, ev); }}
+                                data-tour="calendar-analyze"
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)]/10 border border-[var(--accent)]/30 text-[var(--accent)] text-xs font-semibold hover:bg-[var(--accent)]/20 transition-colors"
                               >
                                 <span>✦</span> Analizuj AI

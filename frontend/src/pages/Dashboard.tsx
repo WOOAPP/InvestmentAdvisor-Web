@@ -12,6 +12,8 @@ import InstrumentProfilePanel from '../components/InstrumentProfilePanel';
 import api from '../api/client';
 import { useChatStorage } from '../hooks/useChatStorage';
 import { useAuthStore } from '../stores/authStore';
+import { useNavigate } from 'react-router-dom';
+import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 // ─── Cennik LLM (USD / 1M tokenów) ───────────────────────────
 const _PRICING: Record<string, Record<string, [number, number]>> = {
@@ -420,9 +422,19 @@ export default function Dashboard() {
     } catch { /* no reports yet */ }
   };
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     setStatusMsg('Gotowy');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Intro tour
+  useEffect(() => {
+    if (getTourPhase() === 'dashboard') {
+      const timer = setTimeout(() => runTourPhase('dashboard', navigate), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [navigate]);
 
   useEffect(() => {
     fetchInstruments();
@@ -862,7 +874,7 @@ export default function Dashboard() {
     <div className="absolute inset-0 flex overflow-hidden p-2 md:p-4 gap-2 md:gap-4">
 
       {/* ══ Left sidebar ══════════════════════════════════════ */}
-      <div className="hidden md:flex w-[296px] flex-shrink-0 flex-col border border-[var(--gray)] bg-[var(--bg)] overflow-hidden rounded-2xl">
+      <div className="hidden md:flex w-[296px] flex-shrink-0 flex-col border border-[var(--gray)] bg-[var(--bg)] overflow-hidden rounded-2xl" data-tour="gauges">
 
         {/* Assessment gauges — ryzyko i okazja */}
         {(() => {
@@ -921,7 +933,7 @@ export default function Dashboard() {
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 min-h-0 space-y-2" onDragLeave={() => setDragOverIdx(null)}>
+        <div className="flex-1 overflow-y-auto p-3 min-h-0 space-y-2" data-tour="instruments" onDragLeave={() => setDragOverIdx(null)}>
           {loadingInst && orderedInstruments.length === 0 ? (
             <p className="text-xs text-[var(--overlay)] text-center py-6">Ladowanie...</p>
           ) : (
@@ -1094,6 +1106,7 @@ export default function Dashboard() {
               <button
                 onClick={handleOpenPicker}
                 disabled={analysisRunning}
+                data-tour="run-analysis"
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] font-semibold text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 &#9658; Uruchom Analize
@@ -1190,7 +1203,7 @@ export default function Dashboard() {
             )}
 
             {/* Analysis content */}
-            <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0">
+            <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0" data-tour="analysis-area">
               {analysisRunning ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-5">
                   <div className="flex gap-2">
@@ -1230,7 +1243,7 @@ export default function Dashboard() {
             </div>
 
             {/* Chat — desktop only, mobile uses floating bubble */}
-            <div className="hidden md:flex border-t border-[var(--gray)] flex-col flex-shrink-0" style={{ height: `${chatHeight}px` }}>
+            <div className="hidden md:flex border-t border-[var(--gray)] flex-col flex-shrink-0" data-tour="chat-panel" style={{ height: `${chatHeight}px` }}>
               {/* Drag handle */}
               <div
                 onMouseDown={startResize}

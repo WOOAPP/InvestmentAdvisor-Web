@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useAppStore } from '../stores/appStore';
+import { startTour } from './IntroTour';
 
 const navItems = [
   { to: '/', label: 'Dashboard' },
@@ -17,6 +18,7 @@ export default function Layout() {
   const { statusMsg } = useAppStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Close menu on navigation
   const closeMenu = () => setMenuOpen(false);
@@ -97,6 +99,14 @@ export default function Layout() {
                 </div>
               );
             })()}
+            <button
+              onClick={() => startTour(navigate)}
+              className="flex items-center gap-1 px-2 md:px-2.5 py-1 rounded-full text-[10px] md:text-[11px] font-bold border tracking-wide bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors"
+              title="Przewodnik po aplikacji"
+            >
+              <span className="text-xs leading-none">?</span>
+              <span className="hidden sm:inline">Intro</span>
+            </button>
             <span className="text-[var(--overlay)] text-xs hidden sm:inline">{user?.display_name || user?.email}</span>
             <button
               onClick={logout}

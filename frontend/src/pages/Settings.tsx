@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import InstrumentSearch from '../components/InstrumentSearch';
 import { clearInstrumentsCache, triggerInstrumentsRefresh } from '../api/market';
 import { getStats, type StatsResponse } from '../api/stats';
 import { APP_TIMEZONE } from '../config';
 import { useAuthStore } from '../stores/authStore';
+import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 type TabKey = 'general' | 'customize' | 'prompts' | 'stats';
 
@@ -166,6 +168,7 @@ function PromptCard({ def, defaultValue, ctxOpen, onToggleCtx, onExpand }: {
 }
 
 export default function Settings() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabKey>('general');
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -255,6 +258,17 @@ export default function Settings() {
       .catch(() => setStats(null))
       .finally(() => setStatsLoading(false));
   }, [activeTab, loginTime]);
+
+  // Intro tour: auto-switch to Dostosuj tab and start tour phase
+  useEffect(() => {
+    if (loading) return;
+    const phase = getTourPhase();
+    if (phase === 'settings') {
+      setActiveTab('customize');
+      const timer = setTimeout(() => runTourPhase('settings', navigate), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, navigate]);
 
   const notify = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
 
@@ -519,7 +533,7 @@ export default function Settings() {
           <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
 
             {/* ── Lewa kolumna: instrumenty ─────────────────── */}
-            <div className="flex-1 min-w-0 space-y-3 w-full">
+            <div className="flex-1 min-w-0 space-y-3 w-full" data-tour="settings-instruments">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-[var(--overlay)]">Obserwowane instrumenty ({instruments.length})</p>
                 <div className="flex items-center gap-2">
@@ -614,7 +628,7 @@ export default function Settings() {
             </div>
 
             {/* ── Prawa kolumna: źródła ─────────────────────── */}
-            <div className="w-full md:w-64 flex-shrink-0 space-y-3">
+            <div className="w-full md:w-64 flex-shrink-0 space-y-3" data-tour="settings-sources">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-[var(--overlay)]">Źródła web ({sources.length})</p>
                 <button onClick={() => setShowAddSource(!showAddSource)}
