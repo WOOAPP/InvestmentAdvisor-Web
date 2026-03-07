@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from backend.app.core.database import async_session
@@ -11,6 +11,7 @@ from backend.app.core.deps import get_current_user
 from backend.app.models.user import User
 from backend.app.models.token_usage import TokenUsage
 from backend.app.api.reports import _merge_config
+from backend.app.core.limiter import limiter
 from backend.app.services.pricing import calculate_cost
 
 from config import get_api_key
@@ -42,7 +43,8 @@ class RewriteResponse(BaseModel):
 
 
 @router.post("/rewrite-titles", response_model=RewriteResponse)
-async def rewrite_titles(body: RewriteRequest, user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def rewrite_titles(request: Request, body: RewriteRequest, user: User = Depends(get_current_user)):
     if not body.titles:
         return RewriteResponse(titles=[])
 

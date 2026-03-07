@@ -717,7 +717,7 @@ export default function Dashboard() {
 
   const _buildLink = (rawLine: string, title: string): string => {
     // 1. Spróbuj wyciągnąć URL wprost z linii
-    const urlMatch = rawLine.match(/https?:\/\/[^\s\)\]"']+/);
+    const urlMatch = rawLine.match(/https?:\/\/[^\s)\]"']+/);
     if (urlMatch) return urlMatch[0];
     // 2. Sprawdź czy nazwa źródła (część po " – ") pasuje do znanych serwisów
     const parts = rawLine.split(/\s[–—-]\s/);

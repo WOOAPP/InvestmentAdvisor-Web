@@ -1,15 +1,16 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import Layout from './components/Layout';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Portfolio from './pages/Portfolio';
-import Calendar from './pages/Calendar';
-import Charts from './pages/Charts';
-import History from './pages/History';
-import Settings from './pages/Settings';
-import Admin from './pages/Admin';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Portfolio = lazy(() => import('./pages/Portfolio'));
+const Calendar = lazy(() => import('./pages/Calendar'));
+const Charts = lazy(() => import('./pages/Charts'));
+const History = lazy(() => import('./pages/History'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Admin = lazy(() => import('./pages/Admin'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuthStore();
@@ -36,13 +37,13 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/calendar" element={<Calendar />} />
-          <Route path="/charts" element={<Charts />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/" element={<Suspense fallback={null}><Dashboard /></Suspense>} />
+          <Route path="/portfolio" element={<Suspense fallback={null}><Portfolio /></Suspense>} />
+          <Route path="/calendar" element={<Suspense fallback={null}><Calendar /></Suspense>} />
+          <Route path="/charts" element={<Suspense fallback={null}><Charts /></Suspense>} />
+          <Route path="/history" element={<Suspense fallback={null}><History /></Suspense>} />
+          <Route path="/settings" element={<Suspense fallback={null}><Settings /></Suspense>} />
+          <Route path="/admin" element={<Suspense fallback={null}><Admin /></Suspense>} />
         </Route>
       </Routes>
     </BrowserRouter>

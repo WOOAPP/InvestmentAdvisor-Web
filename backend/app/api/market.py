@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from functools import partial
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from backend.app.services.market_data import (
     get_all_instruments,
     get_sparkline_by_timeframe,
 )
+from backend.app.core.limiter import limiter
 from config import DEFAULT_INSTRUMENTS
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -82,6 +83,7 @@ async def search_instruments(
 
 # ── In-memory cache: per user, TTL 25 s (matches 30s polling interval) ───
 _INST_TTL = 25.0  # seconds
+_INST_CACHE_MAX = 200  # max users cached simultaneously
 _inst_cache: dict[int, tuple[list, float]] = {}  # user_id → (results, timestamp)
 
 
@@ -97,6 +99,16 @@ async def list_instruments(user: User = Depends(get_current_user)):
     # Run blocking I/O in thread pool
     data = await asyncio.to_thread(get_all_instruments, instruments_config)
     results = [InstrumentData(symbol=symbol, **d) for symbol, d in data.items()]
+    # Evict expired entries when cache grows too large
+    if len(_inst_cache) >= _INST_CACHE_MAX:
+        expired = [uid for uid, (_, ts) in _inst_cache.items() if now - ts >= _INST_TTL]
+        for uid in expired:
+            del _inst_cache[uid]
+        # If still too large, drop oldest half
+        if len(_inst_cache) >= _INST_CACHE_MAX:
+            sorted_keys = sorted(_inst_cache, key=lambda uid: _inst_cache[uid][1])
+            for uid in sorted_keys[: len(sorted_keys) // 2]:
+                del _inst_cache[uid]
     _inst_cache[user.id] = (results, now)
     return results
 
@@ -228,7 +240,8 @@ class AssessmentResult(BaseModel):
 
 
 @router.post("/assess", response_model=AssessmentResult)
-async def assess_market(body: AssessmentRequest, user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def assess_market(request: Request, body: AssessmentRequest, user: User = Depends(get_current_user)):
     """Call AI to assess market risk and opportunity (1-10 each)."""
     config = _merge_config(user)
     system = config.get("market_assessment_prompt", "")

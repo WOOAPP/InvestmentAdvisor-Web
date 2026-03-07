@@ -37,7 +37,7 @@ export default function Login() {
         setError('Hasło musi mieć co najmniej 8 znaków');
         return;
       }
-      if (!/[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      if (!/[0-9!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
         setError('Hasło musi zawierać co najmniej jedną cyfrę lub znak specjalny');
         return;
       }

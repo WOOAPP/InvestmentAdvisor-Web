@@ -5,7 +5,20 @@ import { sendMessage } from '../api/chat';
 import { APP_TIMEZONE } from '../config';
 
 // Module-level cache shared across all panel instances and page navigations
+const MEM_CACHE_MAX = 50;
 const memCache: Record<string, { text: string; date: string }> = {};
+const memCacheOrder: string[] = [];
+
+function memCacheSet(key: string, value: { text: string; date: string }) {
+  if (!(key in memCache)) {
+    memCacheOrder.push(key);
+    while (memCacheOrder.length > MEM_CACHE_MAX) {
+      const oldest = memCacheOrder.shift()!;
+      delete memCache[oldest];
+    }
+  }
+  memCache[key] = value;
+}
 
 const DEFAULT_SYSTEM =
   'Jestes ekspertem finansowym i analitykiem rynkow kapitalowych. Odpowiadaj po polsku, zwiezle i merytorycznie. Uzywaj markdown z naglowkami.';
@@ -41,7 +54,7 @@ export default function InstrumentProfilePanel({ symbol, name, systemPrompt }: P
       .then((data) => {
         if (data) {
           const p = { text: data.profile_text, date: data.created_at };
-          memCache[symbol] = p;
+          memCacheSet(symbol, p);
           setProfile(p);
         }
       })

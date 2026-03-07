@@ -4,13 +4,14 @@ import asyncio
 import logging
 from functools import partial
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
+from backend.app.core.limiter import limiter
 from backend.app.models.activity_log import ActivityLog
 from backend.app.models.report import Report
 from backend.app.models.token_usage import TokenUsage
@@ -87,7 +88,9 @@ class RunRequest(BaseModel):
 
 
 @router.post("/run", status_code=202)
+@limiter.limit("5/minute")
 async def run_analysis_endpoint(
+    request: Request,
     background_tasks: BackgroundTasks,
     body: RunRequest = RunRequest(),
     user: User = Depends(get_current_user),

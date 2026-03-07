@@ -4,8 +4,8 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db, async_session
@@ -14,6 +14,7 @@ from backend.app.models.activity_log import ActivityLog
 from backend.app.models.user import User
 from backend.app.models.token_usage import TokenUsage
 from backend.app.api.reports import _merge_config
+from backend.app.core.limiter import limiter
 from backend.app.services.pricing import calculate_cost
 
 from modules.ai_engine import run_chat_with_usage
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # Cache kalendarza — TTL 1 godzina, współdzielony między wszystkimi userami
 _calendar_cache: tuple[str, float] | None = None  # (calendar_text, timestamp)
 _CALENDAR_TTL = 3600  # sekund
+_calendar_lock = asyncio.Lock()
 
 
 async def _get_calendar_text() -> str:
@@ -33,23 +35,28 @@ async def _get_calendar_text() -> str:
     now = time.monotonic()
     if _calendar_cache is not None and now - _calendar_cache[1] < _CALENDAR_TTL:
         return _calendar_cache[0]
-    try:
-        cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
-        text = format_calendar_for_ai(cal_events, days=7)
-        _calendar_cache = (text, now)
-        return text
-    except Exception as e:
-        logger.warning("Calendar fetch for chat failed: %s", e)
-        return _calendar_cache[0] if _calendar_cache else ""
+    async with _calendar_lock:
+        # Re-check after acquiring lock (another coroutine may have refreshed)
+        now = time.monotonic()
+        if _calendar_cache is not None and now - _calendar_cache[1] < _CALENDAR_TTL:
+            return _calendar_cache[0]
+        try:
+            cal_events, _ = await asyncio.to_thread(fetch_calendar_14d)
+            text = format_calendar_for_ai(cal_events, days=7)
+            _calendar_cache = (text, now)
+            return text
+        except Exception as e:
+            logger.warning("Calendar fetch for chat failed: %s", e)
+            return _calendar_cache[0] if _calendar_cache else ""
 
 
 class ChatMessage(BaseModel):
-    role: str  # "user" or "assistant"
-    content: str
+    role: str = Field(pattern=r"^(user|assistant|system)$")
+    content: str = Field(max_length=15000)
 
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(max_length=50)
     system_prompt: str = ""
     request_type: str = "chat"
 
@@ -59,7 +66,8 @@ class ChatResponse(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(body: ChatRequest, user: User = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def chat(request: Request, body: ChatRequest, user: User = Depends(get_current_user)):
     config = _merge_config(user)
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
     system = body.system_prompt or config.get("chat_prompt", "")

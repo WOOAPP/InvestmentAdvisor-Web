@@ -1,5 +1,7 @@
 """Market data schemas."""
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -19,5 +21,5 @@ class InstrumentData(BaseModel):
 
 class SparklineRequest(BaseModel):
     symbol: str
-    timeframe: str = "1h"
-    source: str = "yfinance"
+    timeframe: Literal["1m", "5m", "15m", "1h", "24h", "72h"] = "1h"
+    source: Literal["yfinance", "coingecko", "stooq"] = "yfinance"

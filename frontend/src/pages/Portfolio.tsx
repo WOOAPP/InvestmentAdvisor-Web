@@ -84,7 +84,7 @@ export default function Portfolio() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ symbol: '', name: '', quantity: '', buy_price: '', buy_currency: 'USD', total: '' });
   // przechowuje ostatnio pobraną cenę w USD i kursy FX (dla przeliczania przy zmianie waluty)
-  const formPriceUsdRef = useRef<number | null>(null);
+  const [formPriceUsd, setFormPriceUsd] = useState<number | null>(null);
   const fxRatesRef = useRef<{ PLN: number; EUR: number }>({ PLN: 1, EUR: 1 });
 
   // Aktualne kursy FX (USD → inna waluta)
@@ -239,12 +239,12 @@ export default function Portfolio() {
   const handleInstrumentPick = async (sym: string, nm: string) => {
     const upper = sym.toUpperCase();
     setForm((p) => ({ ...p, symbol: upper, name: nm, buy_price: '', total: '' }));
-    formPriceUsdRef.current = null;
+    setFormPriceUsd(null);
     try {
       const result = await getPrices([upper]);
       const price = result[upper];
       if (price != null) {
-        formPriceUsdRef.current = price;
+        setFormPriceUsd(price);
         setForm((p) => {
           const pr = convertFromUsd(price, p.buy_currency);
           return { ...p, symbol: upper, name: nm, buy_price: pr, total: computeTotal(p.quantity, pr) };
@@ -286,7 +286,7 @@ export default function Portfolio() {
           <InstrumentSearch
             symbol={form.symbol}
             name={form.name}
-            onSymbol={(v) => { formPriceUsdRef.current = null; setForm((p) => ({ ...p, symbol: v.toUpperCase() })); }}
+            onSymbol={(v) => { setFormPriceUsd(null); setForm((p) => ({ ...p, symbol: v.toUpperCase() })); }}
             onName={(v) => setForm((p) => ({ ...p, name: v }))}
             onPick={handleInstrumentPick}
             symbolPlaceholder="Symbol"
@@ -302,15 +302,15 @@ export default function Portfolio() {
             <input placeholder="Cena kupna" type="number" step="any" value={form.buy_price} required
               onChange={(e) => { const pr = e.target.value; setForm((p) => ({ ...p, buy_price: pr, total: computeTotal(p.quantity, pr) })); }}
               className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-32 pr-16" />
-            {formPriceUsdRef.current != null && (
+            {formPriceUsd != null && (
               <button
                 type="button"
                 onClick={() => setForm((p) => {
-                  const pr = convertFromUsd(formPriceUsdRef.current!, p.buy_currency);
+                  const pr = convertFromUsd(formPriceUsd!, p.buy_currency);
                   return { ...p, buy_price: pr, total: computeTotal(p.quantity, pr) };
                 })}
                 className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded border border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors font-mono"
-                title={`Aktualna cena: $${formPriceUsdRef.current.toLocaleString('en-US', { maximumFractionDigits: 4 })}`}
+                title={`Aktualna cena: $${formPriceUsd.toLocaleString('en-US', { maximumFractionDigits: 4 })}`}
               >Aktualna</button>
             )}
           </div>
@@ -322,7 +322,7 @@ export default function Portfolio() {
             onChange={(e) => {
               const currency = e.target.value;
               setForm((p) => {
-                const pr = formPriceUsdRef.current != null ? convertFromUsd(formPriceUsdRef.current, currency) : p.buy_price;
+                const pr = formPriceUsd != null ? convertFromUsd(formPriceUsd, currency) : p.buy_price;
                 return { ...p, buy_currency: currency, buy_price: pr, total: computeTotal(p.quantity, pr) };
               });
             }}

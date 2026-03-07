@@ -7,6 +7,7 @@ Kopia z modules/market_data.py z dostosowanymi importami.
 import re
 import yfinance as yf
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from backend.app.services.constants import APP_TIMEZONE
 import logging
@@ -309,6 +310,7 @@ def get_all_instruments(instruments_config):
     """
     results = {}
     cg_pending = []
+    fetch_tasks = []  # (symbol, name, source) for parallel fetching
 
     for inst in instruments_config:
         symbol = inst.get("symbol", "")
@@ -322,10 +324,25 @@ def get_all_instruments(instruments_config):
             continue
         if source == "coingecko":
             cg_pending.append((symbol, symbol.lower(), name))
-        elif source == "stooq":
-            results[symbol] = get_stooq_data(symbol, name)
         else:
-            results[symbol] = get_yfinance_data(symbol, name)
+            fetch_tasks.append((symbol, name, source))
+
+    # Fetch yfinance/stooq instruments in parallel (significant speedup with many instruments)
+    if fetch_tasks:
+        with ThreadPoolExecutor(max_workers=min(8, len(fetch_tasks))) as executor:
+            futures = {}
+            for symbol, name, source in fetch_tasks:
+                if source == "stooq":
+                    futures[executor.submit(get_stooq_data, symbol, name)] = symbol
+                else:
+                    futures[executor.submit(get_yfinance_data, symbol, name)] = symbol
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    results[symbol] = future.result()
+                except Exception as e:
+                    logger.warning("Parallel fetch %s failed: %s", symbol, e)
+                    results[symbol] = {"name": symbol, "error": str(e)}
 
     if cg_pending:
         to_fetch = []

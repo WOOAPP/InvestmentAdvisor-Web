@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import InstrumentSearch from '../components/InstrumentSearch';
@@ -191,8 +191,8 @@ export default function Settings() {
   const [showAddSource, setShowAddSource] = useState(false);
 
   // Saved server state — for detecting unsaved changes
-  const savedInstrumentsRef = useRef<string>('[]');
-  const savedSourcesRef = useRef<string>('[]');
+  const [savedInstrumentsJson, setSavedInstrumentsJson] = useState('[]');
+  const [savedSourcesJson, setSavedSourcesJson] = useState('[]');
 
   // Prompts
   const [prompt, setPrompt] = useState('');
@@ -203,7 +203,7 @@ export default function Settings() {
   const [assessmentPrompt, setAssessmentPrompt] = useState('');
 
   // Prompt editor state
-  const [defaults, setDefaults] = useState<Record<string, any>>({});
+  const [defaults, setDefaults] = useState<Record<string, string>>({});
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [ctxOpen, setCtxOpen] = useState<Record<string, boolean>>({});
 
@@ -235,8 +235,8 @@ export default function Settings() {
       const src = d.sources || [];
       setInstruments(inst);
       setSources(src);
-      savedInstrumentsRef.current = JSON.stringify(inst);
-      savedSourcesRef.current = JSON.stringify(src);
+      setSavedInstrumentsJson(JSON.stringify(inst));
+      setSavedSourcesJson(JSON.stringify(src));
       setPrompt(d.prompt || '');
       setChatPrompt(d.chat_prompt || '');
       setChartsChatPrompt(d.charts_chat_prompt || '');
@@ -303,8 +303,8 @@ export default function Settings() {
 
   const saveCustomize = async () => {
     await api.put('/settings', { instruments, sources });
-    savedInstrumentsRef.current = JSON.stringify(instruments);
-    savedSourcesRef.current = JSON.stringify(sources);
+    setSavedInstrumentsJson(JSON.stringify(instruments));
+    setSavedSourcesJson(JSON.stringify(sources));
     clearInstrumentsCache();
     triggerInstrumentsRefresh();
     notify();
@@ -531,8 +531,8 @@ export default function Settings() {
 
       {/* ── Dostosuj ─────────────────────────────────────────── */}
       {activeTab === 'customize' && (() => {
-        const hasChanges = JSON.stringify(instruments) !== savedInstrumentsRef.current
-          || JSON.stringify(sources) !== savedSourcesRef.current;
+        const hasChanges = JSON.stringify(instruments) !== savedInstrumentsJson
+          || JSON.stringify(sources) !== savedSourcesJson;
         return (
         <div className="space-y-4">
           {hasChanges && (

@@ -35,14 +35,14 @@ function persist(key: string, msgs: ChatMessage[], ts: number[]): void {
  * @param storageKey - unikalny klucz localStorage dla tego okna chatu
  */
 export function useChatStorage(storageKey: string) {
-  const tsRef = useRef<number[]>([]);
+  const [initMsgs] = useState(() => {
+    const data = load(storageKey);
+    return { msgs: data.msgs, ts: data.ts };
+  });
+  const tsRef = useRef<number[]>(initMsgs.ts);
 
   const keyRef = useRef(storageKey);
-  const [messages, setMessagesRaw] = useState<ChatMessage[]>(() => {
-    const { msgs, ts } = load(storageKey);
-    tsRef.current = ts;
-    return msgs;
-  });
+  const [messages, setMessagesRaw] = useState<ChatMessage[]>(initMsgs.msgs);
 
   // Reload messages when storageKey changes
   useEffect(() => {

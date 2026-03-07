@@ -3,10 +3,11 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from backend.app.core.deps import get_current_user
+from backend.app.core.limiter import limiter
 from backend.app.models.user import User
 from backend.app.api.reports import _merge_config
 from backend.app.api.chat import _log_usage
@@ -60,7 +61,8 @@ async def get_calendar(user: User = Depends(get_current_user)):
 
 
 @router.post("/analyze", response_model=AnalyzeEventResponse)
-async def analyze_event(body: AnalyzeEventRequest, user: User = Depends(get_current_user)):
+@limiter.limit("15/minute")
+async def analyze_event(request: Request, body: AnalyzeEventRequest, user: User = Depends(get_current_user)):
     """Generate AI analysis for a single calendar event."""
     config = _merge_config(user)
     system_prompt = config.get("calendar_event_prompt", "")

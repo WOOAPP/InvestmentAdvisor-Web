@@ -109,7 +109,7 @@ export default function PriceChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Pobierz dane i zaktualizuj serię ─────────────────────────
   useEffect(() => {
