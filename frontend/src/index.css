@@ -93,7 +93,7 @@ body {
 .md-content li { margin: 0.2rem 0; }
 .md-content li > p { margin: 0; }
 .md-content strong { color: var(--fg); font-weight: 600; }
-.md-content em     { color: var(--overlay); font-style: italic; }
+.md-content em     { color: var(--fg); font-style: italic; }
 .md-content code {
   background: var(--bg2); padding: 0.1rem 0.35rem; border-radius: 4px;
   font-family: monospace; font-size: 0.85em; color: var(--accent);
