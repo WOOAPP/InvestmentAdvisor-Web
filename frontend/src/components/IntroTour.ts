@@ -270,9 +270,14 @@ export function clearTourPhase() {
   sessionStorage.removeItem(TOUR_PHASE_KEY);
 }
 
-export function startTour(navigate: (path: string) => void) {
+export function startTour(navigate: (path: string) => void, currentPath?: string) {
   sessionStorage.setItem(TOUR_PHASE_KEY, 'settings-general');
-  navigate('/settings');
+  if (currentPath === '/settings') {
+    // Already on /settings — navigate is a no-op, run the phase directly
+    setTimeout(() => runTourPhase('settings-general', navigate), 100);
+  } else {
+    navigate('/settings');
+  }
 }
 
 export function runTourPhase(phase: TourPhase, navigate: (path: string) => void) {
@@ -309,12 +314,14 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
     smoothScroll: true,
     onCloseClick: () => {
       clearTourPhase();
+      document.removeEventListener('keydown', handleKeydown, true);
       d.destroy();
     },
     onDestroyed: () => {
       const currentPhase = getTourPhase();
       if (!currentPhase) return; // user closed tour
 
+      document.removeEventListener('keydown', handleKeydown, true);
       const next = getNextPhase(phase);
       if (next) {
         sessionStorage.setItem(TOUR_PHASE_KEY, next);
@@ -329,6 +336,18 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
       }
     },
   });
+
+  // Enter = next/done button; prevent any default behavior that might close the tour
+  const handleKeydown = (e: KeyboardEvent) => {
+    if (e.key !== 'Enter') return;
+    const popover = document.querySelector('.driver-popover');
+    if (!popover) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const nextBtn = popover.querySelector('.driver-popover-next-btn') as HTMLButtonElement | null;
+    if (nextBtn) nextBtn.click();
+  };
+  document.addEventListener('keydown', handleKeydown, true);
 
   // Delay drive() so components have time to react to the tour:phase-start event
   setTimeout(() => d.drive(), 350);

@@ -82,7 +82,7 @@ export default function Layout() {
           {/* Right side: status + user */}
           <div className="flex items-center gap-2 md:gap-3 text-sm">
             <button
-              onClick={() => startTour(navigate)}
+              onClick={() => startTour(navigate, location.pathname)}
               className="flex items-center px-3 md:px-4 py-1.5 rounded-full text-xs md:text-sm font-bold border tracking-wide bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors animate-pulse"
               title="Przewodnik po aplikacji"
             >
