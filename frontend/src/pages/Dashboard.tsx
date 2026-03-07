@@ -1461,13 +1461,6 @@ export default function Dashboard() {
                   )}
                   <div className="flex gap-3 justify-end mt-6">
                     <button
-                      onClick={() => { fetchAssessment(); setAssessmentModal(null); }}
-                      disabled={assessmentLoading}
-                      className="px-4 py-2 rounded-lg text-sm bg-[var(--bg)] border border-[var(--gray)] text-[var(--overlay)] hover:text-[var(--fg)] disabled:opacity-40 transition-colors"
-                    >
-                      ↻ Odśwież
-                    </button>
-                    <button
                       onClick={() => setAssessmentModal(null)}
                       className="px-5 py-2 rounded-lg text-sm bg-[var(--accent)] text-[var(--bg)] font-semibold hover:opacity-90 transition-opacity"
                     >
