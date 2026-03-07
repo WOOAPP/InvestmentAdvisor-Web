@@ -92,9 +92,9 @@ const ANALYSIS_STEPS = [
 
 // ─── Assessment Gauge (półokrągły wskaźnik) ───────────────────
 function GaugeChart({
-  value, label, loading, invertNeedle, onClick,
+  value, label, loading, invertNeedle, onClick, sweeping,
 }: {
-  value: number; label: string; loading?: boolean; invertNeedle?: boolean; onClick?: () => void;
+  value: number; label: string; loading?: boolean; invertNeedle?: boolean; onClick?: () => void; sweeping?: boolean;
 }) {
   const cx = 90, cy = 84, R = 65, Rin = 44;
 
@@ -114,10 +114,26 @@ function GaugeChart({
     );
   };
 
+  // Sweeping animation — needle swings left/right when no data
+  const [sweepDeg, setSweepDeg] = useState(90);
+  useEffect(() => {
+    if (!sweeping) return;
+    let frame: number;
+    const start = Date.now();
+    const tick = () => {
+      const t = (Date.now() - start) / 1000;
+      // Smooth sine wave: 20°..160° (avoid extremes)
+      setSweepDeg(90 + 70 * Math.sin(t * 1.3));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [sweeping]);
+
   const v = Math.max(1, Math.min(10, value || 5));
   const frac = (v - 1) / 9;
   // Wysoka wartość → igła w prawo (dla ryzyka: prawo=czerwone, dla okazji: prawo=zielone)
-  const ndeg = (1 - frac) * 180;
+  const ndeg = sweeping ? sweepDeg : (1 - frac) * 180;
   const tip = pt(ndeg, R - 10);
   const unknown = !value;
 
@@ -125,7 +141,7 @@ function GaugeChart({
   const OPP_LABELS   = ['BRAK','NISKA','NISKA','NISKA','ŚREDNIA','ŚREDNIA','WYSOKA','WYSOKA','B.WYS.','WYJĄTK.'];
   const levelText = (invertNeedle ? RISK_LABELS : OPP_LABELS)[v - 1];
 
-  const valColor = loading || unknown ? '#6c7086'
+  const valColor = loading || unknown || sweeping ? '#6c7086'
     : invertNeedle
       ? (v <= 3 ? '#a6e3a1' : v <= 6 ? '#f9e2af' : v <= 8 ? '#fab387' : '#f38ba8')
       : (v >= 7 ? '#a6e3a1' : v >= 4 ? '#f9e2af' : '#f38ba8');
@@ -146,10 +162,10 @@ function GaugeChart({
       <circle cx={cx} cy={cy} r={5} fill="white" />
       <circle cx={cx} cy={cy} r={2} fill="var(--bg)" />
       <text x={cx} y={99} textAnchor="middle" fill={valColor} fontSize="13" fontWeight="bold" fontFamily="ui-monospace,monospace">
-        {loading ? '…/10' : unknown ? '?/10' : `${v}/10`}
+        {loading || sweeping ? '…/10' : unknown ? '?/10' : `${v}/10`}
       </text>
       <text x={cx} y={111} textAnchor="middle" fill={valColor} fontSize="8" fontWeight="bold" letterSpacing="1">
-        {!loading && !unknown ? levelText : ''}
+        {!loading && !unknown && !sweeping ? levelText : ''}
       </text>
       <text x={cx} y={12} textAnchor="middle" fill={invertNeedle ? '#f38ba8' : '#a6e3a1'} fontSize="11" fontWeight="bold" letterSpacing="0.8">
         {label}
@@ -852,6 +868,7 @@ export default function Dashboard() {
         {(() => {
           const r = assessment?.risk ?? (report?.risk_level ?? 0);
           const o = assessment?.opportunity ?? 0;
+          const shouldSweep = analysisRunning || (!assessment && !r && !o);
           return (
             <div className="border-b border-[var(--gray)] bg-[var(--bg2)]/30 rounded-t-2xl">
               <div className="flex flex-col items-center px-3 pt-3 gap-1">
@@ -861,6 +878,7 @@ export default function Dashboard() {
                     value={r}
                     loading={assessmentLoading && !assessment}
                     invertNeedle
+                    sweeping={shouldSweep}
                     onClick={() => setAssessmentModal('risk')}
                   />
                 </div>
@@ -869,6 +887,7 @@ export default function Dashboard() {
                     label="Okazja Inwest."
                     value={o}
                     loading={assessmentLoading && !assessment}
+                    sweeping={shouldSweep}
                     onClick={() => setAssessmentModal('opportunity')}
                   />
                 </div>
