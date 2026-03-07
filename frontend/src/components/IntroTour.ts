@@ -246,6 +246,13 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             align: 'center',
           },
         },
+        {
+          popover: {
+            title: 'Jesteś gotowy do działania',
+            description: 'To już wszystko — znasz teraz każdą sekcję aplikacji. Wróć do Dashboardu, uruchom pierwszą analizę i sprawdź, co AI ma do powiedzenia o rynku. Powodzenia i trafnych decyzji!',
+            align: 'center',
+          },
+        },
       ];
   }
 }
