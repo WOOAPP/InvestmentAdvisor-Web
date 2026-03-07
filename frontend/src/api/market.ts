@@ -17,7 +17,7 @@ export interface InstrumentData {
 // ── Instruments cache (przeżywa między zakładkami) ──────────────
 let _instrumentsCache: InstrumentData[] = [];
 let _instrumentsCacheTime = 0;
-const INSTRUMENTS_TTL = 5_000; // 5 sekund
+const INSTRUMENTS_TTL = 30_000; // 30 sekund
 
 export const getCachedInstruments = (): InstrumentData[] => _instrumentsCache;
 

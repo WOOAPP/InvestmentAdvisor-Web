@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPositions, addPosition as apiAddPosition, deletePosition as apiDeletePosition, type Position } from '../api/portfolio';
-import { getPrices, getInstruments, getInstrumentUnit, type InstrumentData } from '../api/market';
+import { getPrices, getInstruments, getCachedInstruments, getInstrumentUnit, type InstrumentData } from '../api/market';
 import InstrumentSearch from '../components/InstrumentSearch';
 import { APP_TIMEZONE } from '../config';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
@@ -146,6 +146,11 @@ export default function Portfolio() {
 
   // Pobierz instrumenty forex na kafelki (+ odśwież po zmianie w Ustawieniach)
   const fetchForex = () => {
+    // Pokaż z cache natychmiast jeśli dostępny — zero opóźnienia przy nawigacji
+    const cached = getCachedInstruments();
+    const cachedForex = cached.filter((i) => /^[A-Z]{3}[A-Z]{3}=X$/.test(i.symbol));
+    if (cachedForex.length > 0) setForexInstruments(cachedForex);
+
     getInstruments().then((all) => {
       const forex = all.filter((i) => /^[A-Z]{3}[A-Z]{3}=X$/.test(i.symbol));
       // Nie nadpisuj istniejących kafelków pustą listą (np. przy chwilowym błędzie API)
