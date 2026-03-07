@@ -169,7 +169,7 @@ export default function Charts() {
   // Dodaj do portfela — context menu (prawy przycisk myszy)
   const [portCtx, setPortCtx] = useState<{ x: number; y: number; inst: InstrumentData } | null>(null);
   const [portModal, setPortModal] = useState<{ inst: InstrumentData; tabType: string; basePriceUSD: number } | null>(null);
-  const [portForm, setPortForm] = useState({ quantity: '', price: '', currency: 'USD' });
+  const [portForm, setPortForm] = useState({ quantity: '', price: '', currency: 'USD', total: '' });
   const [portAdding, setPortAdding] = useState(false);
 
   const navigate = useNavigate();
@@ -531,23 +531,36 @@ export default function Charts() {
     return 1;
   };
 
+  const portComputeTotal = (qty: string, price: string): string => {
+    const q = parseFloat(qty), p = parseFloat(price);
+    return (!isNaN(q) && !isNaN(p) && q > 0 && p > 0) ? (q * p).toFixed(2) : '';
+  };
+  const portComputeQty = (total: string, price: string): string => {
+    const t = parseFloat(total), p = parseFloat(price);
+    return (!isNaN(t) && !isNaN(p) && t > 0 && p > 0) ? (t / p).toPrecision(6).replace(/\.?0+$/, '') : '';
+  };
+
   const openPortModal = (inst: InstrumentData, tabType: string) => {
     setPortCtx(null);
     const basePrice = inst.price ?? 0;
-    setPortForm({ quantity: '', price: basePrice > 0 ? basePrice.toFixed(4) : '', currency: 'USD' });
+    setPortForm({ quantity: '', price: basePrice > 0 ? basePrice.toFixed(4) : '', currency: 'USD', total: '' });
     setPortModal({ inst, tabType, basePriceUSD: basePrice });
   };
 
   const submitPortForm = async () => {
     if (!portModal || portAdding) return;
-    const qty = parseFloat(portForm.quantity);
     const price = parseFloat(portForm.price);
+    let qty = parseFloat(portForm.quantity);
+    if ((isNaN(qty) || qty <= 0) && portForm.total) {
+      const t = parseFloat(portForm.total);
+      if (!isNaN(t) && t > 0 && !isNaN(price) && price > 0) qty = t / price;
+    }
     if (isNaN(qty) || qty <= 0 || isNaN(price) || price <= 0) return;
     setPortAdding(true);
     try {
       await addPosition({ symbol: portModal.inst.symbol, name: portModal.inst.name, quantity: qty, buy_price: price, buy_currency: portForm.currency, tab_type: portModal.tabType });
       setPortModal(null);
-      setPortForm({ quantity: '', price: '', currency: 'USD' });
+      setPortForm({ quantity: '', price: '', currency: 'USD', total: '' });
     } finally { setPortAdding(false); }
   };
 
@@ -973,7 +986,7 @@ export default function Charts() {
                 <input
                   type="number" step="any" min="0"
                   value={portForm.quantity}
-                  onChange={(e) => setPortForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                  onChange={(e) => { const q = e.target.value; setPortForm((prev) => ({ ...prev, quantity: q, total: portComputeTotal(q, prev.price) })); }}
                   placeholder="np. 10"
                   autoFocus
                   className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
@@ -985,8 +998,8 @@ export default function Charts() {
                   {portModal.basePriceUSD > 0 && (
                     <button
                       onClick={() => {
-                        const p = portModal.basePriceUSD * getFxRate(portForm.currency);
-                        setPortForm((prev) => ({ ...prev, price: p.toFixed(4) }));
+                        const p = (portModal.basePriceUSD * getFxRate(portForm.currency)).toFixed(4);
+                        setPortForm((prev) => ({ ...prev, price: p, total: portComputeTotal(prev.quantity, p) }));
                       }}
                       title={`Przywróć aktualną cenę: $${portModal.basePriceUSD.toLocaleString('en-US', { maximumFractionDigits: 4 })}`}
                       className="text-[10px] px-2 py-0.5 rounded-md border border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors font-mono"
@@ -998,8 +1011,18 @@ export default function Charts() {
                 <input
                   type="number" step="any" min="0"
                   value={portForm.price}
-                  onChange={(e) => setPortForm((prev) => ({ ...prev, price: e.target.value }))}
+                  onChange={(e) => { const pr = e.target.value; setPortForm((prev) => ({ ...prev, price: pr, total: portComputeTotal(prev.quantity, pr) })); }}
                   placeholder="0.00"
+                  className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--overlay)] block mb-1">Wartość ({portForm.currency})</label>
+                <input
+                  type="number" step="any" min="0"
+                  value={portForm.total}
+                  onChange={(e) => { const t = e.target.value; setPortForm((prev) => ({ ...prev, total: t, quantity: portComputeQty(t, prev.price) })); }}
+                  placeholder="Kwota zakupu"
                   className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
                 />
               </div>
@@ -1011,8 +1034,8 @@ export default function Charts() {
                       key={cur}
                       onClick={() => {
                         if (portModal.basePriceUSD > 0) {
-                          const converted = portModal.basePriceUSD * getFxRate(cur);
-                          setPortForm((prev) => ({ ...prev, currency: cur, price: converted.toFixed(4) }));
+                          const converted = (portModal.basePriceUSD * getFxRate(cur)).toFixed(4);
+                          setPortForm((prev) => ({ ...prev, currency: cur, price: converted, total: portComputeTotal(prev.quantity, converted) }));
                         } else {
                           setPortForm((prev) => ({ ...prev, currency: cur }));
                         }
@@ -1030,7 +1053,7 @@ export default function Charts() {
             <div className="px-5 pb-5">
               <button
                 onClick={submitPortForm}
-                disabled={portAdding || !portForm.quantity || !portForm.price}
+                disabled={portAdding || (!portForm.quantity && !portForm.total) || !portForm.price}
                 className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-colors disabled:opacity-40 ${
                   portModal.tabType === 'zakupione'
                     ? 'bg-[#a6e3a1] text-[var(--bg)] hover:opacity-90'

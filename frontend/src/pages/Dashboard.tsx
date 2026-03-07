@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import { getCachedInstruments, getInstruments, getSparkline, getInstrumentUnit, type InstrumentData, assessMarket, type MarketAssessment } from '../api/market';
 import { getReports, getReport, runAnalysis, type ReportDetail } from '../api/reports';
 import { sendMessage } from '../api/chat';
@@ -14,6 +14,50 @@ import { useChatStorage } from '../hooks/useChatStorage';
 import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
+
+// ─── Kolorowanie wartości kwotowych i procentowych ────────────
+const VALUE_RE = /([-+]?\d[\d,.]*\d?\s*%|[-+]?\$\s?\d[\d,.]*|[-+]?€\s?\d[\d,.]*|[-+]?\d[\d,.]*\s?(?:USD|PLN|EUR|zł)\b)/g;
+
+function colorizeText(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  VALUE_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = VALUE_RE.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const raw = m[0];
+    const neg = raw.trimStart().startsWith('-');
+    parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
+    last = VALUE_RE.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+function colorizeChildren(children: React.ReactNode): React.ReactNode {
+  return React.Children.map(children, (child, i) => {
+    if (typeof child === 'string') {
+      const colored = colorizeText(child);
+      return colored.length === 1 && typeof colored[0] === 'string' ? child : <React.Fragment key={i}>{colored}</React.Fragment>;
+    }
+    if (React.isValidElement(child) && (child.props as Record<string, unknown>)?.children != null) {
+      return React.cloneElement(child as React.ReactElement<{ children?: React.ReactNode }>, {}, colorizeChildren((child.props as Record<string, unknown>).children as React.ReactNode));
+    }
+    return child;
+  });
+}
+
+const mdColorComponents: Components = {
+  p: ({ children, ...props }) => <p {...props}>{colorizeChildren(children)}</p>,
+  li: ({ children, ...props }) => <li {...props}>{colorizeChildren(children)}</li>,
+  td: ({ children, ...props }) => <td {...props}>{colorizeChildren(children)}</td>,
+  th: ({ children, ...props }) => <th {...props}>{colorizeChildren(children)}</th>,
+  h1: ({ children, ...props }) => <h1 {...props}>{colorizeChildren(children)}</h1>,
+  h2: ({ children, ...props }) => <h2 {...props}>{colorizeChildren(children)}</h2>,
+  h3: ({ children, ...props }) => <h3 {...props}>{colorizeChildren(children)}</h3>,
+  h4: ({ children, ...props }) => <h4 {...props}>{colorizeChildren(children)}</h4>,
+  blockquote: ({ children, ...props }) => <blockquote {...props}>{colorizeChildren(children)}</blockquote>,
+};
 
 // ─── Cennik LLM (USD / 1M tokenów) ───────────────────────────
 const _PRICING: Record<string, Record<string, [number, number]>> = {
@@ -92,40 +136,24 @@ const ANALYSIS_STEPS = [
   'Zapisywanie analizy...',
 ];
 
-// ─── Assessment Gauge (półokrągły wskaźnik) ───────────────────
+// ─── Assessment Gauge (nowoczesny arc gauge) ──────────────────
 function GaugeChart({
   value, label, loading, invertNeedle, onClick, sweeping,
 }: {
   value: number; label: string; loading?: boolean; invertNeedle?: boolean; onClick?: () => void; sweeping?: boolean;
 }) {
-  const cx = 90, cy = 84, R = 65, Rin = 44;
+  const cx = 90, cy = 84, R = 60;
+  const semi = Math.PI * R; // semicircle arc length
 
-  const pt = (deg: number, r: number) => ({
-    x: cx + r * Math.cos((deg * Math.PI) / 180),
-    y: cy - r * Math.sin((deg * Math.PI) / 180),
-  });
-
-  const arcSeg = (a1: number, a2: number, fill: string) => {
-    const os = pt(a1, R), oe = pt(a2, R);
-    const is = pt(a2, Rin), ie = pt(a1, Rin);
-    const la = a2 - a1 > 180 ? 1 : 0;
-    return (
-      <path fill={fill} opacity={0.72}
-        d={`M${os.x.toFixed(1)},${os.y.toFixed(1)} A${R},${R},0,${la},0,${oe.x.toFixed(1)},${oe.y.toFixed(1)} L${is.x.toFixed(1)},${is.y.toFixed(1)} A${Rin},${Rin},0,${la},1,${ie.x.toFixed(1)},${ie.y.toFixed(1)}Z`}
-      />
-    );
-  };
-
-  // Sweeping animation — needle swings left/right when no data
-  const [sweepDeg, setSweepDeg] = useState(90);
+  // Sweeping animation — arc fill oscillates when no data
+  const [sweepFrac, setSweepFrac] = useState(0.5);
   useEffect(() => {
     if (!sweeping) return;
     let frame: number;
     const start = Date.now();
     const tick = () => {
       const t = (Date.now() - start) / 1000;
-      // Smooth sine wave: 20°..160° (avoid extremes)
-      setSweepDeg(90 + 70 * Math.sin(t * 1.3));
+      setSweepFrac(0.5 + 0.38 * Math.sin(t * 1.3));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -134,9 +162,7 @@ function GaugeChart({
 
   const v = Math.max(1, Math.min(10, value || 5));
   const frac = (v - 1) / 9;
-  // Wysoka wartość → igła w prawo (dla ryzyka: prawo=czerwone, dla okazji: prawo=zielone)
-  const ndeg = sweeping ? sweepDeg : (1 - frac) * 180;
-  const tip = pt(ndeg, R - 10);
+  const fill = sweeping ? sweepFrac : frac;
   const unknown = !value;
 
   const RISK_LABELS  = ['MIN','NISKIE','NISKIE','ŚREDNIE','ŚREDNIE','ŚREDNIE','WYSOKIE','WYSOKIE','B.WYS.','EKSTR.'];
@@ -148,29 +174,63 @@ function GaugeChart({
       ? (v <= 3 ? '#a6e3a1' : v <= 6 ? '#f9e2af' : v <= 8 ? '#fab387' : '#f38ba8')
       : (v >= 7 ? '#a6e3a1' : v >= 4 ? '#f9e2af' : '#f38ba8');
 
-  // Ryzyko: zielony(lewo) → żółty → czerwony(prawo)
-  // Okazja: czerwony(lewo) → żółty → zielony(prawo)
-  const leftColor  = invertNeedle ? '#a6e3a1' : '#f38ba8';
-  const rightColor = invertNeedle ? '#f38ba8' : '#a6e3a1';
+  const gid = invertNeedle ? 'gR' : 'gO';
+  const ease = 'cubic-bezier(.4,0,.2,1)';
+
+  // Dot position at arc fill endpoint
+  const ang = Math.PI * (1 - fill);
+  const dx = cx + R * Math.cos(ang);
+  const dy = cy - R * Math.sin(ang);
 
   return (
     <svg viewBox="0 0 180 114" className="w-full cursor-pointer" onClick={onClick}>
       <title>Kliknij aby zobaczyć uzasadnienie AI</title>
-      {arcSeg(0, 60, rightColor)}
-      {arcSeg(60, 120, '#f9e2af')}
-      {arcSeg(120, 180, leftColor)}
-      <circle cx={cx} cy={cy} r={Rin - 1} fill="var(--bg)" />
-      <line x1={cx} y1={cy} x2={tip.x} y2={tip.y} stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx={cx} cy={cy} r={5} fill="white" />
-      <circle cx={cx} cy={cy} r={2} fill="var(--bg)" />
-      <text x={cx} y={99} textAnchor="middle" fill={valColor} fontSize="13" fontWeight="bold" fontFamily="ui-monospace,monospace">
-        {loading || sweeping ? '…/10' : unknown ? '?/10' : `${v}/10`}
-      </text>
-      <text x={cx} y={111} textAnchor="middle" fill={valColor} fontSize="8" fontWeight="bold" letterSpacing="1">
-        {!loading && !unknown && !sweeping ? levelText : ''}
-      </text>
+      <defs>
+        <linearGradient id={gid} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={invertNeedle ? '#a6e3a1' : '#f38ba8'} />
+          <stop offset="50%" stopColor="#f9e2af" />
+          <stop offset="100%" stopColor={invertNeedle ? '#f38ba8' : '#a6e3a1'} />
+        </linearGradient>
+        <filter id={`gl${gid}`}>
+          <feGaussianBlur stdDeviation="2.5" result="b" />
+          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+
+      {/* Label */}
       <text x={cx} y={12} textAnchor="middle" fill={invertNeedle ? '#f38ba8' : '#a6e3a1'} fontSize="11" fontWeight="bold" letterSpacing="0.8">
         {label}
+      </text>
+
+      {/* Background track */}
+      <path d={`M${cx - R},${cy} A${R},${R} 0 0 1 ${cx + R},${cy}`}
+        fill="none" stroke="#313244" strokeWidth="10" strokeLinecap="round" />
+
+      {/* Active arc with gradient + glow */}
+      <path d={`M${cx - R},${cy} A${R},${R} 0 0 1 ${cx + R},${cy}`}
+        fill="none" stroke={`url(#${gid})`} strokeWidth="10" strokeLinecap="round"
+        strokeDasharray={semi} strokeDashoffset={semi * (1 - fill)}
+        filter={`url(#gl${gid})`}
+        style={{ transition: sweeping ? 'none' : `stroke-dashoffset 0.8s ${ease}` }}
+      />
+
+      {/* Indicator dot */}
+      <circle cx={dx} cy={dy} r={7} fill={valColor} opacity={0.9}
+        style={{ transition: sweeping ? 'none' : `cx 0.8s ${ease}, cy 0.8s ${ease}` }} />
+      <circle cx={dx} cy={dy} r={3} fill="var(--bg)"
+        style={{ transition: sweeping ? 'none' : `cx 0.8s ${ease}, cy 0.8s ${ease}` }} />
+
+      {/* Value display */}
+      <text x={cx} y={cy - 10} textAnchor="middle" fill={valColor} fontSize="22" fontWeight="bold" fontFamily="ui-monospace,monospace">
+        {loading || sweeping ? '…' : unknown ? '?' : v}
+      </text>
+      <text x={cx} y={cy + 3} textAnchor="middle" fill="#585b70" fontSize="10" fontFamily="ui-monospace,monospace">
+        /10
+      </text>
+
+      {/* Level label */}
+      <text x={cx} y={cy + 16} textAnchor="middle" fill={valColor} fontSize="8" fontWeight="bold" letterSpacing="1">
+        {!loading && !unknown && !sweeping ? levelText : ''}
       </text>
     </svg>
   );
@@ -300,7 +360,7 @@ export default function Dashboard() {
   // Dodaj do portfela — context menu (prawy przycisk myszy)
   const [portCtx, setPortCtx] = useState<{ x: number; y: number; inst: InstrumentData } | null>(null);
   const [portModal, setPortModal] = useState<{ inst: InstrumentData; tabType: string; basePriceUSD: number } | null>(null);
-  const [portForm, setPortForm] = useState({ quantity: '', price: '', currency: 'USD' });
+  const [portForm, setPortForm] = useState({ quantity: '', price: '', currency: 'USD', total: '' });
   const [portAdding, setPortAdding] = useState(false);
 
   // Chat z persistencją 72h
@@ -814,18 +874,27 @@ export default function Dashboard() {
     setPortCtx({ x, y, inst });
   };
 
+  const portComputeTotal = (qty: string, price: string): string => {
+    const q = parseFloat(qty), p = parseFloat(price);
+    return (!isNaN(q) && !isNaN(p) && q > 0 && p > 0) ? (q * p).toFixed(2) : '';
+  };
+  const portComputeQty = (total: string, price: string): string => {
+    const t = parseFloat(total), p = parseFloat(price);
+    return (!isNaN(t) && !isNaN(p) && t > 0 && p > 0) ? (t / p).toPrecision(6).replace(/\.?0+$/, '') : '';
+  };
+
   const openPortModal = (inst: InstrumentData, tabType: string) => {
     setPortCtx(null);
     const basePrice = inst.price ?? 0;
-    setPortForm({ quantity: '', price: basePrice > 0 ? basePrice.toFixed(4) : '', currency: 'USD' });
+    setPortForm({ quantity: '', price: basePrice > 0 ? basePrice.toFixed(4) : '', currency: 'USD', total: '' });
     setPortModal({ inst, tabType, basePriceUSD: basePrice });
   };
 
   const handlePortCurrencyChange = (newCurrency: string) => {
     if (!portModal) return;
     if (portModal.basePriceUSD > 0) {
-      const converted = portModal.basePriceUSD * getFxRate(newCurrency);
-      setPortForm((prev) => ({ ...prev, currency: newCurrency, price: converted.toFixed(4) }));
+      const converted = (portModal.basePriceUSD * getFxRate(newCurrency)).toFixed(4);
+      setPortForm((prev) => ({ ...prev, currency: newCurrency, price: converted, total: portComputeTotal(prev.quantity, converted) }));
     } else {
       setPortForm((prev) => ({ ...prev, currency: newCurrency }));
     }
@@ -833,8 +902,12 @@ export default function Dashboard() {
 
   const submitPortForm = async () => {
     if (!portModal || portAdding) return;
-    const qty = parseFloat(portForm.quantity);
     const price = parseFloat(portForm.price);
+    let qty = parseFloat(portForm.quantity);
+    if ((isNaN(qty) || qty <= 0) && portForm.total) {
+      const t = parseFloat(portForm.total);
+      if (!isNaN(t) && t > 0 && !isNaN(price) && price > 0) qty = t / price;
+    }
     if (isNaN(qty) || qty <= 0 || isNaN(price) || price <= 0) return;
     setPortAdding(true);
     try {
@@ -847,7 +920,7 @@ export default function Dashboard() {
         tab_type: portModal.tabType,
       });
       setPortModal(null);
-      setPortForm({ quantity: '', price: '', currency: 'USD' });
+      setPortForm({ quantity: '', price: '', currency: 'USD', total: '' });
     } finally {
       setPortAdding(false);
     }
@@ -903,15 +976,6 @@ export default function Dashboard() {
                     onClick={() => setAssessmentModal('opportunity')}
                   />
                 </div>
-              </div>
-              <div className="px-3 pb-2.5">
-                <button
-                  onClick={() => fetchAssessment()}
-                  disabled={assessmentLoading}
-                  className="w-full px-3 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 text-[10px] text-[var(--accent)] hover:bg-[var(--accent)]/20 hover:border-[var(--accent)]/60 transition-colors disabled:opacity-40 tracking-widest uppercase font-semibold"
-                >
-                  {assessmentLoading ? 'Analizuję…' : '↻ Odśwież ocenę'}
-                </button>
               </div>
             </div>
           );
@@ -1001,14 +1065,6 @@ export default function Dashboard() {
                 <span className="font-bold font-mono" style={{ color: oColor }}>
                   {assessmentLoading && !assessment ? '…' : o > 0 ? `${o}/10` : '?'}
                 </span>
-              </button>
-              <button
-                onClick={() => fetchAssessment()}
-                disabled={assessmentLoading}
-                className="p-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 text-[var(--accent)] text-sm disabled:opacity-40 transition-colors active:bg-[var(--accent)]/20"
-                title="Odśwież ocenę"
-              >
-                ↻
               </button>
             </div>
           );
@@ -1238,7 +1294,7 @@ export default function Dashboard() {
                   onDoubleClick={() => setAnalysisExpanded(true)}
                   title="Kliknij dwukrotnie aby powiększyć"
                 >
-                  <ReactMarkdown>{report.analysis || ''}</ReactMarkdown>
+                  <ReactMarkdown components={mdColorComponents}>{report.analysis || ''}</ReactMarkdown>
                 </div>
               )}
             </div>
@@ -1357,7 +1413,7 @@ export default function Dashboard() {
               onDoubleClick={() => setAnalysisExpanded(false)}
               title="Kliknij dwukrotnie aby zamknąć"
             >
-              <ReactMarkdown>{report.analysis || ''}</ReactMarkdown>
+              <ReactMarkdown components={mdColorComponents}>{report.analysis || ''}</ReactMarkdown>
             </div>
           </div>
         </div>
@@ -1514,7 +1570,7 @@ export default function Dashboard() {
                 <input
                   type="number" step="any" min="0"
                   value={portForm.quantity}
-                  onChange={(e) => setPortForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                  onChange={(e) => { const q = e.target.value; setPortForm((prev) => ({ ...prev, quantity: q, total: portComputeTotal(q, prev.price) })); }}
                   placeholder="np. 10"
                   autoFocus
                   className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
@@ -1528,8 +1584,8 @@ export default function Dashboard() {
                   {portModal.basePriceUSD > 0 && (
                     <button
                       onClick={() => {
-                        const p = portModal.basePriceUSD * getFxRate(portForm.currency);
-                        setPortForm((prev) => ({ ...prev, price: p.toFixed(4) }));
+                        const p = (portModal.basePriceUSD * getFxRate(portForm.currency)).toFixed(4);
+                        setPortForm((prev) => ({ ...prev, price: p, total: portComputeTotal(prev.quantity, p) }));
                       }}
                       title={`Przywróć aktualną cenę: $${portModal.basePriceUSD.toLocaleString('en-US', { maximumFractionDigits: 4 })}`}
                       className="text-[10px] px-2 py-0.5 rounded-md border border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors font-mono"
@@ -1541,8 +1597,20 @@ export default function Dashboard() {
                 <input
                   type="number" step="any" min="0"
                   value={portForm.price}
-                  onChange={(e) => setPortForm((prev) => ({ ...prev, price: e.target.value }))}
+                  onChange={(e) => { const pr = e.target.value; setPortForm((prev) => ({ ...prev, price: pr, total: portComputeTotal(prev.quantity, pr) })); }}
                   placeholder="Cena"
+                  className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
+                />
+              </div>
+
+              {/* Wartość zakupu */}
+              <div>
+                <label className="text-xs text-[var(--overlay)] block mb-1">Wartość ({portForm.currency})</label>
+                <input
+                  type="number" step="any" min="0"
+                  value={portForm.total}
+                  onChange={(e) => { const t = e.target.value; setPortForm((prev) => ({ ...prev, total: t, quantity: portComputeQty(t, prev.price) })); }}
+                  placeholder="Kwota zakupu"
                   className="w-full bg-[var(--bg)] border border-[var(--gray)] rounded-lg px-3 py-2 text-sm focus:border-[var(--accent)] outline-none transition-colors"
                 />
               </div>
@@ -1568,7 +1636,7 @@ export default function Dashboard() {
               {/* Dodaj */}
               <button
                 onClick={submitPortForm}
-                disabled={portAdding || !portForm.quantity || !portForm.price}
+                disabled={portAdding || (!portForm.quantity && !portForm.total) || !portForm.price}
                 className="w-full py-2.5 rounded-xl font-semibold text-sm transition-opacity hover:opacity-90 disabled:opacity-40 bg-[var(--accent)] text-[var(--bg)]"
               >
                 {portAdding ? 'Dodawanie…' : `Dodaj do ${portModal.tabType === 'zakupione' ? 'Long' : 'Short'}`}

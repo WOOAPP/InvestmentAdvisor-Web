@@ -82,7 +82,7 @@ export default function Portfolio() {
   const [editingValue, setEditingValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ symbol: '', name: '', quantity: '', buy_price: '', buy_currency: 'USD' });
+  const [form, setForm] = useState({ symbol: '', name: '', quantity: '', buy_price: '', buy_currency: 'USD', total: '' });
   // przechowuje ostatnio pobraną cenę w USD i kursy FX (dla przeliczania przy zmianie waluty)
   const formPriceUsdRef = useRef<number | null>(null);
   const fxRatesRef = useRef<{ PLN: number; EUR: number }>({ PLN: 1, EUR: 1 });
@@ -171,18 +171,36 @@ export default function Portfolio() {
     };
   }, []);
 
+  // Przeliczanie total ↔ quantity
+  const computeTotal = (qty: string, price: string): string => {
+    const q = parseFloat(qty), p = parseFloat(price);
+    return (!isNaN(q) && !isNaN(p) && q > 0 && p > 0) ? (q * p).toFixed(2) : '';
+  };
+  const computeQty = (total: string, price: string): string => {
+    const t = parseFloat(total), p = parseFloat(price);
+    return (!isNaN(t) && !isNaN(p) && t > 0 && p > 0) ? (t / p).toPrecision(6).replace(/\.?0+$/, '') : '';
+  };
+
   const addPosition = async (e: React.FormEvent) => {
     e.preventDefault();
+    const price = parseFloat(form.buy_price);
+    let qty = parseFloat(form.quantity);
+    // Jeśli brak ilości ale jest total — przelicz
+    if ((isNaN(qty) || qty <= 0) && form.total) {
+      const t = parseFloat(form.total);
+      if (!isNaN(t) && t > 0 && !isNaN(price) && price > 0) qty = t / price;
+    }
+    if (isNaN(qty) || qty <= 0 || isNaN(price) || price <= 0) return;
     await apiAddPosition({
       symbol: form.symbol,
       name: form.name || form.symbol,
-      quantity: parseFloat(form.quantity),
-      buy_price: parseFloat(form.buy_price),
+      quantity: qty,
+      buy_price: price,
       buy_currency: form.buy_currency,
       tab_type: activeTab,
     });
     setShowForm(false);
-    setForm({ symbol: '', name: '', quantity: '', buy_price: '', buy_currency: 'USD' });
+    setForm({ symbol: '', name: '', quantity: '', buy_price: '', buy_currency: 'USD', total: '' });
     fetchPositions();
   };
 
@@ -220,14 +238,17 @@ export default function Portfolio() {
   // Wywoływane gdy user wybiera instrument — pobiera aktualną cenę
   const handleInstrumentPick = async (sym: string, nm: string) => {
     const upper = sym.toUpperCase();
-    setForm((p) => ({ ...p, symbol: upper, name: nm, buy_price: '' }));
+    setForm((p) => ({ ...p, symbol: upper, name: nm, buy_price: '', total: '' }));
     formPriceUsdRef.current = null;
     try {
       const result = await getPrices([upper]);
       const price = result[upper];
       if (price != null) {
         formPriceUsdRef.current = price;
-        setForm((p) => ({ ...p, symbol: upper, name: nm, buy_price: convertFromUsd(price, p.buy_currency) }));
+        setForm((p) => {
+          const pr = convertFromUsd(price, p.buy_currency);
+          return { ...p, symbol: upper, name: nm, buy_price: pr, total: computeTotal(p.quantity, pr) };
+        });
       }
     } catch { /* zostaw puste pole */ }
   };
@@ -274,29 +295,36 @@ export default function Portfolio() {
             symbolWrapClassName="w-full sm:w-32"
             nameWrapClassName="w-full sm:w-40"
           />
-          <input placeholder="Ilosc" type="number" step="any" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} required
+          <input placeholder="Ilość" type="number" step="any" value={form.quantity}
+            onChange={(e) => { const q = e.target.value; setForm((p) => ({ ...p, quantity: q, total: computeTotal(q, p.buy_price) })); }}
             className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-28" />
           <div className="relative">
-            <input placeholder="Cena kupna" type="number" step="any" value={form.buy_price} onChange={(e) => setForm({ ...form, buy_price: e.target.value })} required
+            <input placeholder="Cena kupna" type="number" step="any" value={form.buy_price} required
+              onChange={(e) => { const pr = e.target.value; setForm((p) => ({ ...p, buy_price: pr, total: computeTotal(p.quantity, pr) })); }}
               className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-32 pr-16" />
             {formPriceUsdRef.current != null && (
               <button
                 type="button"
-                onClick={() => setForm((p) => ({ ...p, buy_price: convertFromUsd(formPriceUsdRef.current!, p.buy_currency) }))}
+                onClick={() => setForm((p) => {
+                  const pr = convertFromUsd(formPriceUsdRef.current!, p.buy_currency);
+                  return { ...p, buy_price: pr, total: computeTotal(p.quantity, pr) };
+                })}
                 className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded border border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-colors font-mono"
                 title={`Aktualna cena: $${formPriceUsdRef.current.toLocaleString('en-US', { maximumFractionDigits: 4 })}`}
               >Aktualna</button>
             )}
           </div>
+          <input placeholder="Wartość" type="number" step="any" value={form.total}
+            onChange={(e) => { const t = e.target.value; setForm((p) => ({ ...p, total: t, quantity: computeQty(t, p.buy_price) })); }}
+            className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm w-full sm:w-32" />
           <select
             value={form.buy_currency}
             onChange={(e) => {
               const currency = e.target.value;
-              setForm((p) => ({
-                ...p,
-                buy_currency: currency,
-                buy_price: formPriceUsdRef.current != null ? convertFromUsd(formPriceUsdRef.current, currency) : p.buy_price,
-              }));
+              setForm((p) => {
+                const pr = formPriceUsdRef.current != null ? convertFromUsd(formPriceUsdRef.current, currency) : p.buy_price;
+                return { ...p, buy_currency: currency, buy_price: pr, total: computeTotal(p.quantity, pr) };
+              });
             }}
             className="bg-[var(--bg)] border border-[var(--gray)] rounded px-3 py-2 text-sm">
             <option value="USD">USD</option><option value="PLN">PLN</option><option value="EUR">EUR</option>
