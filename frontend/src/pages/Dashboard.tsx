@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 // ─── Kolorowanie wartości kwotowych i procentowych ────────────
-const VALUE_RE = /([-+]?\d[\d,.]*\d?\s*%|[-+]?\$\s?\d[\d,.]*|[-+]?€\s?\d[\d,.]*|[-+]?\d[\d,.]*\s?(?:USD|PLN|EUR|zł)\b)/g;
+const VALUE_RE = /([−–\-+]?\d[\d,.]*\d?\s*%|[−–\-+]?\$\s?\d[\d,.]*|[−–\-+]?€\s?\d[\d,.]*|[−–\-+]?\d[\d,.]*\s?(?:USD|PLN|EUR|zł)\b)/g;
 
 function colorizeText(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
@@ -26,7 +26,7 @@ function colorizeText(text: string): React.ReactNode[] {
   while ((m = VALUE_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     const raw = m[0];
-    const neg = raw.trimStart().startsWith('-');
+    const neg = /^[−–\-]/.test(raw.trimStart());
     parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
     last = VALUE_RE.lastIndex;
   }
