@@ -259,10 +259,15 @@ export default function Settings() {
       .finally(() => setStatsLoading(false));
   }, [activeTab, loginTime]);
 
-  // Intro tour: auto-switch to Dostosuj tab and start tour phase
+  // Intro tour: handle settings-general and settings phases
   useEffect(() => {
     if (loading) return;
     const phase = getTourPhase();
+    if (phase === 'settings-general') {
+      setActiveTab('general');
+      const timer = setTimeout(() => runTourPhase('settings-general', navigate), 500);
+      return () => clearTimeout(timer);
+    }
     if (phase === 'settings') {
       setActiveTab('customize');
       const timer = setTimeout(() => runTourPhase('settings', navigate), 500);
@@ -433,7 +438,7 @@ export default function Settings() {
       {/* ── Ogolne ──────────────────────────────────────────── */}
       {activeTab === 'general' && (
         <div className="space-y-5">
-          <section className="bg-[var(--bg2)] rounded-xl p-5 border border-[var(--gray)]">
+          <section className="bg-[var(--bg2)] rounded-xl p-5 border border-[var(--gray)]" data-tour="settings-apikeys">
             <h2 className="text-xs font-semibold text-[var(--overlay)] uppercase tracking-widest mb-4">Klucze API</h2>
             <div className="space-y-3">
               {(['anthropic', 'openai', 'openrouter', 'newsdata'] as const).map((k) => (

@@ -81,6 +81,13 @@ export default function Layout() {
 
           {/* Right side: status + user */}
           <div className="flex items-center gap-2 md:gap-3 text-sm">
+            <button
+              onClick={() => startTour(navigate)}
+              className="flex items-center px-3 md:px-4 py-1.5 rounded-full text-xs md:text-sm font-bold border tracking-wide bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors animate-pulse"
+              title="Przewodnik po aplikacji"
+            >
+              Intro
+            </button>
             {statusMsg && (() => {
               const isError   = statusMsg.toLowerCase().includes('blad') || statusMsg.toLowerCase().includes('błąd');
               const isReady   = statusMsg === 'Gotowy';
@@ -99,14 +106,6 @@ export default function Layout() {
                 </div>
               );
             })()}
-            <button
-              onClick={() => startTour(navigate)}
-              className="flex items-center gap-1 px-2 md:px-2.5 py-1 rounded-full text-[10px] md:text-[11px] font-bold border tracking-wide bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors"
-              title="Przewodnik po aplikacji"
-            >
-              <span className="text-xs leading-none">?</span>
-              <span className="hidden sm:inline">Intro</span>
-            </button>
             <span className="text-[var(--overlay)] text-xs hidden sm:inline">{user?.display_name || user?.email}</span>
             <button
               onClick={logout}

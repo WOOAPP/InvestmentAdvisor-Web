@@ -38,6 +38,7 @@ body {
 .chat-reply {
   font-family: 'Newsreader', Georgia, serif;
   font-optical-sizing: auto;
+  font-size: 0.9375rem;
   line-height: 1.7;
 }
 
@@ -162,38 +163,58 @@ body {
   background: var(--bg2) !important;
   color: var(--fg) !important;
   border: 1px solid var(--gray) !important;
-  border-radius: 12px !important;
+  border-radius: 16px !important;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+  min-width: 420px !important;
+  max-width: 520px !important;
+  padding: 28px 32px !important;
 }
 .driver-popover.iadvisor-tour .driver-popover-title {
   color: var(--accent) !important;
-  font-size: 15px !important;
+  font-size: 22px !important;
   font-weight: 700 !important;
+  margin-bottom: 12px !important;
 }
 .driver-popover.iadvisor-tour .driver-popover-description {
   color: var(--fg) !important;
-  font-size: 13px !important;
-  line-height: 1.5 !important;
+  font-size: 16px !important;
+  line-height: 1.65 !important;
 }
 .driver-popover.iadvisor-tour .driver-popover-progress-text {
   color: var(--overlay) !important;
-  font-size: 11px !important;
+  font-size: 13px !important;
+}
+.driver-popover.iadvisor-tour .driver-popover-footer {
+  margin-top: 20px !important;
 }
 .driver-popover.iadvisor-tour .driver-popover-next-btn,
 .driver-popover.iadvisor-tour .driver-popover-close-btn {
   background: var(--accent) !important;
   color: var(--bg) !important;
   border: none !important;
-  border-radius: 8px !important;
+  border-radius: 10px !important;
   font-weight: 600 !important;
+  font-size: 14px !important;
+  padding: 8px 20px !important;
   text-shadow: none !important;
 }
 .driver-popover.iadvisor-tour .driver-popover-prev-btn {
   background: transparent !important;
   color: var(--overlay) !important;
   border: 1px solid var(--gray) !important;
-  border-radius: 8px !important;
+  border-radius: 10px !important;
+  font-size: 14px !important;
+  padding: 8px 20px !important;
   text-shadow: none !important;
+}
+@media (max-width: 640px) {
+  .driver-popover.iadvisor-tour {
+    min-width: unset !important;
+    max-width: 90vw !important;
+    padding: 16px 18px !important;
+  }
+  .driver-popover.iadvisor-tour .driver-popover-title { font-size: 15px !important; }
+  .driver-popover.iadvisor-tour .driver-popover-description { font-size: 13px !important; }
 }
 .driver-popover.iadvisor-tour .driver-popover-arrow-side-left.driver-popover-arrow,
 .driver-popover.iadvisor-tour .driver-popover-arrow-side-right.driver-popover-arrow,

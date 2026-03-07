@@ -966,6 +966,7 @@ export default function Dashboard() {
 
         {/* Mobile: instruments toggle */}
         <div
+          data-tour="mobile-instruments"
           className="md:hidden px-3 py-2 border-b border-[var(--gray)] bg-[var(--bg2)] flex items-center justify-between cursor-pointer select-none"
           onClick={() => { setMarketExpanded((v) => !v); setSelectedInstrument(null); }}
         >
@@ -982,7 +983,7 @@ export default function Dashboard() {
           const rColor = r === 0 ? '#6c7086' : r <= 3 ? '#a6e3a1' : r <= 6 ? '#f9e2af' : r <= 8 ? '#fab387' : '#f38ba8';
           const oColor = o === 0 ? '#6c7086' : o >= 7 ? '#a6e3a1' : o >= 4 ? '#f9e2af' : '#f38ba8';
           return (
-            <div className="md:hidden flex items-center gap-2 px-3 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)]/50 flex-shrink-0">
+            <div data-tour="mobile-assessment" className="md:hidden flex items-center gap-2 px-3 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)]/50 flex-shrink-0">
               <button
                 onClick={() => setAssessmentModal('risk')}
                 className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
@@ -1579,6 +1580,7 @@ export default function Dashboard() {
 
       {/* ══ Mobile: floating chat bubble ══════════════════════════ */}
       <button
+        data-tour="mobile-chat-btn"
         className="md:hidden fixed bottom-5 right-4 z-40 px-4 py-2.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] shadow-lg font-semibold text-xs tracking-wide active:scale-95 transition-all hover:opacity-90"
         onClick={() => setChatOpen(true)}
         title="Czat z AI"

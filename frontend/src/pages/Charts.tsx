@@ -556,7 +556,7 @@ export default function Charts() {
     <div className="absolute inset-0 flex flex-col md:flex-row overflow-hidden">
 
       {/* ── Mobile tab bar ──────────────────────────────────── */}
-      <div className="md:hidden flex border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
+      <div data-tour="charts-mobile-tabs" className="md:hidden flex border-b border-[var(--gray)] bg-[var(--bg2)] flex-shrink-0">
         {(['instruments', 'chart', 'chat'] as const).map((tab) => (
           <button
             key={tab}

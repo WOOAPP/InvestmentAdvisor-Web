@@ -1,12 +1,13 @@
 import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
 
-export type TourPhase = 'settings' | 'dashboard' | 'charts' | 'calendar' | 'portfolio';
+export type TourPhase = 'settings-general' | 'settings' | 'dashboard' | 'charts' | 'calendar' | 'portfolio';
 
 const TOUR_PHASE_KEY = 'tour_phase';
 
-const PHASE_ORDER: TourPhase[] = ['settings', 'dashboard', 'charts', 'calendar', 'portfolio'];
+const PHASE_ORDER: TourPhase[] = ['settings-general', 'settings', 'dashboard', 'charts', 'calendar', 'portfolio'];
 const PHASE_ROUTES: Record<TourPhase, string> = {
+  'settings-general': '/settings',
   settings: '/settings',
   dashboard: '/',
   charts: '/charts',
@@ -20,6 +21,19 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
   const mobile = isMobile();
 
   switch (phase) {
+    case 'settings-general':
+      return [
+        {
+          element: '[data-tour="settings-apikeys"]',
+          popover: {
+            title: 'Klucze API',
+            description: 'Wprowadź klucze API dla dostawców AI (OpenAI, Anthropic lub OpenRouter). Bez klucza aplikacja nie wygeneruje analiz.',
+            side: 'bottom',
+            align: 'start',
+          },
+        },
+      ];
+
     case 'settings':
       return [
         {
@@ -43,18 +57,36 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
       ];
 
     case 'dashboard': {
-      const steps: DriveStep[] = [
-        {
+      const steps: DriveStep[] = [];
+      if (mobile) {
+        steps.push({
+          element: '[data-tour="mobile-instruments"]',
+          popover: {
+            title: 'Twoje instrumenty',
+            description: 'Rozwiń aby zobaczyć aktualne kursy wybranych instrumentów ze sparkline.',
+            side: 'bottom',
+            align: 'start',
+          },
+        });
+        steps.push({
+          element: '[data-tour="mobile-assessment"]',
+          popover: {
+            title: 'Ocena rynkowa',
+            description: 'Wskaźniki ryzyka i okazji inwestycyjnych generowane przez AI. Kliknij aby zobaczyć szczegóły.',
+            side: 'bottom',
+            align: 'center',
+          },
+        });
+      } else {
+        steps.push({
           element: '[data-tour="instruments"]',
           popover: {
             title: 'Twoje instrumenty',
             description: 'Aktualne kursy wybranych instrumentów ze sparkline. Przeciągnij aby zmienić kolejność.',
-            side: mobile ? 'bottom' : 'right',
+            side: 'right',
             align: 'start',
           },
-        },
-      ];
-      if (!mobile) {
+        });
         steps.push({
           element: '[data-tour="gauges"]',
           popover: {
@@ -78,12 +110,24 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
         element: '[data-tour="analysis-area"]',
         popover: {
           title: 'Raport AI',
-          description: 'Tu pojawi się analiza wygenerowana przez AI. Kliknij dwukrotnie aby rozwinąć na pełny ekran.',
+          description: mobile
+            ? 'Tu pojawi się analiza wygenerowana przez AI.'
+            : 'Tu pojawi się analiza wygenerowana przez AI. Kliknij dwukrotnie aby rozwinąć na pełny ekran.',
           side: 'top',
           align: 'center',
         },
       });
-      if (!mobile) {
+      if (mobile) {
+        steps.push({
+          element: '[data-tour="mobile-chat-btn"]',
+          popover: {
+            title: 'Czat z AI',
+            description: 'Otwórz czat z AI. Kontekst obejmuje bieżącą analizę, dane rynkowe i wiadomości.',
+            side: 'top',
+            align: 'end',
+          },
+        });
+      } else {
         steps.push({
           element: '[data-tour="chat-panel"]',
           popover: {
@@ -98,13 +142,35 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
     }
 
     case 'charts': {
-      const steps: DriveStep[] = [
+      if (mobile) {
+        return [
+          {
+            element: '[data-tour="charts-mobile-tabs"]',
+            popover: {
+              title: 'Panele',
+              description: 'Przełączaj między listą instrumentów, wykresem i czatem AI. Czat ma szerszy kontekst — dane z 5 interwałów, portfel i kalendarz.',
+              side: 'bottom',
+              align: 'center',
+            },
+          },
+          {
+            element: '[data-tour="charts-chart"]',
+            popover: {
+              title: 'Wykres',
+              description: 'Interaktywny wykres TradingView ze statystykami i profilem instrumentu.',
+              side: 'bottom',
+              align: 'center',
+            },
+          },
+        ];
+      }
+      return [
         {
           element: '[data-tour="charts-instruments"]',
           popover: {
             title: 'Wybierz instrument',
             description: 'Kliknij instrument z listy aby zobaczyć szczegółowy wykres z danymi historycznymi.',
-            side: mobile ? 'bottom' : 'right',
+            side: 'right',
             align: 'start',
           },
         },
@@ -113,13 +179,11 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Wykres',
             description: 'Interaktywny wykres TradingView ze statystykami i profilem instrumentu.',
-            side: mobile ? 'bottom' : 'left',
+            side: 'left',
             align: 'center',
           },
         },
-      ];
-      if (!mobile) {
-        steps.push({
+        {
           element: '[data-tour="charts-chat"]',
           popover: {
             title: 'Czat kontekstowy',
@@ -127,9 +191,8 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             side: 'left',
             align: 'start',
           },
-        });
-      }
-      return steps;
+        },
+      ];
     }
 
     case 'calendar':
@@ -201,7 +264,7 @@ export function clearTourPhase() {
 }
 
 export function startTour(navigate: (path: string) => void) {
-  sessionStorage.setItem(TOUR_PHASE_KEY, 'settings');
+  sessionStorage.setItem(TOUR_PHASE_KEY, 'settings-general');
   navigate('/settings');
 }
 
