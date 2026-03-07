@@ -77,9 +77,9 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="bg-[var(--bg2)] p-4 sm:p-8 rounded-xl border border-[var(--gray)] w-full max-w-md mx-4 sm:mx-auto">
-        <h1 className="text-2xl font-bold text-[var(--accent)] mb-6 text-center">
-          InvestmentAdvisor
-        </h1>
+        <div className="flex justify-center mb-6">
+          <img src="/logo.png" alt="IAdvisor" className="h-10" />
+        </div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
             type="email"
