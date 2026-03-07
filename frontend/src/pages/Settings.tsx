@@ -259,17 +259,26 @@ export default function Settings() {
       .finally(() => setStatsLoading(false));
   }, [activeTab, loginTime]);
 
-  // Intro tour: handle settings-general and settings phases
+  // Intro tour: switch tab when a tour phase starts (works for both initial mount and same-route transitions)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const phase = (e as CustomEvent).detail?.phase;
+      if (phase === 'settings-general') setActiveTab('general');
+      if (phase === 'settings') setActiveTab('customize');
+    };
+    window.addEventListener('tour:phase-start', handler);
+    return () => window.removeEventListener('tour:phase-start', handler);
+  }, []);
+
+  // Intro tour: trigger phase on mount
   useEffect(() => {
     if (loading) return;
     const phase = getTourPhase();
     if (phase === 'settings-general') {
-      setActiveTab('general');
       const timer = setTimeout(() => runTourPhase('settings-general', navigate), 500);
       return () => clearTimeout(timer);
     }
     if (phase === 'settings') {
-      setActiveTab('customize');
       const timer = setTimeout(() => runTourPhase('settings', navigate), 500);
       return () => clearTimeout(timer);
     }

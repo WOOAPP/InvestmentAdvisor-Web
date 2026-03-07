@@ -269,6 +269,9 @@ export function startTour(navigate: (path: string) => void) {
 }
 
 export function runTourPhase(phase: TourPhase, navigate: (path: string) => void) {
+  // Notify components to react (e.g. switch tabs) before driver highlights anything
+  window.dispatchEvent(new CustomEvent('tour:phase-start', { detail: { phase } }));
+
   const steps = getPhaseSteps(phase);
   if (!steps.length) {
     // Skip to next phase if no steps (shouldn't happen)
@@ -320,5 +323,6 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
     },
   });
 
-  d.drive();
+  // Delay drive() so components have time to react to the tour:phase-start event
+  setTimeout(() => d.drive(), 350);
 }
