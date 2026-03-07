@@ -308,7 +308,12 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
       const next = getNextPhase(phase);
       if (next) {
         sessionStorage.setItem(TOUR_PHASE_KEY, next);
-        navigate(PHASE_ROUTES[next]);
+        if (PHASE_ROUTES[next] === PHASE_ROUTES[phase]) {
+          // Same route — navigate won't re-mount the component, run next phase directly
+          setTimeout(() => runTourPhase(next, navigate), 100);
+        } else {
+          navigate(PHASE_ROUTES[next]);
+        }
       } else {
         clearTourPhase();
       }
