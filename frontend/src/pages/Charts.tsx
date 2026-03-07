@@ -700,12 +700,23 @@ export default function Charts() {
                   return n.toLocaleString('en-US');
                 };
                 const tf5m = tfData['5m'];
+                const tf15m = tfData['15m'];
                 const tf24h = tfData['24h'];
                 const tf72h = tfData['72h'];
                 const change = selected.change;
                 const changePct = selected.change_pct;
                 const isUp = (changePct ?? 0) >= 0;
                 const changeColor = isUp ? 'text-[var(--green)]' : 'text-[var(--red)]';
+
+                // Zmienność dzienna = (high - low) / open * 100
+                const dayVolatility = tf5m && tf5m.open > 0
+                  ? ((tf5m.high - tf5m.low) / tf5m.open) * 100
+                  : null;
+
+                // Odległość od max (1r) = (close - high) / high * 100
+                const offHigh1y = tf72h && tf72h.points > 1 && tf72h.high > 0
+                  ? ((tf72h.close - tf72h.high) / tf72h.high) * 100
+                  : null;
 
                 const StatCell = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
                   <div className="flex flex-col min-w-0">
@@ -717,7 +728,7 @@ export default function Charts() {
 
                 return (
                   <div className="rounded-xl border border-[var(--gray)] bg-[var(--bg2)] p-2.5 sm:p-3">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 sm:gap-x-4 gap-y-2.5 sm:gap-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-2.5 sm:gap-y-3">
                       <StatCell
                         label="Zmiana"
                         value={change != null ? `${isUp ? '+' : ''}${fmt(change)}` : '—'}
@@ -740,6 +751,13 @@ export default function Charts() {
                         label="Wolumen"
                         value={fmtVol(selected.volume)}
                       />
+                      {tf15m && tf15m.points > 1 && (
+                        <StatCell
+                          label="Zmiana (5d)"
+                          value={`${tf15m.changePct >= 0 ? '+' : ''}${tf15m.changePct.toFixed(2)}%`}
+                          color={tf15m.changePct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}
+                        />
+                      )}
                       {tf24h && tf24h.points > 1 && (
                         <StatCell
                           label="Zmiana (60d)"
@@ -753,6 +771,21 @@ export default function Charts() {
                           value={`${tf72h.changePct >= 0 ? '+' : ''}${tf72h.changePct.toFixed(2)}%`}
                           sub={`${fmt(tf72h.low)} – ${fmt(tf72h.high)}`}
                           color={tf72h.changePct >= 0 ? 'text-[var(--green)]' : 'text-[var(--red)]'}
+                        />
+                      )}
+                      {dayVolatility != null && (
+                        <StatCell
+                          label="Zmienność (dziś)"
+                          value={`${dayVolatility.toFixed(2)}%`}
+                          color="text-[var(--yellow)]"
+                        />
+                      )}
+                      {offHigh1y != null && (
+                        <StatCell
+                          label="Od max (1r)"
+                          value={`${offHigh1y >= 0 ? '0.00' : offHigh1y.toFixed(2)}%`}
+                          sub={tf72h ? `max: ${fmt(tf72h.high)}` : undefined}
+                          color={offHigh1y >= -5 ? 'text-[var(--green)]' : offHigh1y >= -20 ? 'text-[var(--yellow)]' : 'text-[var(--red)]'}
                         />
                       )}
                     </div>
