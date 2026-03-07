@@ -281,7 +281,7 @@ export default function Dashboard() {
   const [pickerModel, setPickerModel] = useState('');
   const [availableProviders, setAvailableProviders] = useState<string[]>([]);
 
-  const { loginTime } = useAuthStore();
+  const { loginTime, user } = useAuthStore();
   const [sessionCost, setSessionCost] = useState<number | null>(null);
 
   // Instrument panel
@@ -304,7 +304,7 @@ export default function Dashboard() {
   const [portAdding, setPortAdding] = useState(false);
 
   // Chat z persistencją 72h
-  const { messages: chatMessages, setMessages: setChatMessages } = useChatStorage('chat:dashboard');
+  const { messages: chatMessages, setMessages: setChatMessages } = useChatStorage(`chat:${user?.id}:dashboard`);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);

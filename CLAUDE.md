@@ -76,6 +76,7 @@ InvestmentAdvisor-Web/
 │   │   ├── main.py            # FastAPI entry point, Alembic on startup, CORS
 │   │   ├── api/               # Route handlers
 │   │   │   ├── auth.py        # Register, login, refresh, me
+│   │   │   ├── admin.py       # Admin panel: users, activity log, global stats
 │   │   │   ├── market.py      # Instrument prices, sparklines
 │   │   │   ├── reports.py     # CRUD + run analysis
 │   │   │   ├── portfolio.py   # Positions CRUD
@@ -88,9 +89,10 @@ InvestmentAdvisor-Web/
 │   │   │   ├── config.py      # Pydantic Settings (from env/.env)
 │   │   │   ├── database.py    # Async SQLAlchemy engine + session
 │   │   │   ├── security.py    # JWT creation/verification, bcrypt
-│   │   │   └── deps.py        # FastAPI dependencies (get_db, get_current_user)
+│   │   │   └── deps.py        # FastAPI dependencies (get_db, get_current_user, get_admin_user)
 │   │   ├── models/            # SQLAlchemy ORM models
-│   │   │   ├── user.py
+│   │   │   ├── user.py        # + is_admin: bool (dodane migracją 0003)
+│   │   │   ├── activity_log.py # Audit trail: akcje użytkownika (login, etc.)
 │   │   │   ├── report.py
 │   │   │   ├── portfolio.py
 │   │   │   ├── alert.py
@@ -110,7 +112,8 @@ InvestmentAdvisor-Web/
 │   ├── alembic/               # DB migrations
 │   │   └── versions/
 │   │       ├── 0001_initial_schema.py
-│   │       └── 0002_add_token_usage.py
+│   │       ├── 0002_add_token_usage.py
+│   │       └── 0003_add_admin_and_activity_log.py  # is_admin + activity_log table
 │   ├── alembic.ini
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -239,6 +242,9 @@ All registered at `/api` prefix. Auth required unless noted.
 | POST | `/api/auth/login` | auth | Login (returns JWT) |
 | POST | `/api/auth/refresh` | auth | Refresh access token |
 | GET | `/api/auth/me` | auth | Current user info |
+| GET | `/api/admin/users` | admin | Lista użytkowników ze statystykami (wymaga is_admin) |
+| GET | `/api/admin/activity` | admin | Ostatnie akcje wszystkich użytkowników (wymaga is_admin) |
+| GET | `/api/admin/stats` | admin | Globalne statystyki tokenów i użytkowników (wymaga is_admin) |
 | GET | `/api/market/instruments` | market | All instrument prices |
 | POST | `/api/market/sparkline` | market | Sparkline data for symbol |
 | GET | `/api/reports` | reports | List reports |
@@ -305,17 +311,18 @@ Other backend routes still import from desktop `modules/` (e.g., `ai_engine`, `c
 
 Models in `backend/app/models/`:
 
-| Model | Table |
-|-------|-------|
-| User | users |
-| Report | reports |
-| Portfolio | portfolio |
-| Alert | alerts |
-| MarketSnapshot | market_snapshots |
-| InstrumentProfile | instrument_profiles |
-| TokenUsage | token_usage |
+| Model | Table | Uwagi |
+|-------|-------|-------|
+| User | users | + `is_admin` (migr. 0003) |
+| ActivityLog | activity_log | audit trail loginów i akcji (migr. 0003) |
+| Report | reports | |
+| Portfolio | portfolio | |
+| Alert | alerts | |
+| MarketSnapshot | market_snapshots | |
+| InstrumentProfile | instrument_profiles | |
+| TokenUsage | token_usage | |
 
-Migrations: `backend/alembic/versions/` (2 migrations: initial schema + token usage).
+Migrations: `backend/alembic/versions/` (3 migracje: initial schema, token usage, admin+activity_log).
 
 ### Desktop: SQLite (`data/advisor.db`)
 
@@ -415,6 +422,8 @@ All pages are fully responsive (mobile-first with `sm:` / `md:` breakpoints):
 - JWT access tokens (24h) + refresh tokens (30d)
 - bcrypt password hashing
 - Protected routes via `get_current_user` dependency
+- Admin-only routes via `get_admin_user` dependency (`is_admin=True` required)
+- `ActivityLog` zapisuje każdy login (user_id, action, ip_address, created_at)
 
 ### SSRF Protection (`modules/url_validator.py`)
 - Scheme, IP, hostname, DNS checks before scraper HTTP requests
@@ -517,6 +526,67 @@ Migrations auto-run on backend startup.
 
 ---
 
+## Rejestracja użytkowników — Audyt i plan poprawy
+
+### Aktualny przepływ rejestracji
+
+```
+POST /api/auth/register
+  Body: { email: EmailStr, password: str, display_name: str = "" }
+  → sprawdza duplikat email
+  → hash_password (bcrypt)
+  → tworzy User(email, hashed_password, display_name, config={})
+  → zwraca TokenResponse (access_token + refresh_token)
+  ⚠ NIE loguje aktywności (ActivityLog)
+  ⚠ NIE waliduje siły hasła
+  ⚠ NIE normalizuje emaila do lowercase
+
+Frontend (Login.tsx):
+  → przełącznik login/register (isRegister)
+  → pola: email + password (brak pola display_name, brak confirm password)
+  → błędy z backend detail wyświetlane inline
+  ⚠ brak walidacji client-side
+  ⚠ brak pola "Powtórz hasło"
+  ⚠ brak pola "Nazwa wyświetlana"
+```
+
+### Znalezione problemy (backend)
+
+| # | Problem | Plik | Priorytet |
+|---|---------|------|-----------|
+| B1 | Brak walidacji siły hasła — akceptuje hasło `"a"` | `schemas/auth.py` | Wysoki |
+| B2 | Brak `min_length`/`max_length` na `display_name` | `schemas/auth.py` | Średni |
+| B3 | Email nie jest normalizowany do lowercase przed zapisem | `api/auth.py` | Wysoki |
+| B4 | Rejestracja nie zapisuje `ActivityLog` (login tak, register nie) | `api/auth.py` | Średni |
+| B5 | Brak rate limiting na `/register` — możliwe masowe zakładanie kont | `api/auth.py` | Wysoki |
+| B6 | Brak pola `is_active` w modelu User — nie można dezaktywować konta | `models/user.py` | Średni |
+| B7 | `UserResponse` nie zwraca `created_at` | `schemas/auth.py` | Niski |
+| B8 | Hasło nie jest weryfikowane pod kątem popularnych haseł | `schemas/auth.py` | Niski |
+
+### Znalezione problemy (frontend)
+
+| # | Problem | Plik | Priorytet |
+|---|---------|------|-----------|
+| F1 | Brak pola "Powtórz hasło" w formularzu rejestracji | `pages/Login.tsx` | Wysoki |
+| F2 | Brak pola "Nazwa wyświetlana" — display_name zawsze pusty | `pages/Login.tsx` | Średni |
+| F3 | Brak walidacji client-side hasła (długość, złożoność) | `pages/Login.tsx` | Wysoki |
+| F4 | Literówki w polskim UI: "Haslo" → "Hasło", "Wystapil blad" → "Wystąpił błąd" | `pages/Login.tsx` | Niski |
+| F5 | Brak wizualnego wskaźnika siły hasła (password strength meter) | `pages/Login.tsx` | Niski |
+| F6 | Brak komunikatu o wymaganiach hasła dla użytkownika | `pages/Login.tsx` | Średni |
+
+### Plan poprawy (kolejność implementacji)
+
+1. **Backend — walidacja hasła** (`schemas/auth.py`): `min_length=8`, wymagaj cyfry lub znaku specjalnego (Pydantic validator)
+2. **Backend — normalizacja emaila** (`api/auth.py`): `body.email.lower()` przed zapisem i wyszukaniem
+3. **Backend — ActivityLog dla rejestracji** (`api/auth.py`): dodać `ActivityLog(action="register")` analogicznie do loginu
+4. **Frontend — pole confirm password** (`pages/Login.tsx`): sprawdzenie zgodności haseł przed submit
+5. **Frontend — pole display_name** (`pages/Login.tsx`): opcjonalne pole "Nazwa wyświetlana"
+6. **Frontend — walidacja i UX** (`pages/Login.tsx`): inline komunikaty o wymaganiach hasła, poprawna polszczyzna
+7. **Backend — rate limiting**: slowapi lub middleware ograniczający `/register` i `/login` per IP
+8. **Backend — is_active** (`models/user.py`): pole umożliwiające blokowanie kont bez usuwania
+
+---
+
 ## Known Issues / TODO
 
 1. **Chat and Reports pages not routed** — `Chat.tsx` and `Reports.tsx` exist but are not in `App.tsx` routes
@@ -531,6 +601,13 @@ Migrations auto-run on backend startup.
 10. **No web tests yet** — only desktop module tests exist
 11. **PostgreSQL password** — default `advisor:advisor` in docker-compose; change for production
 12. **Prompts tab password is client-side only** — not a real security measure, just a UI gate
+13. **Rejestracja bez walidacji hasła** — `password: str` przyjmuje dowolny ciąg, brak min_length w schemacie
+14. **Email nie jest normalizowany** — `user@EXAMPLE.COM` i `user@example.com` to dwa różne konta
+15. **Brak ActivityLog przy rejestracji** — login loguje aktywność, register nie
+16. **Brak rate limiting** — `/api/auth/register` i `/api/auth/login` otwarte na brute-force
+17. **Brak pola is_active** — nie można zablokować konta bez usunięcia go z bazy
+18. **Admin panel bez frontendu** — endpointy `/api/admin/*` działają, ale brak strony w React
+19. **Brak confirm password w formularzu** — użytkownik może wpisać hasło z literówką bez możliwości weryfikacji
 
 ---
 

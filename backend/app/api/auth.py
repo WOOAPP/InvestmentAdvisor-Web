@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.deps import get_current_user
+from backend.app.core.limiter import limiter
 from backend.app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -27,17 +28,25 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.email == body.email))
+@limiter.limit("5/minute")
+async def register(request: Request, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    email = body.email.lower()
+    existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
     user = User(
-        email=body.email,
+        email=email,
         hashed_password=hash_password(body.password),
-        display_name=body.display_name or body.email.split("@")[0],
+        display_name=body.display_name or email.split("@")[0],
         config={},
     )
     db.add(user)
+    await db.flush()  # nadaj user.id przed ActivityLog
+    db.add(ActivityLog(
+        user_id=user.id,
+        action="register",
+        ip_address=request.client.host if request.client else None,
+    ))
     await db.commit()
     await db.refresh(user)
     return TokenResponse(
@@ -47,11 +56,14 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    if not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Konto zostało dezaktywowane")
     db.add(ActivityLog(
         user_id=user.id,
         action="login",

@@ -25,3 +25,4 @@ class User(Base):
     #         trusted_domains, prompt, chat_prompt, schedule, etc.
     config: Mapped[dict] = mapped_column(JSONB, default=dict)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

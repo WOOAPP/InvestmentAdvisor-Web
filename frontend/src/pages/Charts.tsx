@@ -9,6 +9,7 @@ import PriceChart from '../components/PriceChart';
 import InstrumentProfilePanel from '../components/InstrumentProfilePanel';
 import api from '../api/client';
 import { useChatStorage } from '../hooks/useChatStorage';
+import { useAuthStore } from '../stores/authStore';
 import { APP_TIMEZONE } from '../config';
 import { useNavigate } from 'react-router-dom';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
@@ -152,8 +153,10 @@ export default function Charts() {
   const [instrumentProfilePrompt, setInstrumentProfilePrompt] = useState('');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
-  // Chat z persistencją 72h — osobna historia per instrument
-  const chatStorageKey = selected ? `chat:charts:${selected.symbol}` : 'chat:charts';
+  const { user } = useAuthStore();
+
+  // Chat z persistencją 72h — osobna historia per użytkownik i instrument
+  const chatStorageKey = selected ? `chat:${user?.id}:charts:${selected.symbol}` : `chat:${user?.id}:charts`;
   const { messages: chatMessages, setMessages: setChatMessages, clearMessages } = useChatStorage(chatStorageKey);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);

@@ -34,6 +34,9 @@ apscheduler>=3.10.0
 # PDF export
 fpdf2>=2.8.0
 
+# Rate limiting
+slowapi>=0.1.9
+
 # Utilities
 certifi
 tzdata

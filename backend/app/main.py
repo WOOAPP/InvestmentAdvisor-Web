@@ -8,6 +8,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # Add project root to sys.path so desktop modules (modules/, config.py, constants.py)
 # are importable without modification.
@@ -16,6 +19,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from backend.app.core.config import settings
+from backend.app.core.limiter import limiter
 from backend.app.api import admin, auth, market, reports, portfolio, chat, settings as settings_api, calendar as calendar_api, stats as stats_api, news as news_api
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
