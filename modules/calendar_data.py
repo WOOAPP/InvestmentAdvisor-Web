@@ -239,7 +239,9 @@ def fetch_calendar_14d():
             cached = list(_calendar_14d_cache["events"])
             cutoff = (datetime.now(_WARSAW).date() + timedelta(days=14)).strftime("%Y-%m-%d")
             today_str = datetime.now(_WARSAW).date().strftime("%Y-%m-%d")
-            return [e for e in cached if today_str <= e["date"] <= cutoff], None
+            filtered = [e for e in cached if today_str <= e["date"] <= cutoff]
+            if filtered:
+                return filtered, None
 
     this_events, this_err = _fetch_thisweek()
     next_events, next_err = _fetch_nextweek()
