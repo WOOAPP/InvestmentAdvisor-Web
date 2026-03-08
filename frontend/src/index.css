@@ -159,15 +159,28 @@ body {
 .md-profile hr { border: none; border-top: 1px solid var(--gray); margin: 0.75rem 0; }
 
 /* driver.js tour — Catppuccin Mocha theme */
+@keyframes tour-glow {
+  0%, 100% { box-shadow: 0 0 12px 2px rgba(137,180,250,0.25), 0 8px 32px rgba(0,0,0,0.4); }
+  50% { box-shadow: 0 0 24px 6px rgba(137,180,250,0.4), 0 8px 32px rgba(0,0,0,0.4); }
+}
+@keyframes tour-stage-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(137,180,250,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(137,180,250,0.15); }
+}
 .driver-popover.iadvisor-tour {
   background: var(--bg2) !important;
   color: var(--fg) !important;
-  border: 1px solid var(--gray) !important;
+  border: 1px solid var(--accent) !important;
   border-radius: 16px !important;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
   min-width: 420px !important;
   max-width: 520px !important;
   padding: 28px 32px !important;
+  animation: tour-glow 2.5s ease-in-out infinite !important;
+}
+.driver-active-element {
+  animation: tour-stage-pulse 2s ease-in-out infinite !important;
+  border-radius: 12px;
 }
 .driver-popover.iadvisor-tour .driver-popover-title {
   color: var(--accent) !important;
@@ -210,15 +223,22 @@ body {
 @media (max-width: 640px) {
   .driver-popover.iadvisor-tour {
     min-width: unset !important;
-    max-width: 90vw !important;
-    padding: 16px 18px !important;
+    max-width: 88vw !important;
+    padding: 14px 16px !important;
   }
   .driver-popover.iadvisor-tour .driver-popover-title { font-size: 15px !important; }
-  .driver-popover.iadvisor-tour .driver-popover-description { font-size: 13px !important; }
+  .driver-popover.iadvisor-tour .driver-popover-description { font-size: 13px !important; line-height: 1.5 !important; }
+  .driver-popover.iadvisor-tour .driver-popover-footer { margin-top: 14px !important; }
+  .driver-popover.iadvisor-tour .driver-popover-next-btn,
+  .driver-popover.iadvisor-tour .driver-popover-close-btn,
+  .driver-popover.iadvisor-tour .driver-popover-prev-btn {
+    font-size: 13px !important;
+    padding: 7px 16px !important;
+  }
 }
 .driver-popover.iadvisor-tour .driver-popover-arrow-side-left.driver-popover-arrow,
 .driver-popover.iadvisor-tour .driver-popover-arrow-side-right.driver-popover-arrow,
 .driver-popover.iadvisor-tour .driver-popover-arrow-side-top.driver-popover-arrow,
 .driver-popover.iadvisor-tour .driver-popover-arrow-side-bottom.driver-popover-arrow {
-  border-color: var(--gray) !important;
+  border-color: var(--accent) !important;
 }

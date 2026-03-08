@@ -65,7 +65,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             title: 'Twoje instrumenty',
             description: 'Rozwiń aby zobaczyć aktualne kursy wybranych instrumentów ze sparkline.',
             side: 'bottom',
-            align: 'start',
+            align: 'center',
           },
         });
         steps.push({
@@ -74,6 +74,33 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             title: 'Ocena rynkowa',
             description: 'Wskaźniki ryzyka i okazji inwestycyjnych generowane przez AI. Kliknij aby zobaczyć szczegóły.',
             side: 'bottom',
+            align: 'center',
+          },
+        });
+        steps.push({
+          element: '[data-tour="run-analysis"]',
+          popover: {
+            title: 'Uruchom analizę',
+            description: 'Główny przycisk — AI pobiera dane rynkowe, wiadomości i treści ze źródeł, a następnie generuje szczegółowy raport.',
+            side: 'bottom',
+            align: 'center',
+          },
+        });
+        steps.push({
+          element: '[data-tour="analysis-area"]',
+          popover: {
+            title: 'Raport AI',
+            description: 'Tu pojawi się analiza wygenerowana przez AI.',
+            side: 'over',
+            align: 'center',
+          },
+        });
+        steps.push({
+          element: '[data-tour="mobile-chat-btn"]',
+          popover: {
+            title: 'Czat z AI',
+            description: 'Otwórz czat z AI. Kontekst obejmuje bieżącą analizę, dane rynkowe i wiadomości.',
+            side: 'top',
             align: 'center',
           },
         });
@@ -96,38 +123,24 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             align: 'start',
           },
         });
-      }
-      steps.push({
-        element: '[data-tour="run-analysis"]',
-        popover: {
-          title: 'Uruchom analizę',
-          description: 'Główny przycisk — AI pobiera dane rynkowe, wiadomości i treści ze źródeł, a następnie generuje szczegółowy raport.',
-          side: 'bottom',
-          align: 'start',
-        },
-      });
-      steps.push({
-        element: '[data-tour="analysis-area"]',
-        popover: {
-          title: 'Raport AI',
-          description: mobile
-            ? 'Tu pojawi się analiza wygenerowana przez AI.'
-            : 'Tu pojawi się analiza wygenerowana przez AI. Kliknij dwukrotnie aby rozwinąć na pełny ekran.',
-          side: 'top',
-          align: 'center',
-        },
-      });
-      if (mobile) {
         steps.push({
-          element: '[data-tour="mobile-chat-btn"]',
+          element: '[data-tour="run-analysis"]',
           popover: {
-            title: 'Czat z AI',
-            description: 'Otwórz czat z AI. Kontekst obejmuje bieżącą analizę, dane rynkowe i wiadomości.',
-            side: 'top',
-            align: 'end',
+            title: 'Uruchom analizę',
+            description: 'Główny przycisk — AI pobiera dane rynkowe, wiadomości i treści ze źródeł, a następnie generuje szczegółowy raport.',
+            side: 'bottom',
+            align: 'start',
           },
         });
-      } else {
+        steps.push({
+          element: '[data-tour="analysis-area"]',
+          popover: {
+            title: 'Raport AI',
+            description: 'Tu pojawi się analiza wygenerowana przez AI. Kliknij dwukrotnie aby rozwinąć na pełny ekran.',
+            side: 'top',
+            align: 'center',
+          },
+        });
         steps.push({
           element: '[data-tour="chat-panel"]',
           popover: {
@@ -158,7 +171,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             popover: {
               title: 'Wykres',
               description: 'Interaktywny wykres TradingView ze statystykami i profilem instrumentu.',
-              side: 'bottom',
+              side: 'over',
               align: 'center',
             },
           },
@@ -202,7 +215,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Wydarzenia ekonomiczne',
             description: 'Lista nadchodzących wydarzeń makroekonomicznych z wagą wpływu na rynki.',
-            side: 'bottom',
+            side: mobile ? 'over' : 'bottom',
             align: 'center',
           },
         },
@@ -211,7 +224,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Analiza AI wydarzenia',
             description: 'Kliknij wydarzenie aby je rozwinąć, a następnie użyj przycisku „Analizuj" — AI oceni wpływ na rynki.',
-            side: 'top',
+            side: mobile ? 'bottom' : 'top',
             align: 'center',
           },
         },
@@ -224,8 +237,8 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Dodaj pozycję',
             description: 'Dodaj instrumenty do portfela — podaj ilość i cenę zakupu. Portfel jest uwzględniany w kontekście czatu.',
-            side: 'bottom',
-            align: 'start',
+            side: mobile ? 'over' : 'bottom',
+            align: mobile ? 'center' : 'start',
           },
         },
         {
@@ -233,7 +246,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Pozycje',
             description: 'Tabela pozycji z aktualną wyceną i bilansem zysku/straty.',
-            side: 'top',
+            side: mobile ? 'over' : 'top',
             align: 'center',
           },
         },
@@ -242,7 +255,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Kursy walut',
             description: 'Bieżące kursy walut w formie kafelków ze sparkline.',
-            side: 'top',
+            side: mobile ? 'over' : 'top',
             align: 'center',
           },
         },
@@ -308,8 +321,8 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
     doneBtnText: isLastPhase ? 'Gotowe' : 'Dalej →',
     allowClose: true,
     overlayOpacity: 0.6,
-    stagePadding: 8,
-    stageRadius: 8,
+    stagePadding: isMobile() ? 4 : 8,
+    stageRadius: isMobile() ? 6 : 8,
     popoverClass: 'iadvisor-tour',
     smoothScroll: true,
     onCloseClick: () => {
