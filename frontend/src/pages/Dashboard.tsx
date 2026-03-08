@@ -26,10 +26,17 @@ function colorizeText(text: string): React.ReactNode[] {
   while ((m = VALUE_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     const raw = m[0];
-    // Dash before digits is negative only if NOT preceded by a digit (range like "90–100" is not negative)
     const charBefore = m.index > 0 ? text[m.index - 1] : '';
-    const neg = /^[−–\-]/.test(raw.trimStart()) && !/\d/.test(charBefore);
-    parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
+    const charAfter = text[m.index + raw.length] ?? '';
+    // Range like "90–100 USD" — skip coloring both parts
+    const isRangeEnd = /^[−–\-]/.test(raw.trimStart()) && /\d/.test(charBefore);
+    const isRangeStart = /[−–\-]/.test(charAfter) && /\d/.test(text[m.index + raw.length + 1] ?? '');
+    if (isRangeEnd || isRangeStart) {
+      parts.push(raw);
+    } else {
+      const neg = /^[−–\-]/.test(raw.trimStart());
+      parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
+    }
     last = VALUE_RE.lastIndex;
   }
   if (last < text.length) parts.push(text.slice(last));
