@@ -653,35 +653,87 @@ export default function Dashboard() {
     if (!report || !analysisRef.current) return;
     const content = analysisRef.current.innerHTML;
     const date = new Date().toLocaleString('pl-PL', { timeZone: APP_TIMEZONE });
+    const logoUrl = `${window.location.origin}/logo-icon.png`;
     const html = `<!DOCTYPE html><html><head>
       <meta charset="utf-8">
-      <title>Analiza rynkowa – ${date}</title>
+      <title>IAdvisor — Analiza rynkowa – ${date}</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
-        body { font-family: Georgia, serif; max-width: 820px; margin: 40px auto; padding: 20px; color: #1a1a1a; line-height: 1.65; }
-        .meta { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid #ddd; }
-        h1 { font-size: 1.45rem; font-weight: 700; margin: 1.5rem 0 0.6rem; border-bottom: 2px solid #333; padding-bottom: 0.3rem; }
-        h2 { font-size: 1.2rem; font-weight: 700; margin: 1.25rem 0 0.5rem; color: #333; }
-        h3 { font-size: 1.05rem; font-weight: 600; margin: 1rem 0 0.4rem; color: #444; }
-        p { margin: 0.5rem 0; }
-        ul { list-style-type: disc; margin: 0.5rem 0 0.5rem 1.5rem; }
-        ol { list-style-type: decimal; margin: 0.5rem 0 0.5rem 1.5rem; }
-        li { margin: 0.2rem 0; }
-        strong { font-weight: 700; }
-        em { font-style: italic; color: #444; }
-        code { background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
-        pre { background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 6px; overflow-x: auto; margin: 0.75rem 0; }
-        pre code { background: none; padding: 0; }
-        blockquote { border-left: 3px solid #aaa; padding-left: 1rem; margin: 0.75rem 0; color: #555; }
-        hr { border: none; border-top: 1px solid #ccc; margin: 1rem 0; }
-        table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
-        th { background: #f0f0f0; padding: 0.4rem 0.75rem; text-align: left; font-weight: 600; border: 1px solid #ccc; }
-        td { padding: 0.35rem 0.75rem; border: 1px solid #ccc; }
-        tr:nth-child(even) { background: #fafafa; }
-        @media print { body { margin: 0; } }
+        @page { margin: 20mm 18mm 22mm 18mm; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, sans-serif; max-width: 100%; margin: 0; padding: 0; color: #1a1a2e; line-height: 1.7; font-size: 10.5pt; }
+
+        /* ── Header / Letterhead ── */
+        .letterhead { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 2.5px solid #1a56db; margin-bottom: 20px; }
+        .letterhead-brand { display: flex; align-items: center; gap: 10px; }
+        .letterhead-brand img { width: 36px; height: 36px; }
+        .letterhead-brand .brand-name { font-size: 18pt; font-weight: 700; color: #1a56db; letter-spacing: -0.5px; }
+        .letterhead-brand .brand-sub { font-size: 7pt; color: #6b7280; letter-spacing: 2px; text-transform: uppercase; margin-top: 1px; }
+        .letterhead-meta { text-align: right; font-size: 8pt; color: #6b7280; line-height: 1.5; }
+
+        /* ── Document title ── */
+        .doc-title { background: linear-gradient(135deg, #1a56db 0%, #2563eb 100%); color: #fff; padding: 14px 20px; border-radius: 8px; margin-bottom: 20px; }
+        .doc-title h1 { margin: 0; font-size: 13pt; font-weight: 700; letter-spacing: -0.3px; }
+        .doc-title .doc-subtitle { font-size: 8.5pt; opacity: 0.85; margin-top: 3px; }
+
+        /* ── Content ── */
+        h1 { font-size: 13pt; font-weight: 700; margin: 1.4rem 0 0.5rem; color: #1a56db; border-bottom: 1.5px solid #e5e7eb; padding-bottom: 4px; }
+        h2 { font-size: 11.5pt; font-weight: 700; margin: 1.2rem 0 0.4rem; color: #1e293b; }
+        h3 { font-size: 10.5pt; font-weight: 600; margin: 1rem 0 0.3rem; color: #374151; }
+        p { margin: 0.4rem 0; }
+        ul { list-style-type: disc; margin: 0.4rem 0 0.4rem 1.5rem; }
+        ol { list-style-type: decimal; margin: 0.4rem 0 0.4rem 1.5rem; }
+        li { margin: 0.15rem 0; }
+        strong { font-weight: 700; color: #111827; }
+        em { font-style: italic; color: #4b5563; }
+        code { background: #f1f5f9; padding: 0.1rem 0.35rem; border-radius: 3px; font-family: 'Fira Code', monospace; font-size: 0.88em; color: #1a56db; }
+        pre { background: #f8fafc; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #e2e8f0; overflow-x: auto; margin: 0.6rem 0; }
+        pre code { background: none; padding: 0; color: inherit; }
+        blockquote { border-left: 3px solid #1a56db; padding-left: 1rem; margin: 0.6rem 0; color: #4b5563; background: #f8fafc; padding: 0.5rem 1rem; border-radius: 0 6px 6px 0; }
+        hr { border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0; }
+
+        /* ── Tables ── */
+        table { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 9.5pt; }
+        th { background: #1a56db; color: #fff; padding: 6px 10px; text-align: left; font-weight: 600; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { padding: 5px 10px; border-bottom: 1px solid #e5e7eb; }
+        tr:nth-child(even) { background: #f8fafc; }
+        th:first-child { border-radius: 4px 0 0 0; } th:last-child { border-radius: 0 4px 0 0; }
+
+        /* ── Footer ── */
+        .footer { margin-top: 30px; padding-top: 12px; border-top: 1.5px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; font-size: 7.5pt; color: #9ca3af; }
+        .footer-brand { font-weight: 600; color: #6b7280; }
+
+        /* ── Print overrides ── */
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .doc-title { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
       </style>
     </head><body>
-      <div class="meta">Analiza rynkowa &bull; ${report.provider}/${report.model} &bull; ${date}</div>
+      <div class="letterhead">
+        <div class="letterhead-brand">
+          <img src="${logoUrl}" alt="IAdvisor">
+          <div>
+            <div class="brand-name">IAdvisor</div>
+            <div class="brand-sub">Investment Intelligence</div>
+          </div>
+        </div>
+        <div class="letterhead-meta">
+          Raport wygenerowany: ${date}<br>
+          Model: ${report.provider} / ${report.model}
+        </div>
+      </div>
+      <div class="doc-title">
+        <h1 style="color:#fff;border:none;padding:0;margin:0;font-size:13pt;">Analiza rynkowa</h1>
+        <div class="doc-subtitle">Raport AI &mdash; ${date}</div>
+      </div>
       ${content}
+      <div class="footer">
+        <span class="footer-brand">IAdvisor &mdash; by R.Debski inc.</span>
+        <span>Dokument wygenerowany automatycznie przez IAdvisor AI</span>
+      </div>
     </body></html>`;
 
     // Użyj ukrytego iframe zamiast window.open (popup blocker)
