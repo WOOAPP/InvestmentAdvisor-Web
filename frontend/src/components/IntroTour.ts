@@ -316,10 +316,15 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
       clearTourPhase();
       document.removeEventListener('keydown', handleKeydown, true);
       d.destroy();
+      navigate('/');
     },
     onDestroyed: () => {
       const currentPhase = getTourPhase();
-      if (!currentPhase) return; // user closed tour
+      if (!currentPhase) {
+        // user closed tour or last phase finished — go to dashboard
+        navigate('/');
+        return;
+      }
 
       document.removeEventListener('keydown', handleKeydown, true);
       const next = getNextPhase(phase);
@@ -333,6 +338,7 @@ export function runTourPhase(phase: TourPhase, navigate: (path: string) => void)
         }
       } else {
         clearTourPhase();
+        navigate('/');
       }
     },
   });
