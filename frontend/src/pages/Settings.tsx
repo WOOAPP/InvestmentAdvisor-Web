@@ -549,7 +549,7 @@ export default function Settings() {
             {/* ── Lewa kolumna: instrumenty ─────────────────── */}
             <div className="flex-1 min-w-0 space-y-3 w-full" data-tour="settings-instruments">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm text-[var(--overlay)]">Obserwowane instrumenty ({instruments.length})</p>
+                <p className="text-sm text-[var(--overlay)]">Obserwowane instrumenty finansowe ({instruments.length})</p>
                 <div className="flex items-center gap-2">
                   {instruments.length > 0 && (
                     <button onClick={() => setInstruments([])}

@@ -677,7 +677,7 @@ export default function Charts() {
                 : 'text-[var(--overlay)]'
             }`}
           >
-            {tab === 'instruments' ? 'Instrumenty' : tab === 'chart' ? 'Wykres' : 'Chat'}
+            {tab === 'instruments' ? 'Obserwowane' : tab === 'chart' ? 'Wykres' : 'Chat'}
           </button>
         ))}
       </div>
@@ -686,7 +686,7 @@ export default function Charts() {
       {/* ── Instruments panel — mobile: compact 2-col grid with touch reorder ── */}
       <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:hidden w-full flex-1 flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden min-h-0`} data-tour="charts-instruments">
         <div className="px-2 py-1.5 bg-[var(--bg2)] border-b border-[var(--gray)] flex-shrink-0 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Instrumenty</span>
+          <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Obserwowane</span>
           <span className="text-[10px] text-[var(--overlay)] font-mono">24h</span>
         </div>
         <div className="flex-1 overflow-y-auto p-1.5 min-h-0" onTouchMove={handleTouchMove}>
