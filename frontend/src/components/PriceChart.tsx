@@ -62,7 +62,7 @@ export default function PriceChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Area'> | null>(null);
 
-  const [timeframe, setTimeframe] = useState('5m');
+  const [timeframe, setTimeframe] = useState('1h');
   const [loading, setLoading] = useState(true);
   const [chartError, setChartError] = useState('');
 
