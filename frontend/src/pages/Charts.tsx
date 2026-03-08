@@ -11,7 +11,7 @@ import api from '../api/client';
 import { useChatStorage } from '../hooks/useChatStorage';
 import { useAuthStore } from '../stores/authStore';
 import { APP_TIMEZONE } from '../config';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 // ── Mini sparkline SVG (identyczny jak na Dashboard) ──────────
@@ -45,15 +45,46 @@ function InstCard({
   selected,
   onClick,
   flash,
+  compact,
 }: {
   data: InstrumentData;
   selected: boolean;
   onClick: () => void;
   flash?: 'up' | 'down';
+  compact?: boolean;
 }) {
   const isUp = (data.change_pct ?? 0) >= 0;
   const pct = data.change_pct;
   const unit = getInstrumentUnit(data.symbol, data.source);
+
+  if (compact) {
+    return (
+      <div
+        onClick={onClick}
+        className="rounded-lg p-2 border border-[var(--gray)] bg-[var(--bg2)] cursor-pointer hover:border-[var(--accent)]/50 transition-all select-none"
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] text-[var(--overlay)] font-mono truncate leading-none">{data.name}</span>
+          {pct != null && (
+            <span className={`text-[10px] font-bold flex-shrink-0 ${isUp ? 'text-[#a6e3a1]' : 'text-[#f38ba8]'}`}>
+              {isUp ? '+' : ''}{pct.toFixed(1)}%
+            </span>
+          )}
+        </div>
+        <div
+          key={flash}
+          className={`text-xs font-bold font-mono mt-0.5 tabular-nums truncate ${
+            flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : ''
+          }`}
+        >
+          {data.price != null
+            ? data.price.toLocaleString('en-US', { minimumFractionDigits: data.price >= 1000 ? 0 : 2, maximumFractionDigits: data.price >= 1000 ? 0 : data.price >= 10 ? 2 : 4 })
+            : '—'}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       onClick={onClick}
@@ -130,17 +161,70 @@ export default function Charts() {
   const prevPricesRef = useRef<Record<string, number | null>>({});
 
   // Kolejność kafelków — ta sama co na Dashboard (localStorage)
-  const orderedInstruments = useMemo(() => {
-    try {
-      const order: string[] = JSON.parse(localStorage.getItem('dash_instrument_order_v1') || '[]');
-      if (order.length === 0) return instruments;
-      const ordered = order
-        .map((sym) => instruments.find((i) => i.symbol === sym))
-        .filter(Boolean) as InstrumentData[];
-      const rest = instruments.filter((i) => !order.includes(i.symbol));
-      return [...ordered, ...rest];
-    } catch { return instruments; }
+  const [instrumentOrder, setInstrumentOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dash_instrument_order_v1') || '[]'); } catch { return []; }
+  });
+
+  useEffect(() => {
+    if (instruments.length === 0) return;
+    const syms = instruments.map((i) => i.symbol);
+    setInstrumentOrder((prev) => {
+      const existing = prev.filter((s) => syms.includes(s));
+      const newOnes = syms.filter((s) => !prev.includes(s));
+      if (existing.length === prev.length && newOnes.length === 0) return prev;
+      const next = [...existing, ...newOnes];
+      try { localStorage.setItem('dash_instrument_order_v1', JSON.stringify(next)); } catch { /* quota */ }
+      return next;
+    });
   }, [instruments]);
+
+  const orderedInstruments = instrumentOrder.length > 0
+    ? (instrumentOrder.map((sym) => instruments.find((i) => i.symbol === sym)).filter(Boolean) as InstrumentData[])
+    : instruments;
+
+  // ── Touch drag & drop for mobile ──────────────────────────────
+  const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchFromRef = useRef<number | null>(null);
+  const [touchDragIdx, setTouchDragIdx] = useState<number | null>(null);
+  const [touchOverIdx, setTouchOverIdx] = useState<number | null>(null);
+
+  const handleTouchStart = (idx: number) => {
+    touchTimerRef.current = setTimeout(() => {
+      touchFromRef.current = idx;
+      setTouchDragIdx(idx);
+    }, 400);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchFromRef.current === null) {
+      if (touchTimerRef.current) { clearTimeout(touchTimerRef.current); touchTimerRef.current = null; }
+      return;
+    }
+    e.preventDefault();
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const card = el?.closest('[data-touch-idx]') as HTMLElement | null;
+    if (card) {
+      const overIdx = parseInt(card.dataset.touchIdx!, 10);
+      setTouchOverIdx(overIdx);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimerRef.current) { clearTimeout(touchTimerRef.current); touchTimerRef.current = null; }
+    const fromIdx = touchFromRef.current;
+    const toIdx = touchOverIdx;
+    if (fromIdx !== null && toIdx !== null && fromIdx !== toIdx) {
+      const newOrder = [...instrumentOrder];
+      const [moved] = newOrder.splice(fromIdx, 1);
+      newOrder.splice(toIdx, 0, moved);
+      setInstrumentOrder(newOrder);
+      try { localStorage.setItem('dash_instrument_order_v1', JSON.stringify(newOrder)); } catch { /* quota */ }
+    }
+    touchFromRef.current = null;
+    setTouchDragIdx(null);
+    setTouchOverIdx(null);
+  };
 
   // Dane wszystkich interwałów dla wybranego instrumentu
   const [tfData, setTfData] = useState<Record<string, TfStats>>({});
@@ -162,7 +246,17 @@ export default function Charts() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [chatCtxOpen, setChatCtxOpen] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<'chart' | 'instruments' | 'chat'>('chart');
+  const [searchParams] = useSearchParams();
+  const [mobilePanel, setMobilePanel] = useState<'chart' | 'instruments' | 'chat'>(() => {
+    const tab = searchParams.get('tab');
+    return tab === 'instruments' ? 'instruments' : tab === 'chat' ? 'chat' : 'chart';
+  });
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'instruments') setMobilePanel('instruments');
+    else if (tab === 'chat') setMobilePanel('chat');
+  }, [searchParams]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; html: string } | null>(null);
   const [selectedMsg, setSelectedMsg] = useState<number | null>(null);
 
@@ -589,7 +683,39 @@ export default function Charts() {
       </div>
 
       {/* ── Lista instrumentów (kafelki jak na Dashboard) ───── */}
-      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:flex w-full flex-1 md:flex-initial md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden min-h-0`} data-tour="charts-instruments">
+      {/* ── Instruments panel — mobile: compact 2-col grid with touch reorder ── */}
+      <div className={`${mobilePanel === 'instruments' ? 'flex' : 'hidden'} md:hidden w-full flex-1 flex-shrink-0 flex-col bg-[var(--bg)] overflow-hidden min-h-0`} data-tour="charts-instruments">
+        <div className="px-2 py-1.5 bg-[var(--bg2)] border-b border-[var(--gray)] flex-shrink-0 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Instrumenty</span>
+          <span className="text-[10px] text-[var(--overlay)] font-mono">24h</span>
+        </div>
+        <div className="flex-1 overflow-y-auto p-1.5 min-h-0" onTouchMove={handleTouchMove}>
+          <div className="grid grid-cols-2 gap-1">
+            {orderedInstruments.map((inst, idx) => (
+              <div
+                key={inst.symbol}
+                data-touch-idx={idx}
+                onTouchStart={() => handleTouchStart(idx)}
+                onTouchEnd={handleTouchEnd}
+                className={`transition-all ${
+                  touchDragIdx === idx ? 'opacity-50 scale-95' : ''
+                } ${touchOverIdx === idx && touchDragIdx !== null && touchDragIdx !== idx ? 'ring-1 ring-[var(--accent)] rounded-lg' : ''}`}
+              >
+                <InstCard
+                  data={inst}
+                  selected={selected?.symbol === inst.symbol}
+                  onClick={() => { if (touchDragIdx !== null) return; handleSelect(inst); }}
+                  flash={flashMap[inst.symbol]}
+                  compact
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Instruments panel — desktop: full cards, single column, search ── */}
+      <div className="hidden md:flex md:w-64 flex-shrink-0 border-r border-[var(--gray)] flex-col bg-[var(--bg)] overflow-hidden min-h-0">
         <div className="px-3 py-2 border-b border-[var(--gray)] flex-shrink-0 bg-[var(--bg2)]">
           <input
             value={instSearch}

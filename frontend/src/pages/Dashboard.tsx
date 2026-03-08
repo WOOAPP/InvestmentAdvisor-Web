@@ -301,7 +301,7 @@ function InstCard({
         className="rounded-lg p-2 border border-[var(--gray)] bg-[var(--bg2)] cursor-pointer hover:border-[var(--accent)]/50 transition-all select-none"
       >
         <div className="flex items-center justify-between gap-1">
-          <span className="text-[10px] text-[var(--overlay)] font-mono truncate leading-none">{data.symbol}</span>
+          <span className="text-[10px] text-[var(--overlay)] font-mono truncate leading-none">{data.name}</span>
           {pct != null && (
             <span className={`text-[10px] font-bold flex-shrink-0 ${color}`}>
               {isUp ? '+' : ''}{pct.toFixed(1)}%
@@ -310,12 +310,12 @@ function InstCard({
         </div>
         <div
           key={flash}
-          className={`text-sm font-bold font-mono mt-0.5 tabular-nums ${
+          className={`text-xs font-bold font-mono mt-0.5 tabular-nums truncate ${
             flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : ''
           }`}
         >
           {data.price != null
-            ? data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+            ? data.price.toLocaleString('en-US', { minimumFractionDigits: data.price >= 1000 ? 0 : 2, maximumFractionDigits: data.price >= 1000 ? 0 : data.price >= 10 ? 2 : 4 })
             : '—'}
         </div>
       </div>
@@ -1141,48 +1141,6 @@ export default function Dashboard() {
       {/* ══ Right panel ═══════════════════════════════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 border border-[var(--gray)] rounded-2xl bg-[var(--bg)]">
 
-        {/* Mobile: instruments toggle */}
-        <div
-          data-tour="mobile-instruments"
-          className="md:hidden px-3 py-2 border-b border-[var(--gray)] bg-[var(--bg2)] flex items-center justify-between cursor-pointer select-none"
-          onClick={() => { setMarketExpanded((v) => !v); setSelectedInstrument(null); }}
-        >
-          <span className="text-xs font-bold uppercase tracking-widest">Instrumenty</span>
-          <span className={`text-xs font-bold ${marketExpanded ? 'text-[var(--accent)]' : 'text-[var(--overlay)]'}`}>
-            {marketExpanded ? '▲' : '▼'}
-          </span>
-        </div>
-
-        {/* Mobile: mini assessment bar — gauges ukryte w desktop sidebarze */}
-        {!selectedInstrument && (() => {
-          const r = assessment?.risk ?? (report?.risk_level ?? 0);
-          const o = assessment?.opportunity ?? 0;
-          const rColor = r === 0 ? '#6c7086' : r <= 3 ? '#a6e3a1' : r <= 6 ? '#f9e2af' : r <= 8 ? '#fab387' : '#f38ba8';
-          const oColor = o === 0 ? '#6c7086' : o >= 7 ? '#a6e3a1' : o >= 4 ? '#f9e2af' : '#f38ba8';
-          return (
-            <div data-tour="mobile-assessment" className="md:hidden flex items-center gap-2 px-3 py-1.5 border-b border-[var(--gray)] bg-[var(--bg2)]/50 flex-shrink-0">
-              <button
-                onClick={() => setAssessmentModal('risk')}
-                className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
-              >
-                <span className="text-[var(--overlay)]">Ryzyko</span>
-                <span className="font-bold font-mono" style={{ color: rColor }}>
-                  {assessmentLoading && !assessment ? '…' : r > 0 ? `${r}/10` : '?'}
-                </span>
-              </button>
-              <button
-                onClick={() => setAssessmentModal('opportunity')}
-                className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
-              >
-                <span className="text-[var(--overlay)]">Okazja</span>
-                <span className="font-bold font-mono" style={{ color: oColor }}>
-                  {assessmentLoading && !assessment ? '…' : o > 0 ? `${o}/10` : '?'}
-                </span>
-              </button>
-            </div>
-          );
-        })()}
-
         {marketExpanded && !selectedInstrument ? (
           /* ── Expanded market grid ────────────────────────── */
           <>
@@ -1373,7 +1331,7 @@ export default function Dashboard() {
             )}
 
             {/* Analysis content — limited height on mobile, flex-1 on desktop */}
-            <div className="flex-1 md:flex-[3] overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0" data-tour="analysis-area">
+            <div className="flex-[2] md:flex-[3] overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0" data-tour="analysis-area">
               {analysisRunning ? (
                 <div className="flex flex-col items-center justify-center py-8 md:py-16 gap-4 md:gap-5">
                   <div className="flex gap-2">
@@ -1412,12 +1370,46 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* ── Mobile: assessment bar above bottom panels ──── */}
+            {!selectedInstrument && (() => {
+              const r = assessment?.risk ?? (report?.risk_level ?? 0);
+              const o = assessment?.opportunity ?? 0;
+              const rColor = r === 0 ? '#6c7086' : r <= 3 ? '#a6e3a1' : r <= 6 ? '#f9e2af' : r <= 8 ? '#fab387' : '#f38ba8';
+              const oColor = o === 0 ? '#6c7086' : o >= 7 ? '#a6e3a1' : o >= 4 ? '#f9e2af' : '#f38ba8';
+              return (
+                <div data-tour="mobile-assessment" className="md:hidden flex items-center gap-2 px-3 py-1.5 border-t border-[var(--gray)] bg-[var(--bg2)]/50 flex-shrink-0">
+                  <button
+                    onClick={() => setAssessmentModal('risk')}
+                    className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
+                  >
+                    <span className="text-[var(--overlay)]">Ryzyko</span>
+                    <span className="font-bold font-mono" style={{ color: rColor }}>
+                      {assessmentLoading && !assessment ? '…' : r > 0 ? `${r}/10` : '?'}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setAssessmentModal('opportunity')}
+                    className="flex-1 flex items-center justify-between px-2.5 py-1 rounded-lg border border-[var(--gray)] bg-[var(--bg)] text-xs active:bg-[var(--gray)]/40"
+                  >
+                    <span className="text-[var(--overlay)]">Okazja</span>
+                    <span className="font-bold font-mono" style={{ color: oColor }}>
+                      {assessmentLoading && !assessment ? '…' : o > 0 ? `${o}/10` : '?'}
+                    </span>
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* ── Mobile: bottom panels (instruments + chat) ──── */}
             <div className="md:hidden flex-[2] min-h-0 grid grid-cols-2 gap-1.5 border-t border-[var(--gray)]">
-              {/* Instruments panel */}
+              {/* Instruments panel — click navigates to Charts/instruments */}
               <div className="flex flex-col overflow-hidden border-r border-[var(--gray)]">
-                <div className="px-2 py-1.5 bg-[var(--bg2)] border-b border-[var(--gray)] flex-shrink-0">
+                <div
+                  className="px-2 py-1.5 bg-[var(--bg2)] border-b border-[var(--gray)] flex-shrink-0 flex items-center justify-between cursor-pointer select-none"
+                  onClick={() => navigate('/charts?tab=instruments')}
+                >
                   <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Instrumenty</span>
+                  <span className="text-[10px] text-[var(--overlay)] font-mono">24h</span>
                 </div>
                 <div className="flex-1 overflow-y-auto p-1.5 min-h-0">
                   <div className="grid grid-cols-2 gap-1">
@@ -1434,7 +1426,7 @@ export default function Dashboard() {
                   </div>
                   {orderedInstruments.length > 4 && (
                     <button
-                      onClick={() => { setMarketExpanded(true); setSelectedInstrument(null); }}
+                      onClick={() => navigate('/charts?tab=instruments')}
                       className="w-full mt-1 text-[10px] text-[var(--accent)] font-semibold py-1 hover:underline"
                     >
                       Pokaż wszystkie ({orderedInstruments.length})
