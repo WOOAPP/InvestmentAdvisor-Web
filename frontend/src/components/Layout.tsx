@@ -60,7 +60,7 @@ export default function Layout() {
               <span className={`block w-5 h-0.5 bg-[var(--fg)] transition-transform ${menuOpen ? '-rotate-45 -translate-y-[3px]' : ''}`} />
             </button>
 
-            <Link to="/" className="flex items-center gap-1.5">
+            <Link to="/" className="flex items-center gap-1.5" onClick={closeMenu}>
               <img src="/logo.png" alt="IAdvisor" className="h-12 md:h-[84px]" />
               <span className="text-[var(--overlay)] text-[10px] md:text-xs tracking-wide">by R.Dębski inc.</span>
             </Link>

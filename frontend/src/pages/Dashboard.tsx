@@ -281,16 +281,47 @@ function InstCard({
   selected,
   onClick,
   flash,
+  compact,
 }: {
   data: InstrumentData;
   selected: boolean;
   onClick: () => void;
   flash?: 'up' | 'down';
+  compact?: boolean;
 }) {
   const isUp = (data.change_pct ?? 0) >= 0;
   const pct = data.change_pct;
   const color = isUp ? 'text-[#a6e3a1]' : 'text-[#f38ba8]';
   const unit = getInstrumentUnit(data.symbol, data.source);
+
+  if (compact) {
+    return (
+      <div
+        onClick={onClick}
+        className="rounded-lg p-2 border border-[var(--gray)] bg-[var(--bg2)] cursor-pointer hover:border-[var(--accent)]/50 transition-all select-none"
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] text-[var(--overlay)] font-mono truncate leading-none">{data.symbol}</span>
+          {pct != null && (
+            <span className={`text-[10px] font-bold flex-shrink-0 ${color}`}>
+              {isUp ? '+' : ''}{pct.toFixed(1)}%
+            </span>
+          )}
+        </div>
+        <div
+          key={flash}
+          className={`text-sm font-bold font-mono mt-0.5 tabular-nums ${
+            flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : ''
+          }`}
+        >
+          {data.price != null
+            ? data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+            : '—'}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       onClick={onClick}
@@ -1341,10 +1372,10 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Analysis content */}
-            <div className="flex-1 overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0" data-tour="analysis-area">
+            {/* Analysis content — limited height on mobile, flex-1 on desktop */}
+            <div className="flex-1 md:flex-[3] overflow-y-auto px-3 md:px-5 py-3 md:py-5 min-h-0" data-tour="analysis-area">
               {analysisRunning ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-5">
+                <div className="flex flex-col items-center justify-center py-8 md:py-16 gap-4 md:gap-5">
                   <div className="flex gap-2">
                     {[0, 1, 2].map((i) => (
                       <div
@@ -1362,7 +1393,7 @@ export default function Dashboard() {
                   </p>
                 </div>
               ) : !report ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <div className="flex flex-col items-center justify-center py-8 md:py-16 gap-3">
                   <p className="text-[var(--overlay)] text-base">Brak raportu</p>
                   <p className="text-sm text-[var(--overlay)]/70">
                     Kliknij "Uruchom Analize" aby wygenerowac raport AI
@@ -1381,7 +1412,74 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Chat — desktop only, mobile uses floating bubble */}
+            {/* ── Mobile: bottom panels (instruments + chat) ──── */}
+            <div className="md:hidden flex-[2] min-h-0 grid grid-cols-2 gap-1.5 border-t border-[var(--gray)]">
+              {/* Instruments panel */}
+              <div className="flex flex-col overflow-hidden border-r border-[var(--gray)]">
+                <div className="px-2 py-1.5 bg-[var(--bg2)] border-b border-[var(--gray)] flex-shrink-0">
+                  <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Instrumenty</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-1.5 min-h-0">
+                  <div className="grid grid-cols-2 gap-1">
+                    {orderedInstruments.slice(0, 4).map((inst) => (
+                      <InstCard
+                        key={inst.symbol}
+                        data={inst}
+                        selected={false}
+                        onClick={() => { setSelectedInstrument(inst); setMarketExpanded(false); }}
+                        flash={flashMap[inst.symbol]}
+                        compact
+                      />
+                    ))}
+                  </div>
+                  {orderedInstruments.length > 4 && (
+                    <button
+                      onClick={() => { setMarketExpanded(true); setSelectedInstrument(null); }}
+                      className="w-full mt-1 text-[10px] text-[var(--accent)] font-semibold py-1 hover:underline"
+                    >
+                      Pokaż wszystkie ({orderedInstruments.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Chat panel */}
+              <div className="flex flex-col overflow-hidden">
+                <div className="px-2 py-1.5 bg-[var(--bg2)] border-b border-[var(--gray)] flex-shrink-0">
+                  <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Czat z AI</span>
+                </div>
+                <div className="flex-1 overflow-y-auto px-2 py-1.5 space-y-1 min-h-0">
+                  {chatMessages.length === 0 && (
+                    <p className="text-[10px] text-[var(--overlay)] text-center py-2">Zadaj pytanie...</p>
+                  )}
+                  {chatMessages.map((m, i) => (
+                    <div key={i} className={`text-[11px] leading-snug max-w-[95%] ${m.role === 'user' ? 'text-[#f9e2af] ml-auto text-right' : 'text-[#a6e3a1] chat-reply'}`}>
+                      {m.content}
+                    </div>
+                  ))}
+                  {chatLoading && <div className="text-[11px] text-[#a6e3a1] animate-pulse">Myślę...</div>}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className="flex gap-1 px-1.5 py-1.5 border-t border-[var(--gray)] flex-shrink-0">
+                  <input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+                    placeholder="Wiadomość..."
+                    className="flex-1 min-w-0 bg-[var(--bg2)] border border-[var(--gray)] rounded px-2 py-1 text-[11px] text-[var(--fg)] focus:border-[var(--accent)] outline-none"
+                  />
+                  <button
+                    onClick={sendChat}
+                    disabled={chatLoading}
+                    className="px-2 py-1 rounded bg-[var(--accent)] text-[var(--bg)] font-semibold text-[11px] hover:opacity-90 disabled:opacity-50 flex-shrink-0"
+                  >
+                    ▶
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Chat — desktop only */}
             <div className="hidden md:flex border-t border-[var(--gray)] flex-col flex-shrink-0" data-tour="chat-panel" style={{ height: `${chatHeight}px` }}>
               {/* Drag handle */}
               <div
@@ -1721,15 +1819,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ══ Mobile: floating chat bubble ══════════════════════════ */}
-      <button
-        data-tour="mobile-chat-btn"
-        className="md:hidden fixed bottom-5 right-4 z-40 px-4 py-2.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] shadow-lg font-semibold text-xs tracking-wide active:scale-95 transition-all hover:opacity-90"
-        onClick={() => setChatOpen(true)}
-        title="Czat z AI"
-      >
-        Chat z IA
-      </button>
+      {/* ══ Mobile: floating chat bubble (only when instruments/profile view is active) ══ */}
+      {(marketExpanded || selectedInstrument) && (
+        <button
+          data-tour="mobile-chat-btn"
+          className="md:hidden fixed bottom-5 right-4 z-40 px-4 py-2.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] shadow-lg font-semibold text-xs tracking-wide active:scale-95 transition-all hover:opacity-90"
+          onClick={() => setChatOpen(true)}
+          title="Czat z AI"
+        >
+          Chat z IA
+        </button>
+      )}
 
       {/* ══ Mobile: chat overlay ═══════════════════════════════════ */}
       {chatOpen && (
