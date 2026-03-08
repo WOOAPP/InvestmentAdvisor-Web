@@ -65,8 +65,23 @@ def _cg_rate_wait():
 logger = logging.getLogger(__name__)
 
 
+# ── YFINANCE PRICE CACHE ───────────────────────────────────────────
+_yf_price_cache: dict[str, tuple[dict, float]] = {}
+_yf_price_lock = _threading.Lock()
+_YF_PRICE_TTL = 60  # 60 sekund
+
+
 # ── YAHOO FINANCE ──────────────────────────────────────────────────
 def get_yfinance_data(symbol, name=""):
+    # Sprawdź cache
+    with _yf_price_lock:
+        cached = _yf_price_cache.get(symbol)
+        if cached and (_time.time() - cached[1]) < _YF_PRICE_TTL:
+            result = dict(cached[0])
+            if name:
+                result["name"] = name
+            return result
+
     try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period=YFINANCE_HISTORY_PERIOD)
@@ -115,7 +130,7 @@ def get_yfinance_data(symbol, name=""):
             except (ValueError, TypeError):
                 pass
 
-        return {
+        result = {
             "name": name or symbol,
             "price": round(current, PRICE_ROUND_DECIMALS),
             "change": round(change, PRICE_ROUND_DECIMALS),
@@ -127,6 +142,9 @@ def get_yfinance_data(symbol, name=""):
             "source": "yfinance",
             "timestamp": datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d %H:%M"),
         }
+        with _yf_price_lock:
+            _yf_price_cache[symbol] = (result, _time.time())
+        return result
     except (requests.RequestException, KeyError, ValueError, TypeError) as e:
         logger.warning("yfinance %s failed: %s", symbol, e)
         return {"name": name or symbol, "error": str(e)}
