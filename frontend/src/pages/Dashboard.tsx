@@ -16,7 +16,18 @@ import { useNavigate } from 'react-router-dom';
 import { getTourPhase, runTourPhase } from '../components/IntroTour';
 
 // ─── Kolorowanie wartości kwotowych i procentowych ────────────
-const VALUE_RE = /([−–\-+]?\d[\d,.]*\d?\s*%|[−–\-+]?\$\s?\d[\d,.]*|[−–\-+]?€\s?\d[\d,.]*|[−–\-+]?\d[\d,.]*\s?(?:USD|PLN|EUR|zł)\b)/g;
+// Num helper fragments
+const _NUM = `[−–\\-+]?\\d[\\d,.]*\\d?`;
+const _DASH = `[−–\\-]`;
+// Range patterns (e.g. "90–100 USD", "$90–$100", "10–15%") — must come FIRST
+const _RANGE_PCT = `${_NUM}\\s*${_DASH}\\s*\\d[\\d,.]*\\d?\\s*%`;
+const _RANGE_PRE = `[\\$€]\\s?\\d[\\d,.]*\\d?\\s*${_DASH}\\s*[\\$€]?\\s?\\d[\\d,.]*\\d?`;
+const _RANGE_SUF = `\\d[\\d,.]*\\d?\\s*${_DASH}\\s*\\d[\\d,.]*\\d?\\s?(?:USD|PLN|EUR|zł)\\b`;
+// Single-value patterns
+const _SINGLE_PCT = `${_NUM}\\s*%`;
+const _SINGLE_PRE = `[−–\\-+]?[\\$€]\\s?\\d[\\d,.]*`;
+const _SINGLE_SUF = `${_NUM}\\s?(?:USD|PLN|EUR|zł)\\b`;
+const VALUE_RE = new RegExp(`(${_RANGE_PCT}|${_RANGE_PRE}|${_RANGE_SUF}|${_SINGLE_PCT}|${_SINGLE_PRE}|${_SINGLE_SUF})`, 'g');
 
 function colorizeText(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
@@ -26,17 +37,10 @@ function colorizeText(text: string): React.ReactNode[] {
   while ((m = VALUE_RE.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     const raw = m[0];
-    const charBefore = m.index > 0 ? text[m.index - 1] : '';
-    const charAfter = text[m.index + raw.length] ?? '';
-    // Range like "90–100 USD" — skip coloring both parts
-    const isRangeEnd = /^[−–\-]/.test(raw.trimStart()) && /\d/.test(charBefore);
-    const isRangeStart = /[−–\-]/.test(charAfter) && /\d/.test(text[m.index + raw.length + 1] ?? '');
-    if (isRangeEnd || isRangeStart) {
-      parts.push(raw);
-    } else {
-      const neg = /^[−–\-]/.test(raw.trimStart());
-      parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
-    }
+    // Ranges (digit–digit) are always green; single values: check for leading minus
+    const isRange = /\d\s*[−–\-]\s*\d/.test(raw);
+    const neg = !isRange && /^[−–\-]/.test(raw.trimStart());
+    parts.push(<span key={m.index} style={{ color: neg ? '#f38ba8' : '#a6e3a1', fontWeight: 600 }}>{raw}</span>);
     last = VALUE_RE.lastIndex;
   }
   if (last < text.length) parts.push(text.slice(last));
