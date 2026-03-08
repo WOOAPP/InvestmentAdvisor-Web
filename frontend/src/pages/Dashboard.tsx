@@ -678,6 +678,7 @@ export default function Dashboard() {
         .doc-title .doc-subtitle { font-size: 8.5pt; opacity: 0.85; margin-top: 3px; }
 
         /* ── Content ── */
+        h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
         h1 { font-size: 13pt; font-weight: 700; margin: 1.4rem 0 0.5rem; color: #1a56db; border-bottom: 1.5px solid #e5e7eb; padding-bottom: 4px; }
         h2 { font-size: 11.5pt; font-weight: 700; margin: 1.2rem 0 0.4rem; color: #1e293b; }
         h3 { font-size: 10.5pt; font-weight: 600; margin: 1rem 0 0.3rem; color: #374151; }
