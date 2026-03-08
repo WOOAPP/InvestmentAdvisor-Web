@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useAppStore } from '../stores/appStore';
 import { startTour } from './IntroTour';
+import WelcomeModal from './WelcomeModal';
+import api from '../api/client';
 
 const navItems = [
   { to: '/', label: 'Dashboard' },
@@ -17,8 +19,26 @@ export default function Layout() {
   const { user, logout } = useAuthStore();
   const { statusMsg } = useAppStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const introButtonRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Check onboarding on first mount
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/settings').then((res) => {
+      if (!cancelled && !res.data.onboarding_completed) {
+        setShowWelcome(true);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const closeWelcome = () => {
+    setShowWelcome(false);
+    api.put('/settings', { onboarding_completed: true }).catch(() => {});
+  };
 
   // Close menu on navigation
   const closeMenu = () => setMenuOpen(false);
@@ -82,6 +102,7 @@ export default function Layout() {
           {/* Right side: status + user */}
           <div className="flex items-center gap-2 md:gap-3 text-sm">
             <button
+              ref={introButtonRef}
               onClick={() => startTour(navigate, location.pathname)}
               className="flex items-center px-3 md:px-4 py-1.5 rounded-full text-xs md:text-sm font-bold border tracking-wide bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)] hover:bg-[var(--accent)]/25 transition-colors animate-pulse"
               title="Przewodnik po aplikacji"
@@ -155,6 +176,10 @@ export default function Layout() {
       <main className="relative flex-1 overflow-y-auto min-h-0 p-3 md:p-6">
         <Outlet />
       </main>
+
+      {showWelcome && (
+        <WelcomeModal onClose={closeWelcome} introButtonRef={introButtonRef} />
+      )}
     </div>
   );
 }

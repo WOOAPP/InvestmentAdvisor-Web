@@ -78,7 +78,7 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="bg-[var(--bg2)] p-4 sm:p-8 rounded-xl border border-[var(--gray)] w-full max-w-md mx-4 sm:mx-auto">
         <div className="flex justify-center mb-6">
-          <img src="/logo.png" alt="IAdvisor" className="h-10" />
+          <img src="/logo.png" alt="IAdvisor" className="h-32 sm:h-40" />
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <input
