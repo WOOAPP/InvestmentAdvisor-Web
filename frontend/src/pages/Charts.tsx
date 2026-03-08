@@ -334,7 +334,7 @@ export default function Charts() {
         }
       }).catch(() => {});
     };
-    const iv = setInterval(refresh, 60_000);
+    const iv = setInterval(() => { if (!document.hidden) refresh(); }, 60_000);
     // Natychmiastowy refresh po zmianie listy instrumentów w Ustawieniach
     window.addEventListener('instruments-changed', refresh);
     return () => {

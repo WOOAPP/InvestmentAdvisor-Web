@@ -99,7 +99,7 @@ export const refreshInstruments = (): Promise<InstrumentData[]> =>
 
 // ── Sparkline cache ─────────────────────────────────────────────
 const _sparklineCache = new Map<string, { data: number[]; time: number }>();
-const SPARKLINE_TTL = 120_000; // 2 minuty
+const SPARKLINE_TTL = 300_000; // 5 minut
 
 export const getSparkline = (
   symbol: string,

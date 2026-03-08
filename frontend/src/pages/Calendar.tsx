@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { getCalendar, analyzeCalendarEvent, type CalendarEvent } from '../api/calendar';
@@ -60,10 +60,11 @@ export default function Calendar() {
   const [analyses, setAnalyses] = useState<Record<string, string>>(loadCache);
   const [analyzing, setAnalyzing] = useState<Record<string, boolean>>({});
 
-  // Intro tour
+  // Intro tour — expand first row so the "Analizuj AI" button is visible
   useEffect(() => {
     if (loading) return;
     if (getTourPhase() === 'calendar') {
+      if (events.length > 0) setExpandedRow(`${events[0].date}-0`);
       const timer = setTimeout(() => runTourPhase('calendar', navigate), 500);
       return () => clearTimeout(timer);
     }
@@ -101,18 +102,20 @@ export default function Calendar() {
     }
   };
 
-  const filtered = events.filter((e) => {
+  const filtered = useMemo(() => events.filter((e) => {
     if (filter === 'all') return true;
     return e.impact_raw === filter;
-  });
+  }), [events, filter]);
 
   // Group by date
-  const grouped = filtered.reduce<Record<string, CalendarEvent[]>>((acc, e) => {
-    if (!acc[e.date]) acc[e.date] = [];
-    acc[e.date].push(e);
-    return acc;
-  }, {});
-  const dates = Object.keys(grouped).sort();
+  const { grouped, dates } = useMemo(() => {
+    const g = filtered.reduce<Record<string, CalendarEvent[]>>((acc, e) => {
+      if (!acc[e.date]) acc[e.date] = [];
+      acc[e.date].push(e);
+      return acc;
+    }, {});
+    return { grouped: g, dates: Object.keys(g).sort() };
+  }, [filtered]);
 
   return (
     <div className="max-w-5xl">

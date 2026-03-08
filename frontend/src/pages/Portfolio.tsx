@@ -72,6 +72,25 @@ function ForexCard({ data }: { data: InstrumentData }) {
   );
 }
 
+// ─── Demo data for intro tour ──────────────────────────────
+const DEMO_LONG: Position[] = [
+  { id: -1, symbol: 'AAPL', name: 'Apple Inc.', quantity: 10, buy_price: 185.50, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 185.50, tab_type: 'zakupione', created_at: '2025-11-15T10:00:00Z' },
+  { id: -2, symbol: 'MSFT', name: 'Microsoft Corp.', quantity: 5, buy_price: 378.20, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 378.20, tab_type: 'zakupione', created_at: '2025-12-03T14:30:00Z' },
+  { id: -3, symbol: 'BTC-USD', name: 'Bitcoin', quantity: 0.25, buy_price: 42500.00, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 42500.00, tab_type: 'zakupione', created_at: '2026-01-10T09:15:00Z' },
+  { id: -4, symbol: 'GC=F', name: 'Gold Futures', quantity: 2, buy_price: 2045.30, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 2045.30, tab_type: 'zakupione', created_at: '2026-01-22T11:00:00Z' },
+  { id: -5, symbol: 'WIG20.WA', name: 'WIG20', quantity: 50, buy_price: 94.80, buy_currency: 'PLN', buy_fx_to_usd: 0.25, buy_price_usd: 23.70, tab_type: 'zakupione', created_at: '2026-02-05T08:45:00Z' },
+];
+const DEMO_SHORT: Position[] = [
+  { id: -6, symbol: 'TSLA', name: 'Tesla Inc.', quantity: 8, buy_price: 245.00, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 245.00, tab_type: 'short', created_at: '2026-01-18T13:00:00Z' },
+  { id: -7, symbol: 'NVDA', name: 'NVIDIA Corp.', quantity: 3, buy_price: 890.00, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 890.00, tab_type: 'short', created_at: '2026-02-01T10:30:00Z' },
+  { id: -8, symbol: 'ETH-USD', name: 'Ethereum', quantity: 2, buy_price: 3250.00, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 3250.00, tab_type: 'short', created_at: '2026-02-10T16:00:00Z' },
+  { id: -9, symbol: 'EURUSD=X', name: 'EUR/USD', quantity: 10000, buy_price: 1.0850, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 1.0850, tab_type: 'short', created_at: '2026-02-20T09:00:00Z' },
+];
+const DEMO_PRICES: Record<string, number | null> = {
+  AAPL: 192.30, MSFT: 395.50, 'BTC-USD': 68500.00, 'GC=F': 2180.00, 'WIG20.WA': 25.10,
+  TSLA: 220.00, NVDA: 950.00, 'ETH-USD': 2900.00, 'EURUSD=X': 1.0920,
+};
+
 export default function Portfolio() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('zakupione');
@@ -93,14 +112,35 @@ export default function Portfolio() {
   // Forex instruments for bottom tiles
   const [forexInstruments, setForexInstruments] = useState<InstrumentData[]>([]);
 
-  // Intro tour
+  const isTour = getTourPhase() === 'portfolio';
+
+  // Intro tour — inject demo data and auto-show form
   useEffect(() => {
     if (loading) return;
-    if (getTourPhase() === 'portfolio') {
+    if (isTour) {
+      setShowForm(true);
+      setActiveTab('zakupione');
+      setPositions(DEMO_LONG);
+      setPrices(DEMO_PRICES);
       const timer = setTimeout(() => runTourPhase('portfolio', navigate), 500);
       return () => clearTimeout(timer);
     }
   }, [loading, navigate]);
+
+  // Listen for tour tab-switch event (Long → Short)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent).detail?.tab;
+      if (tab === 'short') {
+        setActiveTab('short');
+        setPositions(DEMO_SHORT);
+        setPrices(DEMO_PRICES);
+        setShowForm(false);
+      }
+    };
+    window.addEventListener('tour:portfolio-tab', handler);
+    return () => window.removeEventListener('tour:portfolio-tab', handler);
+  }, []);
 
   // Synchronizuj fxRatesRef z fxRates (formularz zawsze ma aktualne kursy)
   useEffect(() => {
@@ -163,7 +203,7 @@ export default function Portfolio() {
   useEffect(() => {
     fetchForex();
     // Odśwież forex co 30s (zbieżne ze stabilnością Dashboard)
-    const interval = setInterval(fetchForex, 30_000);
+    const interval = setInterval(() => { if (!document.hidden) fetchForex(); }, 30_000);
     window.addEventListener('instruments-changed', fetchForex);
     return () => {
       clearInterval(interval);

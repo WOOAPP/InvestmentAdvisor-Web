@@ -15,12 +15,18 @@ import threading as _threading
 import time as _time
 import pandas as pd
 
+import atexit
+
 from .http_client import safe_get
 from .constants import (
     FX_CACHE_TTL, YFINANCE_HISTORY_PERIOD,
     PRICE_ROUND_DECIMALS, CHANGE_PCT_ROUND_DECIMALS,
     NEWS_DEFAULT_PAGE_SIZE,
 )
+
+# ── Global thread pool for parallel market data fetching ──
+_MARKET_EXECUTOR = ThreadPoolExecutor(max_workers=12)
+atexit.register(_MARKET_EXECUTOR.shutdown, wait=False)
 
 # Dozwolony wzorzec dla symboli finansowych (używany w URL).
 # Obejmuje yfinance (^GDAXI, EURUSD=X, GC=F, WIG20.WA),
@@ -40,7 +46,8 @@ _CG_PRICE_TTL     = 600   # 10 min
 _CG_SPARKLINE_TTL = 3600  # 1 h
 _cg_price_cache    = {}   # {coin_id: (data_dict, ts)}
 _cg_sparkline_cache = {}  # {coin_id: (list, ts)}
-_cg_lock           = _threading.Lock()
+_cg_price_lock     = _threading.Lock()
+_cg_sparkline_lock = _threading.Lock()
 
 # ── COINGECKO RATE LIMITER ──
 _CG_MIN_INTERVAL = 2.5  # sekundy między requestami (free tier ~30 req/min)
@@ -178,14 +185,14 @@ def _cg_fetch_prices_batch(coin_ids):
         raise
     batch = r.json()
     ts = _time.time()
-    with _cg_lock:
+    with _cg_price_lock:
         for cid, data in batch.items():
             _cg_price_cache[cid] = (data, ts)
     return batch
 
 
 def _cg_get_sparkline(coin_id):
-    with _cg_lock:
+    with _cg_sparkline_lock:
         cached = _cg_sparkline_cache.get(coin_id)
     if cached and (_time.time() - cached[1]) < _CG_SPARKLINE_TTL:
         return cached[0]
@@ -202,7 +209,7 @@ def _cg_get_sparkline(coin_id):
     except (requests.RequestException, KeyError, ValueError) as e:
         logger.debug("CoinGecko sparkline for %s unavailable: %s", coin_id, e)
         return cached[0] if cached else []
-    with _cg_lock:
+    with _cg_sparkline_lock:
         _cg_sparkline_cache[coin_id] = (sparkline, _time.time())
     return sparkline
 
@@ -231,7 +238,7 @@ def _cg_build_result(coin_id, name, data, sparkline):
 
 
 def get_coingecko_data(coin_id, name=""):
-    with _cg_lock:
+    with _cg_price_lock:
         cached = _cg_price_cache.get(coin_id)
     if cached and (_time.time() - cached[1]) < _CG_PRICE_TTL:
         data = cached[0]
@@ -347,25 +354,24 @@ def get_all_instruments(instruments_config):
 
     # Fetch yfinance/stooq instruments in parallel (significant speedup with many instruments)
     if fetch_tasks:
-        with ThreadPoolExecutor(max_workers=min(8, len(fetch_tasks))) as executor:
-            futures = {}
-            for symbol, name, source in fetch_tasks:
-                if source == "stooq":
-                    futures[executor.submit(get_stooq_data, symbol, name)] = symbol
-                else:
-                    futures[executor.submit(get_yfinance_data, symbol, name)] = symbol
-            for future in as_completed(futures):
-                symbol = futures[future]
-                try:
-                    results[symbol] = future.result()
-                except Exception as e:
-                    logger.warning("Parallel fetch %s failed: %s", symbol, e)
-                    results[symbol] = {"name": symbol, "error": str(e)}
+        futures = {}
+        for symbol, name, source in fetch_tasks:
+            if source == "stooq":
+                futures[_MARKET_EXECUTOR.submit(get_stooq_data, symbol, name)] = symbol
+            else:
+                futures[_MARKET_EXECUTOR.submit(get_yfinance_data, symbol, name)] = symbol
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                results[symbol] = future.result()
+            except Exception as e:
+                logger.warning("Parallel fetch %s failed: %s", symbol, e)
+                results[symbol] = {"name": symbol, "error": str(e)}
 
     if cg_pending:
         to_fetch = []
         now = _time.time()
-        with _cg_lock:
+        with _cg_price_lock:
             for _, coin_id, _ in cg_pending:
                 cached = _cg_price_cache.get(coin_id)
                 if not (cached and (now - cached[1]) < _CG_PRICE_TTL):
@@ -376,7 +382,7 @@ def get_all_instruments(instruments_config):
             except (requests.RequestException, KeyError, ValueError, TypeError) as e:
                 logger.warning("CoinGecko batch failed: %s", e)
         for symbol, coin_id, name in cg_pending:
-            with _cg_lock:
+            with _cg_price_lock:
                 cached = _cg_price_cache.get(coin_id)
             if cached:
                 sparkline = _cg_get_sparkline(coin_id)

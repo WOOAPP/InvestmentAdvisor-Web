@@ -1,11 +1,11 @@
 import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
 
-export type TourPhase = 'settings-general' | 'settings' | 'dashboard' | 'charts' | 'calendar' | 'portfolio';
+export type TourPhase = 'settings-general' | 'settings' | 'dashboard' | 'charts' | 'calendar' | 'portfolio' | 'final';
 
 const TOUR_PHASE_KEY = 'tour_phase';
 
-const PHASE_ORDER: TourPhase[] = ['settings-general', 'settings', 'dashboard', 'charts', 'calendar', 'portfolio'];
+const PHASE_ORDER: TourPhase[] = ['settings-general', 'settings', 'dashboard', 'charts', 'calendar', 'portfolio', 'final'];
 const PHASE_ROUTES: Record<TourPhase, string> = {
   'settings-general': '/settings',
   settings: '/settings',
@@ -13,6 +13,7 @@ const PHASE_ROUTES: Record<TourPhase, string> = {
   charts: '/charts',
   calendar: '/calendar',
   portfolio: '/portfolio',
+  final: '/',
 };
 
 const isMobile = () => window.innerWidth < 768;
@@ -171,7 +172,7 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             popover: {
               title: 'Wykres',
               description: 'Interaktywny wykres TradingView ze statystykami i profilem instrumentu.',
-              side: 'over',
+              side: 'bottom',
               align: 'center',
             },
           },
@@ -224,8 +225,8 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
           popover: {
             title: 'Analiza AI wydarzenia',
             description: 'Kliknij wydarzenie aby je rozwinąć, a następnie użyj przycisku „Analizuj" — AI oceni wpływ na rynki.',
-            side: mobile ? 'bottom' : 'top',
-            align: 'center',
+            side: 'top',
+            align: 'start',
           },
         },
       ];
@@ -244,10 +245,22 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
         {
           element: '[data-tour="portfolio-table"]',
           popover: {
-            title: 'Pozycje',
-            description: 'Tabela pozycji z aktualną wyceną i bilansem zysku/straty.',
+            title: 'Pozycje Long',
+            description: 'Tabela pozycji z aktualną wyceną i bilansem zysku/straty. Tu widzisz przykładowe pozycje długie (kupno).',
             side: mobile ? 'over' : 'top',
             align: 'center',
+          },
+        },
+        {
+          element: '[data-tour="portfolio-table"]',
+          popover: {
+            title: 'Pozycje Short',
+            description: 'Zakładka Short — tu możesz śledzić pozycje krótkie (sprzedaż). Bilans jest obliczany odwrotnie — zarabiasz gdy cena spada.',
+            side: mobile ? 'over' : 'top',
+            align: 'center',
+          },
+          onHighlightStarted: () => {
+            window.dispatchEvent(new CustomEvent('tour:portfolio-tab', { detail: { tab: 'short' } }));
           },
         },
         {
@@ -259,10 +272,14 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
             align: 'center',
           },
         },
+      ];
+
+    case 'final':
+      return [
         {
           popover: {
-            title: 'Jesteś gotowy do działania',
-            description: 'To już wszystko — znasz teraz każdą sekcję aplikacji. Wróć do Dashboardu, uruchom pierwszą analizę i sprawdź, co AI ma do powiedzenia o rynku. Powodzenia i trafnych decyzji!',
+            title: 'Jesteś gotowy do działania! 🚀',
+            description: 'To już wszystko — znasz teraz każdą sekcję aplikacji. Uruchom pierwszą analizę i sprawdź, co AI ma do powiedzenia o rynku. Powodzenia i trafnych decyzji!',
             align: 'center',
           },
         },

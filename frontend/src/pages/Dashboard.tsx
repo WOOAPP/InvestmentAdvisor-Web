@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import { getCachedInstruments, getInstruments, getSparkline, getInstrumentUnit, type InstrumentData, assessMarket, type MarketAssessment } from '../api/market';
 import { getReports, getReport, runAnalysis, type ReportDetail } from '../api/reports';
@@ -250,7 +250,7 @@ function GaugeChart({
 }
 
 // ─── Sparkline  ────────────────────────────────────────────────
-function Sparkline({ data, changePct }: { data: number[]; changePct: number | null }) {
+const Sparkline = memo(function Sparkline({ data, changePct }: { data: number[]; changePct: number | null }) {
   if (data.length < 2) return <div style={{ height: 28 }} />;
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
@@ -273,10 +273,10 @@ function Sparkline({ data, changePct }: { data: number[]; changePct: number | nu
       <path d={d} fill="none" stroke={isUp ? '#a6e3a1' : '#f38ba8'} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
-}
+});
 
 // ─── Instrument Card ──────────────────────────────────────────
-function InstCard({
+const InstCard = memo(function InstCard({
   data,
   selected,
   onClick,
@@ -362,7 +362,7 @@ function InstCard({
       <Sparkline data={data.sparkline} changePct={data.change_pct} />
     </div>
   );
-}
+});
 
 // ─── Dashboard ────────────────────────────────────────────────
 export default function Dashboard() {
@@ -534,8 +534,9 @@ export default function Dashboard() {
 
   // Intro tour
   useEffect(() => {
-    if (getTourPhase() === 'dashboard') {
-      const timer = setTimeout(() => runTourPhase('dashboard', navigate), 500);
+    const phase = getTourPhase();
+    if (phase === 'dashboard' || phase === 'final') {
+      const timer = setTimeout(() => runTourPhase(phase, navigate), 500);
       return () => clearTimeout(timer);
     }
   }, [navigate]);
@@ -614,12 +615,13 @@ export default function Dashboard() {
     });
   }, [instruments]);
 
-  const orderedInstruments =
+  const orderedInstruments = useMemo(() =>
     instrumentOrder.length > 0
       ? (instrumentOrder
           .map((sym) => instruments.find((i) => i.symbol === sym))
           .filter(Boolean) as InstrumentData[])
-      : instruments;
+      : instruments,
+    [instrumentOrder, instruments]);
 
   const handleDragStart = (idx: number) => {
     dragIdxRef.current = idx;
@@ -1411,9 +1413,9 @@ export default function Dashboard() {
                   <span className="text-[10px] font-bold text-[var(--overlay)] uppercase tracking-widest">Instrumenty</span>
                   <span className="text-[10px] text-[var(--overlay)] font-mono">24h</span>
                 </div>
-                <div className="flex-1 overflow-y-auto p-1.5 min-h-0">
+                <div className="flex-1 overflow-y-auto p-1.5 min-h-0" data-tour="mobile-instruments">
                   <div className="grid grid-cols-2 gap-1">
-                    {orderedInstruments.slice(0, 4).map((inst) => (
+                    {orderedInstruments.map((inst) => (
                       <InstCard
                         key={inst.symbol}
                         data={inst}
@@ -1424,14 +1426,6 @@ export default function Dashboard() {
                       />
                     ))}
                   </div>
-                  {orderedInstruments.length > 4 && (
-                    <button
-                      onClick={() => navigate('/charts?tab=instruments')}
-                      className="w-full mt-1 text-[10px] text-[var(--accent)] font-semibold py-1 hover:underline"
-                    >
-                      Pokaż wszystkie ({orderedInstruments.length})
-                    </button>
-                  )}
                 </div>
               </div>
 
