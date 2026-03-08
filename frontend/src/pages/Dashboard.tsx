@@ -652,10 +652,8 @@ export default function Dashboard() {
   const exportPDF = () => {
     if (!report || !analysisRef.current) return;
     const content = analysisRef.current.innerHTML;
-    const win = window.open('', '_blank');
-    if (!win) return;
     const date = new Date().toLocaleString('pl-PL', { timeZone: APP_TIMEZONE });
-    win.document.write(`<!DOCTYPE html><html><head>
+    const html = `<!DOCTYPE html><html><head>
       <meta charset="utf-8">
       <title>Analiza rynkowa – ${date}</title>
       <style>
@@ -684,10 +682,28 @@ export default function Dashboard() {
     </head><body>
       <div class="meta">Analiza rynkowa &bull; ${report.provider}/${report.model} &bull; ${date}</div>
       ${content}
-    </body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 400);
+    </body></html>`;
+
+    // Użyj ukrytego iframe zamiast window.open (popup blocker)
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) { document.body.removeChild(iframe); return; }
+    iframeDoc.open();
+    iframeDoc.write(html);
+    iframeDoc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+      setTimeout(() => document.body.removeChild(iframe), 1000);
+    }, 400);
   };
 
   // Mapuje znane serwisy na ich URL wyszukiwarki
