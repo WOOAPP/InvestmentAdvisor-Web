@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { getInstruments, refreshInstruments, getSparkline, getInstrumentUnit, type InstrumentData } from '../api/market';
 import { getReports, getReport } from '../api/reports';
