@@ -113,11 +113,13 @@ export default function Portfolio() {
   const [forexInstruments, setForexInstruments] = useState<InstrumentData[]>([]);
 
   const isTour = getTourPhase() === 'portfolio';
+  const tourStartedRef = useRef(false);
 
-  // Intro tour — inject demo data and auto-show form
+  // Intro tour — inject demo data and auto-show form (run only once)
   useEffect(() => {
     if (loading) return;
-    if (isTour) {
+    if (isTour && !tourStartedRef.current) {
+      tourStartedRef.current = true;
       setShowForm(true);
       setActiveTab('zakupione');
       setPositions(DEMO_LONG);
@@ -181,6 +183,8 @@ export default function Portfolio() {
   };
 
   useEffect(() => {
+    // Skip fetching during tour — demo data is injected by tour effect
+    if (getTourPhase() === 'portfolio') return;
     fetchPositions();
   }, [activeTab]);
 
