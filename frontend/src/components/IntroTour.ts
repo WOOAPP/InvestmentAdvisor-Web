@@ -1,15 +1,16 @@
 import { driver, type DriveStep } from 'driver.js';
 import 'driver.js/dist/driver.css';
 
-export type TourPhase = 'settings-general' | 'settings' | 'dashboard' | 'charts' | 'calendar' | 'portfolio' | 'final';
+export type TourPhase = 'settings-general' | 'settings' | 'dashboard' | 'obserwowane' | 'charts' | 'calendar' | 'portfolio' | 'final';
 
 const TOUR_PHASE_KEY = 'tour_phase';
 
-const PHASE_ORDER: TourPhase[] = ['settings-general', 'settings', 'dashboard', 'charts', 'calendar', 'portfolio', 'final'];
+const PHASE_ORDER: TourPhase[] = ['settings-general', 'settings', 'dashboard', 'obserwowane', 'charts', 'calendar', 'portfolio', 'final'];
 const PHASE_ROUTES: Record<TourPhase, string> = {
   'settings-general': '/settings',
   settings: '/settings',
   dashboard: '/',
+  obserwowane: '/charts',
   charts: '/charts',
   calendar: '/calendar',
   portfolio: '/portfolio',
@@ -155,6 +156,36 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
       return steps;
     }
 
+    case 'obserwowane': {
+      if (mobile) {
+        return [
+          {
+            element: '[data-tour="charts-instruments"]',
+            popover: {
+              title: 'Obserwowane instrumenty',
+              description: 'Lista Twoich obserwowanych instrumentów z aktualnymi kursami i zmianą 24h. Kliknij instrument aby otworzyć wykres.',
+              side: 'over',
+              align: 'center',
+            },
+            onHighlightStarted: () => {
+              window.dispatchEvent(new CustomEvent('tour:charts-tab', { detail: { tab: 'instruments' } }));
+            },
+          },
+        ];
+      }
+      return [
+        {
+          element: '[data-tour="charts-instruments"]',
+          popover: {
+            title: 'Obserwowane instrumenty',
+            description: 'Lista Twoich obserwowanych instrumentów z aktualnymi kursami i zmianą 24h. Kliknij instrument aby otworzyć wykres. Przeciągnij aby zmienić kolejność.',
+            side: 'right',
+            align: 'start',
+          },
+        },
+      ];
+    }
+
     case 'charts': {
       if (mobile) {
         return [
@@ -165,6 +196,9 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
               description: 'Przełączaj między listą instrumentów, wykresem i czatem AI. Czat ma szerszy kontekst — dane z 5 interwałów, portfel i kalendarz.',
               side: 'bottom',
               align: 'center',
+            },
+            onHighlightStarted: () => {
+              window.dispatchEvent(new CustomEvent('tour:charts-tab', { detail: { tab: 'chart' } }));
             },
           },
           {
@@ -179,15 +213,6 @@ function getPhaseSteps(phase: TourPhase): DriveStep[] {
         ];
       }
       return [
-        {
-          element: '[data-tour="charts-instruments"]',
-          popover: {
-            title: 'Wybierz instrument',
-            description: 'Kliknij instrument z listy aby zobaczyć szczegółowy wykres z danymi historycznymi.',
-            side: 'right',
-            align: 'start',
-          },
-        },
         {
           element: '[data-tour="charts-chart"]',
           popover: {

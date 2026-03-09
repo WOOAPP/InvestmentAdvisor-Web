@@ -87,9 +87,16 @@ const DEMO_SHORT: Position[] = [
   { id: -9, symbol: 'EURUSD=X', name: 'EUR/USD', quantity: 10000, buy_price: 1.0850, buy_currency: 'USD', buy_fx_to_usd: 1, buy_price_usd: 1.0850, tab_type: 'short', created_at: '2026-02-20T09:00:00Z' },
 ];
 const DEMO_PRICES: Record<string, number | null> = {
+  // Long: current > buy → positive balance
   AAPL: 192.30, MSFT: 395.50, 'BTC-USD': 68500.00, 'GC=F': 2180.00, 'WIG20.WA': 25.10,
-  TSLA: 220.00, NVDA: 950.00, 'ETH-USD': 2900.00, 'EURUSD=X': 1.0920,
+  // Short: current < buy → positive balance
+  TSLA: 220.00, NVDA: 845.00, 'ETH-USD': 2900.00, 'EURUSD=X': 1.0720,
 };
+const DEMO_FOREX: InstrumentData[] = [
+  { symbol: 'USDPLN=X', name: 'USD/PLN', price: 4.0250, change: 0.013, change_pct: 0.32, volume: null, high_5d: 4.05, low_5d: 3.98, sparkline: [3.99, 4.00, 4.01, 4.02, 4.01, 4.025], source: 'yfinance', error: null },
+  { symbol: 'EURUSD=X', name: 'EUR/USD', price: 1.0720, change: -0.0016, change_pct: -0.15, volume: null, high_5d: 1.078, low_5d: 1.069, sparkline: [1.075, 1.074, 1.073, 1.072, 1.071, 1.072], source: 'yfinance', error: null },
+  { symbol: 'GBPUSD=X', name: 'GBP/USD', price: 1.2680, change: 0.001, change_pct: 0.08, volume: null, high_5d: 1.272, low_5d: 1.264, sparkline: [1.266, 1.267, 1.268, 1.269, 1.268, 1.268], source: 'yfinance', error: null },
+];
 
 export default function Portfolio() {
   const navigate = useNavigate();
@@ -124,6 +131,7 @@ export default function Portfolio() {
       setActiveTab('zakupione');
       setPositions(DEMO_LONG);
       setPrices(DEMO_PRICES);
+      setForexInstruments(DEMO_FOREX);
       const timer = setTimeout(() => runTourPhase('portfolio', navigate), 500);
       return () => clearTimeout(timer);
     }
@@ -184,7 +192,10 @@ export default function Portfolio() {
 
   useEffect(() => {
     // Skip fetching during tour — demo data is injected by tour effect
-    if (getTourPhase() === 'portfolio') return;
+    if (getTourPhase() === 'portfolio') {
+      setLoading(false);
+      return;
+    }
     fetchPositions();
   }, [activeTab]);
 

@@ -270,11 +270,24 @@ export default function Charts() {
 
   // Intro tour
   useEffect(() => {
-    if (getTourPhase() === 'charts') {
-      const timer = setTimeout(() => runTourPhase('charts', navigate), 500);
+    const phase = getTourPhase();
+    if (phase === 'obserwowane' || phase === 'charts') {
+      const timer = setTimeout(() => runTourPhase(phase, navigate), 500);
       return () => clearTimeout(timer);
     }
   }, [navigate]);
+
+  // Listen for tour tab-switch event (Obserwowane ↔ Chart)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent).detail?.tab;
+      if (tab === 'instruments' || tab === 'chart' || tab === 'chat') {
+        setMobilePanel(tab);
+      }
+    };
+    window.addEventListener('tour:charts-tab', handler);
+    return () => window.removeEventListener('tour:charts-tab', handler);
+  }, []);
 
   // ── Inicjalny load ─────────────────────────────────────────
   useEffect(() => {
